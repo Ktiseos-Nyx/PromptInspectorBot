@@ -77,12 +77,42 @@ If you invite the Bot to your server:
 - If you post something illegal, that's on you, not us
 - We may cooperate with law enforcement if required by law
 
-### 4.4 Third-Party Services
+**IMPORTANT - Copyright and Content Ownership:**
+- The Bot reads and displays metadata embedded in images
+- We are NOT responsible for the content of that metadata
+- We are NOT responsible for copyright status of images processed
+- We do NOT verify ownership, licensing, or legality of content
+- DMCA complaints about "stolen art" or unauthorized use are NOT the Bot's responsibility
+- The Bot is a metadata reader, not a content moderator
+- **If you process an image, YOU are responsible for having the right to do so**
+
+### 4.4 API Keys and Credentials
+- You are solely responsible for securing your API keys (Discord bot token, CivitAI API key, etc.)
+- We are NOT responsible if you:
+  - Leak your API keys
+  - Commit API keys to public repositories
+  - Share your credentials with others
+  - Experience unauthorized access due to poor key management
+- **NEVER share your bot token or API keys publicly**
+- The Bot provides tools to help secure keys (`.gitignore`, secrets management), but YOU must use them correctly
+
+### 4.5 Metadata Content
+- The Bot extracts and displays metadata "as-is" from image files
+- We are NOT responsible for:
+  - Offensive, inappropriate, or illegal content in metadata
+  - False, misleading, or inaccurate metadata
+  - Personal information accidentally embedded in metadata
+  - Copyright information (or lack thereof) in metadata
+  - Model names, prompts, or other data that may reference copyrighted works
+- **The Bot is a messenger, not the message creator**
+- If metadata contains something problematic, that's an issue with whoever created the image, not the Bot
+
+### 4.6 Third-Party Services
 - The Bot may use third-party services (like CivitAI's API for model lookups)
 - We're not responsible for those services
 - If CivitAI is down, the Bot's model lookup features won't work. Not our fault.
 
-### 4.5 Data Loss
+### 4.7 Data Loss
 - We don't store your data (see Privacy Policy)
 - If you want to keep metadata, save it yourself
 - We're not responsible if you lose access to data the Bot sent you
