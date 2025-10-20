@@ -81,6 +81,18 @@ Follow steps 1-12 above, then:
 
 **Security Note:** Never commit your `secrets.json` file to git! It's already included in `.gitignore` to prevent accidental commits.
 
+## Legal Stuff (The Important Bits)
+
+Before using the bot, please review:
+- **[Privacy Policy](PRIVACY.md)** - How we handle your data (spoiler: we don't store it)
+- **[Terms of Service](TERMS_OF_SERVICE.md)** - The rules (TL;DR: don't be a jerk)
+
+**Quick summary:**
+- ✅ We extract metadata and send it to you
+- ✅ We delete images immediately after processing
+- ❌ We don't store your images or metadata
+- ❌ We don't track you or sell your data
+
 ## Examples
 ![Example 1](images/2023-03-09_00-14.png)
 ![Example 2](images/2023-03-09_00-14_1.png)
