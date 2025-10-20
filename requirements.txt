@@ -1,4 +1,16 @@
-toml~=0.10.2
-python-dotenv~=1.0.0
-Pillow~=9.4.0
-py-cord==2.4.1
+# Discord Bot Framework (updated to discord.py)
+discord.py>=2.3.0
+
+# Image Processing
+Pillow>=10.0.0
+
+# Configuration
+toml>=0.10.2
+python-dotenv>=1.0.0
+
+# Dataset-Tools (local development)
+# Install with: pip install -e /path/to/Dataset-Tools
+# Or from PyPI (when published): dataset-tools>=1.0.0
+
+# Optional: Civitai API
+requests>=2.31.0
