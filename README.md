@@ -11,13 +11,15 @@ The original bot with ComfyUI and NovelAI support from dogarrowtype's fork.
 - ✅ ~20 ComfyUI node types supported
 - ✅ A1111, ComfyUI, NovelAI formats
 
-### **`bot_enhanced.py`** - Enhanced with Dataset-Tools (Experimental)
-NEW! Enhanced version with Dataset-Tools metadata engine for comprehensive workflow support.
+### **`bot_enhanced.py`** - Enhanced with Dataset-Tools (Official Integration)
+Enhanced version with Dataset-Tools metadata engine (included as git submodule on `bot-features` branch).
 - 🚀 200+ ComfyUI node types (FLUX, PixArt, TIPO, etc.)
 - 🚀 Advanced graph traversal for complex workflows
 - 🚀 Template detection and randomizer specialist
+- 🚀 CivitAI API integration for resource metadata
 - ⚡ Slash commands (`/metadata`) in addition to emoji reactions
 - 📋 Context menus (right-click → "View Prompt")
+- 💾 Lightweight architecture (<100MB RAM via subprocess CLI)
 
 ## Functionality
 
@@ -52,16 +54,32 @@ clicks the magnifying glass, they are sent a DM with the image generation inform
 
 Follow steps 1-12 above, then:
 
-13. Install Dataset-Tools:
+13. Initialize and install Dataset-Tools submodule:
     ```bash
-    # If you have Dataset-Tools locally:
-    cd /path/to/Dataset-Tools
-    pip install -e .
+    # Initialize the submodule (bot-features branch)
+    git submodule update --init --recursive
 
-    # Or from PyPI (when published):
-    pip install dataset-tools
+    # Install Dataset-Tools in editable mode
+    pip install -e ./dataset-tools
     ```
-14. Run the enhanced bot with `python3 bot_enhanced.py`
+
+14. **(Optional)** Configure CivitAI API key for enhanced resource metadata:
+    ```bash
+    # Option 1: Create secrets.json file
+    cp dataset-tools/dataset_tools/secrets.json.example dataset-tools/dataset_tools/secrets.json
+    # Edit secrets.json and add your CivitAI API key
+
+    # Option 2: Use environment variable
+    export CIVITAI_API_KEY="your_api_key_here"
+    ```
+
+    **Note:** CivitAI API key is optional but recommended for enhanced metadata extraction. Get your free API key at [CivitAI Settings](https://civitai.com/user/account).
+
+15. Run the enhanced bot with `python3 bot_enhanced.py`
+
+**Architecture Note:** The bot uses the `dataset-tools-parse` CLI command via subprocess to keep memory usage low (<100MB vs 200-300MB with direct imports). This makes it suitable for free-tier hosting!
+
+**Security Note:** Never commit your `secrets.json` file to git! It's already included in `.gitignore` to prevent accidental commits.
 
 ## Examples
 ![Example 1](images/2023-03-09_00-14.png)
