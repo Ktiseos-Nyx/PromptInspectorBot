@@ -1,15 +1,12 @@
-Forked from https://github.com/sALTaccount/PromptInspectorBot → https://github.com/dogarrowtype/PromptInspectorBot
 
 # Prompt Inspector 🔎
+
 Inspect prompts 🔎 from images uploaded to discord
+Forked from https://github.com/sALTaccount/PromptInspectorBot → https://github.com/dogarrowtype/PromptInspectorBot
+
+Warning: May not work on all servers, we are working on uncoupling the GUI features for the CLI commands to make it work better on most servers.
 
 ## Two Versions Available
-
-### **`PromptInspector.py`** - Original (Stable)
-The original bot with ComfyUI and NovelAI support from dogarrowtype's fork.
-- ✅ Proven stable
-- ✅ ~20 ComfyUI node types supported
-- ✅ A1111, ComfyUI, NovelAI formats
 
 ### **`bot_enhanced.py`** - Enhanced with Dataset-Tools (Official Integration) ✨
 Enhanced version with Dataset-Tools metadata engine installed from GitHub.
@@ -51,8 +48,6 @@ The enhanced bot automatically detects PluralKit proxied messages and resolves t
 *Note: The bot waits 2 seconds before processing non-webhook messages to allow PluralKit time to proxy them. You may see harmless "Unknown message" errors in logs when PluralKit deletes the original message - this is expected behavior and can be safely ignored.*
 
 ## Setup
-
-### For Original Version (`PromptInspector.py`)
 
 1. Clone the repository
 2. Enter the directory
