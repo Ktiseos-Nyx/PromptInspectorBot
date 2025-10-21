@@ -311,8 +311,8 @@ async def on_message(message: discord.Message):
     if message.author.bot and not message.webhook_id:
         return
 
-    # Only process in monitored channels
-    if message.channel.id not in MONITORED_CHANNEL_IDS:
+    # Only process in monitored channels (empty set = monitor all channels)
+    if MONITORED_CHANNEL_IDS and message.channel.id not in MONITORED_CHANNEL_IDS:
         return
 
     # PluralKit handling: Wait a moment to see if message gets proxied
@@ -400,8 +400,8 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.emoji.name != EMOJI_FOUND:
         return
 
-    # Only in monitored channels
-    if payload.channel_id not in MONITORED_CHANNEL_IDS:
+    # Only in monitored channels (empty set = monitor all channels)
+    if MONITORED_CHANNEL_IDS and payload.channel_id not in MONITORED_CHANNEL_IDS:
         return
 
     # Ignore bot's own reactions
