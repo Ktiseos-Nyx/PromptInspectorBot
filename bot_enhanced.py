@@ -59,9 +59,10 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 rate_limiter = RateLimiter(max_requests=5, window_seconds=60)
 
-# Track recently processed messages to avoid double-processing PluralKit proxies
-processed_message_ids = set()
-MAX_TRACKED_MESSAGES = 1000
+# Track recently processed attachments to avoid double-processing PluralKit proxies
+# Use attachment URL instead of message ID since PluralKit creates new messages
+processed_attachment_urls = set()
+MAX_TRACKED_ATTACHMENTS = 1000
 
 
 def reformat_json(string: str, indent: int = 2) -> Optional[str]:
@@ -289,7 +290,7 @@ async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optio
 @bot.event
 async def on_message(message: discord.Message):
     """Auto-detect metadata in monitored channels and post public reply."""
-    global processed_message_ids
+    global processed_attachment_urls
 
     # Ignore bot messages UNLESS it's a webhook (could be PluralKit!)
     if message.author.bot and not message.webhook_id:
@@ -297,11 +298,6 @@ async def on_message(message: discord.Message):
 
     # Only process in monitored channels
     if message.channel.id not in MONITORED_CHANNEL_IDS:
-        return
-
-    # Check if we already processed this message (avoid PluralKit double-processing)
-    if message.id in processed_message_ids:
-        logger.debug("Skipping already-processed message %s", message.id)
         return
 
     # Only process messages with PNG/JPEG attachments
@@ -313,11 +309,18 @@ async def on_message(message: discord.Message):
     if not attachments:
         return
 
-    # Mark as processed (prevent double-processing for PluralKit)
-    processed_message_ids.add(message.id)
-    if len(processed_message_ids) > MAX_TRACKED_MESSAGES:
+    # Check if we already processed this attachment (avoid PluralKit double-processing)
+    # PluralKit creates a NEW message but keeps the same attachment URL!
+    attachment = attachments[0]
+    if attachment.url in processed_attachment_urls:
+        logger.debug("Skipping already-processed attachment %s", attachment.filename)
+        return
+
+    # Mark attachment as processed (prevent double-processing for PluralKit)
+    processed_attachment_urls.add(attachment.url)
+    if len(processed_attachment_urls) > MAX_TRACKED_ATTACHMENTS:
         # Clear old entries when cache gets too big
-        processed_message_ids.clear()
+        processed_attachment_urls.clear()
 
     logger.info("Scanning message from %s with %s images", message.author, len(attachments))
 
