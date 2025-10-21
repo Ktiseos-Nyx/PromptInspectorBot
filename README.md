@@ -6,9 +6,8 @@ Forked from https://github.com/sALTaccount/PromptInspectorBot → https://github
 
 Warning: May not work on all servers, we are working on uncoupling the GUI features for the CLI commands to make it work better on most servers.
 
-## Two Versions Available
+## Enhanced from the Original
 
-### **`bot_enhanced.py`** - Enhanced with Dataset-Tools (Official Integration) ✨
 Enhanced version with Dataset-Tools metadata engine installed from GitHub.
 - 🚀 200+ ComfyUI node types (FLUX, PixArt, TIPO, Ollama, etc.)
 - 🚀 Advanced graph traversal for complex workflows
@@ -20,6 +19,13 @@ Enhanced version with Dataset-Tools metadata engine installed from GitHub.
 - 🌐 **Railway/serverless ready** - Works in headless Linux environments
 - 🌈 **PluralKit support** - Automatically resolves webhook messages to real users
 - 📝 **Manual metadata entry** - Add details to images without embedded metadata (JPEGs, screenshots, etc.)
+
+### Minor Issues
+
+- PYQT6 is heavily coupled with many of the features, we're still trying to detangle it for headless use with the bot.
+- Some Servers DO NOT LIKE SUBMODULES. We're working on it.
+- Works fine via personal desktop, but again I have PYQt6 loaded on my home machine.
+- PYQT6 **IS NOT REQUIRED** for the bot, it's just required for the GUI version of Dataset tools, which is why it's barking at many servers.
 
 ## Functionality
 
