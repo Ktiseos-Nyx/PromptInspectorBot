@@ -58,6 +58,10 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 rate_limiter = RateLimiter(max_requests=5, window_seconds=60)
 
+# Track recently processed messages to avoid double-processing PluralKit proxies
+processed_message_ids = set()
+MAX_TRACKED_MESSAGES = 1000
+
 
 def reformat_json(string: str, indent: int = 2) -> Optional[str]:
     """Reformat JSON string with proper indentation.
@@ -284,12 +288,19 @@ async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optio
 @bot.event
 async def on_message(message: discord.Message):
     """Auto-detect metadata in monitored channels and post public reply."""
+    global processed_message_ids
+
     # Ignore bot messages UNLESS it's a webhook (could be PluralKit!)
     if message.author.bot and not message.webhook_id:
         return
 
     # Only process in monitored channels
     if message.channel.id not in MONITORED_CHANNEL_IDS:
+        return
+
+    # Check if we already processed this message (avoid PluralKit double-processing)
+    if message.id in processed_message_ids:
+        logger.debug("Skipping already-processed message %s", message.id)
         return
 
     # Only process messages with PNG/JPEG attachments
@@ -300,6 +311,12 @@ async def on_message(message: discord.Message):
 
     if not attachments:
         return
+
+    # Mark as processed (prevent double-processing for PluralKit)
+    processed_message_ids.add(message.id)
+    if len(processed_message_ids) > MAX_TRACKED_MESSAGES:
+        # Clear old entries when cache gets too big
+        processed_message_ids.clear()
 
     logger.info("Scanning message from %s with %s images", message.author, len(attachments))
 
@@ -575,6 +592,9 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle modal submission."""
+        # IMPORTANT: Acknowledge interaction FIRST (must respond within 3 seconds!)
+        await interaction.response.send_message("✅ Details added!", ephemeral=True)
+
         # Build manual metadata dict
         manual_metadata = {
             "tool": "Manual Entry (User Provided)",
@@ -592,7 +612,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
             # Store as-is for display
             manual_metadata["parameters"]["user_settings"] = self.settings.value
 
-        # Get real author
+        # Get real author (this might take time with PluralKit API)
         real_author = await get_real_author(self.original_message)
 
         # Format and post public message
@@ -600,7 +620,6 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
         view = PublicMetadataView(manual_metadata, real_author)
 
         await self.original_message.reply(public_message, view=view, mention_author=False)
-        await interaction.response.send_message("✅ Details added!", ephemeral=True)
 
         logger.info("📝 Manual metadata added by %s for %s", interaction.user.name, self.attachment.filename)
 
@@ -623,10 +642,11 @@ class ManualEntryPromptView(discord.ui.View):
 class PublicMetadataView(discord.ui.View):
     """View with buttons for public metadata messages (Midjourney-style!)."""
 
-    def __init__(self, metadata: Dict[str, Any], original_author: discord.User):
+    def __init__(self, metadata: Dict[str, Any], original_author: discord.User, original_message: discord.Message = None):
         super().__init__(timeout=3600)  # Buttons work for 1 hour
         self.metadata = metadata
         self.original_author = original_author
+        self.original_message = original_message
 
     @discord.ui.button(label="📬 Full Details (DM)", style=discord.ButtonStyle.primary)
     async def send_dm(self, interaction: discord.Interaction, button: discord.ui.Button):
