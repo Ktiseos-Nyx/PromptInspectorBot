@@ -80,6 +80,16 @@ def format_metadata_embed(
     # Get parameters dict
     parameters = metadata_dict.get('parameters', {})
 
+    # Handle manual user_settings field (from manual entry)
+    user_settings = parameters.get('user_settings')
+    if user_settings and field_count < max_fields:
+        embed.add_field(
+            name="Settings",
+            value=user_settings,
+            inline=False
+        )
+        field_count += 1
+
     # Priority parameter fields to show
     priority_params = [
         ('model', 'Model'),

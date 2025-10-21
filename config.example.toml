@@ -1,4 +1,18 @@
+# ============================================================================
+# SERVER WHITELIST (Private Bot Mode)
+# ============================================================================
+# List of server (guild) IDs allowed to use this bot
+# Leave empty [] to allow ALL servers (public mode)
+# Get server ID: Right-click server icon → Copy Server ID (need Developer Mode enabled)
+ALLOWED_GUILD_IDS = []  # Example: [123456789, 987654321]
+
+# ============================================================================
+# MONITORED CHANNELS
+# ============================================================================
+# List of channel IDs where the bot will scan for images
+# Get channel ID: Right-click channel → Copy Channel ID
 MONITORED_CHANNEL_IDS = [1234]
+
 SCAN_LIMIT_BYTES = 104857600 # 10MiB
 A1111_IMPORTANT_FIELDS = [
     "Prompt",

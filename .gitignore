@@ -36,3 +36,4 @@ __pycache__/
 *.sublime-workspace
 *.swp
 *.swo
+logs/

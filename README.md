@@ -20,17 +20,32 @@ Enhanced version with Dataset-Tools metadata engine (included as git submodule o
 - ⚡ Slash commands (`/metadata`) in addition to emoji reactions
 - 📋 Context menus (right-click → "View Prompt")
 - 💾 Lightweight architecture (<100MB RAM via subprocess CLI)
+- 🌈 **PluralKit support** - Automatically resolves webhook messages to real users
+- 📝 **Manual metadata entry** - Add details to images without embedded metadata (JPEGs, screenshots, etc.)
 
 ## Functionality
 
-This Discord bot reacts to any image with generation metadata from Automatic1111's WebUI and ComfyUI.
-If generation metadata is detected, a magnifying glass react is added to the image. If the user
-clicks the magnifying glass, they are sent a DM with the image generation information.
+This Discord bot automatically detects and displays AI image generation metadata from various sources.
+
+**How it works:**
+1. Bot scans images posted in monitored channels
+2. If metadata is found → Adds 🔎 reaction
+3. Click the reaction → Bot posts public reply with collapsible metadata
+4. If no metadata → Offers manual entry option for JPEG/screenshot sharing
 
 **Supported interaction styles:**
-- 🔎 **Emoji reactions** - Click magnifying glass for DM (both versions)
+- 🔎 **Emoji reactions** - Click magnifying glass for public metadata display
 - ⚡ **Slash commands** - `/metadata <image>` for direct parsing (enhanced version only)
 - 📋 **Context menus** - Right-click message → "View Prompt" (both versions)
+- 📝 **Manual entry** - Add details manually for images without embedded metadata (enhanced version only)
+
+**Supported image formats:**
+- ✅ **PNG** - Full metadata support (ComfyUI, A1111, NovelAI, InvokeAI, etc.)
+- ⚠️ **JPEG** - Discord strips EXIF metadata on upload, but manual entry available
+- 💡 **Tip:** For CivitAI images, use manual entry to add prompt/model info from the image page
+
+**PluralKit Integration:**
+The enhanced bot automatically detects PluralKit proxied messages and resolves them to the real sender. Metadata displays and DMs are sent to the actual user, not the proxy webhook. Perfect for systems who want to share their AI art! 🌈
 
 ## Setup
 
