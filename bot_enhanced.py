@@ -300,6 +300,20 @@ async def on_message(message: discord.Message):
     if message.channel.id not in MONITORED_CHANNEL_IDS:
         return
 
+    # PluralKit handling: Wait a moment to see if message gets proxied
+    # If it's NOT a webhook, wait 2 seconds to let PluralKit delete original
+    if not message.webhook_id:
+        await asyncio.sleep(2)
+        # Check if message still exists (PluralKit deletes originals)
+        try:
+            await message.channel.fetch_message(message.id)
+            # Message still exists, not proxied by PluralKit - process it
+        except discord.NotFound:
+            # Message was deleted (PluralKit proxied it) - skip
+            logger.debug("Message deleted by PluralKit, skipping original")
+            return
+    # If it IS a webhook, process immediately (it's the proxied version)
+
     # Only process messages with PNG/JPEG attachments
     attachments = [
         a for a in message.attachments
@@ -342,11 +356,24 @@ async def on_message(message: discord.Message):
 
             # Post helpful message with manual entry button
             view = ManualEntryPromptView(message, attachment)
-            await message.reply(
-                "ℹ️ No metadata found in this image. Would you like to add details manually?",
-                view=view,
-                mention_author=False
-            )
+            try:
+                await message.reply(
+                    "ℹ️ No metadata found in this image. Would you like to add details manually?",
+                    view=view,
+                    mention_author=False
+                )
+            except discord.NotFound:
+                # Message was deleted (likely by PluralKit) - send to channel instead
+                logger.debug("Original message deleted, posting to channel instead")
+                await message.channel.send(
+                    "ℹ️ No metadata found in that image. Would you like to add details manually?",
+                    view=view
+                )
+    except discord.HTTPException as e:
+        if e.code == 50035:  # Invalid Form Body - message deleted
+            logger.debug("Message deleted by PluralKit proxy, skipping reply")
+        else:
+            logger.error("Discord error in on_message: %s", e)
     except Exception as e:
         logger.error("Error in on_message: %s", e)
 
