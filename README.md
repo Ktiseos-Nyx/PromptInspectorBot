@@ -47,6 +47,8 @@ This Discord bot automatically detects and displays AI image generation metadata
 **PluralKit Integration:**
 The enhanced bot automatically detects PluralKit proxied messages and resolves them to the real sender. Metadata displays and DMs are sent to the actual user, not the proxy webhook. Perfect for systems who want to share their AI art! 🌈
 
+*Note: The bot waits 2 seconds before processing non-webhook messages to allow PluralKit time to proxy them. You may see harmless "Unknown message" errors in logs when PluralKit deletes the original message - this is expected behavior and can be safely ignored.*
+
 ## Setup
 
 ### For Original Version (`PromptInspector.py`)
