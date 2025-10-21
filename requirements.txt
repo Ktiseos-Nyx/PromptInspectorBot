@@ -8,8 +8,8 @@ Pillow>=10.0.0
 toml>=0.10.2
 python-dotenv>=1.0.0
 
-# Dataset-Tools (installed from submodule)
--e ./dataset-tools
+# Dataset-Tools (installed from GitHub)
+git+https://github.com/Ktiseos-Nyx/Dataset-Tools.git@bot-features
 
 # HTTP Requests
 requests>=2.31.0
