@@ -11,15 +11,16 @@ The original bot with ComfyUI and NovelAI support from dogarrowtype's fork.
 - ✅ ~20 ComfyUI node types supported
 - ✅ A1111, ComfyUI, NovelAI formats
 
-### **`bot_enhanced.py`** - Enhanced with Dataset-Tools (Official Integration)
-Enhanced version with Dataset-Tools metadata engine (included as git submodule on `bot-features` branch).
-- 🚀 200+ ComfyUI node types (FLUX, PixArt, TIPO, etc.)
+### **`bot_enhanced.py`** - Enhanced with Dataset-Tools (Official Integration) ✨
+Enhanced version with Dataset-Tools metadata engine installed from GitHub.
+- 🚀 200+ ComfyUI node types (FLUX, PixArt, TIPO, Ollama, etc.)
 - 🚀 Advanced graph traversal for complex workflows
 - 🚀 Template detection and randomizer specialist
 - 🚀 CivitAI API integration for resource metadata
 - ⚡ Slash commands (`/metadata`) in addition to emoji reactions
 - 📋 Context menus (right-click → "View Prompt")
-- 💾 Lightweight architecture (<100MB RAM via subprocess CLI)
+- 💾 **Headless CLI architecture** - No PyQt6/GUI dependencies on server (<100MB RAM)
+- 🌐 **Railway/serverless ready** - Works in headless Linux environments
 - 🌈 **PluralKit support** - Automatically resolves webhook messages to real users
 - 📝 **Manual metadata entry** - Add details to images without embedded metadata (JPEGs, screenshots, etc.)
 
