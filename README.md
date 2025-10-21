@@ -66,12 +66,6 @@ The enhanced bot automatically detects PluralKit proxied messages and resolves t
 10. Set `BOT_TOKEN=<your discord bot token>` in the .env file
 11. Copy the `config.example.toml` to `config.toml`
 12. Add the channel IDs for channels you want the bot to watch, and set the settings you want in the `config.toml` file
-13. Run the bot with `python3 PromptInspector.py`
-
-### For Enhanced Version (`bot_enhanced.py`)
-
-Follow steps 1-12 above, then:
-
 13. Initialize and install Dataset-Tools submodule:
     ```bash
     # Initialize the submodule (bot-features branch)
