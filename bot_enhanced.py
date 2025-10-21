@@ -37,6 +37,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # Load config
 config = toml.load('config.toml') if Path('config.toml').exists() else {}
+ALLOWED_GUILD_IDS = set(config.get('ALLOWED_GUILD_IDS', []))  # Empty = allow all
 MONITORED_CHANNEL_IDS = set(config.get('MONITORED_CHANNEL_IDS', []))
 EMOJI_FOUND = config.get('EMOJI_METADATA_FOUND', '🔎')
 EMOJI_NOT_FOUND = config.get('EMOJI_NO_METADATA', '⛔')
@@ -771,10 +772,53 @@ class FullMetadataView(discord.ui.View):
 # =============================================================================
 
 @bot.event
+async def on_guild_join(guild: discord.Guild):
+    """Handle bot being added to a new server - check whitelist."""
+    # If whitelist is empty, allow all servers (public mode)
+    if not ALLOWED_GUILD_IDS:
+        logger.info("✅ Joined server: %s (ID: %s) - Public mode, all servers allowed", guild.name, guild.id)
+        return
+
+    # Check if server is whitelisted
+    if guild.id not in ALLOWED_GUILD_IDS:
+        logger.warning("⛔ UNAUTHORIZED server join: %s (ID: %s) - Auto-leaving!", guild.name, guild.id)
+
+        # Try to notify the server owner
+        try:
+            owner = guild.owner
+            if owner:
+                await owner.send(
+                    f"👋 Hello! Thanks for trying to add **{bot.user.name}** to **{guild.name}**!\n\n"
+                    f"However, this is a **private bot instance** and only available in authorized servers.\n\n"
+                    f"If you'd like to use this bot, you can:\n"
+                    f"• Self-host your own instance: https://github.com/Ktiseos-Nyx/PromptInspectorBot\n"
+                    f"• Contact the bot owner to request access\n\n"
+                    f"The bot has automatically left your server. Sorry for the inconvenience!"
+                )
+                logger.info("📬 Sent notification to server owner: %s", owner.name)
+        except discord.Forbidden:
+            logger.warning("Couldn't DM server owner (DMs disabled)")
+        except Exception as e:
+            logger.error("Error notifying server owner: %s", e)
+
+        # Leave the server
+        await guild.leave()
+        logger.info("👋 Left unauthorized server: %s", guild.name)
+    else:
+        logger.info("✅ Joined whitelisted server: %s (ID: %s)", guild.name, guild.id)
+
+
+@bot.event
 async def on_ready():
     """Bot startup handler."""
     logger.info("✅ Logged in as %s!", bot.user)
     logger.info("📡 Monitoring %s channels", len(MONITORED_CHANNEL_IDS))
+
+    # Log whitelist status
+    if ALLOWED_GUILD_IDS:
+        logger.info("🔒 Guild whitelist enabled: %s authorized servers", len(ALLOWED_GUILD_IDS))
+    else:
+        logger.info("🌐 Public mode: All servers allowed")
 
     # Sync slash commands
     try:
