@@ -35,10 +35,25 @@ from utils.discord_formatter import format_metadata_embed, create_full_metadata_
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Load config
+# Load config from toml file
 config = toml.load('config.toml') if Path('config.toml').exists() else {}
-ALLOWED_GUILD_IDS = set(config.get('ALLOWED_GUILD_IDS', []))  # Empty = allow all
-MONITORED_CHANNEL_IDS = set(config.get('MONITORED_CHANNEL_IDS', []))
+
+# Check environment variables first, fall back to config.toml
+# This allows Railway/production to override settings without changing the repo
+def parse_id_list(env_var_name: str, config_key: str) -> set:
+    """Parse comma-separated ID list from env var or config file."""
+    env_value = os.getenv(env_var_name)
+    if env_value is not None:
+        # Parse env var: "123,456,789" or "[]" for empty
+        env_value = env_value.strip()
+        if env_value == "[]" or env_value == "":
+            return set()
+        return set(int(x.strip()) for x in env_value.split(',') if x.strip())
+    # Fall back to config.toml
+    return set(config.get(config_key, []))
+
+ALLOWED_GUILD_IDS = parse_id_list('ALLOWED_GUILD_IDS', 'ALLOWED_GUILD_IDS')
+MONITORED_CHANNEL_IDS = parse_id_list('MONITORED_CHANNEL_IDS', 'MONITORED_CHANNEL_IDS')
 EMOJI_FOUND = config.get('EMOJI_METADATA_FOUND', '🔎')
 EMOJI_NOT_FOUND = config.get('EMOJI_NO_METADATA', '⛔')
 REACT_ON_NO_METADATA = config.get('REACT_ON_NO_METADATA', False)
