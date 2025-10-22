@@ -36,6 +36,7 @@ from google.genai import types
 # Local utilities
 from utils.security import RateLimiter, sanitize_text
 from utils.discord_formatter import format_metadata_embed, create_full_metadata_text
+from dataset_tools.metadata_parser import parse_metadata
 
 
 # Load environment variables
@@ -269,11 +270,10 @@ def format_public_metadata_message(metadata: Dict[str, Any], author: discord.Use
 
 
 async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optional[Dict[str, Any]]:
-    """Parse metadata from image using Dataset-Tools CLI (subprocess).
+    """Parse metadata from image using Dataset-Tools library.
 
-    Uses subprocess to call dataset-tools-parse instead of direct import.
-    This keeps the bot lightweight - parser runs in separate process and
-    memory is freed after parsing completes.
+    Uses direct import of dataset_tools.metadata_parser module.
+    Runs in a thread pool to avoid blocking the async event loop.
 
     Args:
         image_data: Raw image bytes
@@ -296,36 +296,19 @@ async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optio
         with open(temp_path, 'wb') as f:
             f.write(image_data)
 
-        # Call dataset-tools-parse via subprocess (lightweight!)
-        # This avoids loading PyQt6 and heavy GUI dependencies
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ['dataset-tools-parse', str(temp_path), '--json'],
-            capture_output=True,
-            text=True,
-            timeout=30  # 30 second timeout for parsing
+        # Call parse_metadata in a thread to avoid blocking
+        metadata_dict = await asyncio.to_thread(
+            parse_metadata,
+            str(temp_path)
         )
 
-        if result.returncode != 0:
-            logger.warning("Parser returned error (exit code %s): %s", result.returncode, result.stderr)
-            logger.debug("Parser stdout was: %s", result.stdout)
+        if not metadata_dict or not isinstance(metadata_dict, dict):
+            logger.warning("Parser returned empty or invalid result for %s", temp_path.name)
             return None
 
-        # Parse JSON output
-        if not result.stdout.strip():
-            logger.warning("Parser returned empty output for %s", temp_path.name)
-            return None
-
-        metadata_dict = json.loads(result.stdout)
         logger.debug("Successfully parsed metadata for %s - found %s", temp_path.name, metadata_dict.get('tool', 'Unknown'))
         return metadata_dict
 
-    except subprocess.TimeoutExpired:
-        logger.error("Parser timeout for image")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse JSON output: %s", e)
-        return None
     except Exception as e:
         logger.error("Error parsing metadata: %s", e)
         return None
