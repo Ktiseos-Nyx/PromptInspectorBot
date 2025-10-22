@@ -148,6 +148,35 @@ def is_valid_image(image_data: bytes) -> bool:
         return False
 
 
+def transform_ui_dict_to_simple_format(ui_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Transform UI dict format from parse_metadata to simple Discord format.
+
+    Converts from:
+        {'prompt_data_section': {...}, 'generation_parameters_section': {...}, ...}
+    To:
+        {'tool': '...', 'prompt': '...', 'parameters': {...}}
+    """
+    simple = {}
+
+    # Extract tool name
+    metadata_section = ui_dict.get('metadata_info_section', {})
+    simple['tool'] = metadata_section.get('Detected Tool', 'Unknown')
+    simple['format'] = metadata_section.get('format', '')
+
+    # Extract prompts
+    prompt_section = ui_dict.get('prompt_data_section', {})
+    simple['prompt'] = prompt_section.get('Positive', '')
+    simple['negative_prompt'] = prompt_section.get('Negative', '')
+
+    # Extract parameters
+    simple['parameters'] = ui_dict.get('generation_parameters_section', {})
+
+    # Include raw metadata for JSON button
+    simple['raw_metadata'] = ui_dict.get('raw_tool_specific_data_section', {})
+
+    return simple
+
+
 async def get_real_author(message: discord.Message) -> discord.User:
     """Get the real author of a message, accounting for PluralKit proxies.
 
@@ -297,14 +326,17 @@ async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optio
             f.write(image_data)
 
         # Call parse_metadata in a thread to avoid blocking
-        metadata_dict = await asyncio.to_thread(
+        ui_dict = await asyncio.to_thread(
             parse_metadata,
             str(temp_path)
         )
 
-        if not metadata_dict or not isinstance(metadata_dict, dict):
+        if not ui_dict or not isinstance(ui_dict, dict):
             logger.warning("Parser returned empty or invalid result for %s", temp_path.name)
             return None
+
+        # Transform UI dict to simple format for Discord
+        metadata_dict = transform_ui_dict_to_simple_format(ui_dict)
 
         logger.debug("Successfully parsed metadata for %s - found %s", temp_path.name, metadata_dict.get('tool', 'Unknown'))
         return metadata_dict
