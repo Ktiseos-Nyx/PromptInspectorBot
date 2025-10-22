@@ -1,45 +1,55 @@
 # ============================================================================
-# SERVER WHITELIST (Private Bot Mode)
+# SERVER & CHANNEL CONFIGURATION
 # ============================================================================
+
 # List of server (guild) IDs allowed to use this bot
 # Leave empty [] to allow ALL servers (public mode)
 # Get server ID: Right-click server icon → Copy Server ID (need Developer Mode enabled)
 ALLOWED_GUILD_IDS = []  # Example: [123456789, 987654321]
 
-# ============================================================================
-# MONITORED CHANNELS
-# ============================================================================
-# List of channel IDs where the bot will scan for images
+# List of channel IDs where the bot will automatically scan for images
 # Leave empty [] to monitor ALL channels in allowed servers
 # Get channel ID: Right-click channel → Copy Channel ID
 MONITORED_CHANNEL_IDS = []
 
-SCAN_LIMIT_BYTES = 104857600 # 10MiB
-A1111_IMPORTANT_FIELDS = [
-    "Prompt",
-    "Negative Prompt",
-    "Steps",
-    "Sampler",
-    "CFG scale",
-    "Seed",
-    "Size",
-    "Model",
-    "VAE",
-    "Denoising strength",
-    "Hires upscale",
-    "Hires steps",
-    "Hires upscaler",
-    "Version",
-]
-A1111_PROMPT_SIZE_LIMIT=1000
-COMFYUI_SHOW_TITLES=true
-COMFYUI_EXTRACT_WIDGET_VALUES=true
-COMFYUI_PRIORITIZE_NODES_WITH_TEXT=true
-COMFYUI_REPLACE_FIELD_NEWLINES=true
-MESSAGE_EMBED_LIMIT=25
-ATTACH_FILE_SIZE_THRESHOLD=1980
-REACT_ON_NO_METADATA=false
-EMOJI_METADATA_FOUND="🔎"
-EMOJI_NO_METADATA="⛔"
-LOG_COLOR=false
-LOG_LEVEL="INFO"
+# ============================================================================
+# FEATURE MANAGEMENT (Per-Channel)
+# ============================================================================
+# Define which features are active in which channels.
+# This allows you to keep channels clean and focused.
+#
+# Format: channel_id = ["feature1", "feature2", ...]
+#
+# Available features:
+# - "metadata" (enables emoji reactions, /metadata, and context menu)
+# - "describe" (enables the /describe command and button)
+# - "ask" (enables the /ask command for conversational AI)
+# - "dream" (enables the /dream command for image generation)
+#
+# Example:
+# [channel_features]
+# 123456789012345678 = ["metadata", "describe"]
+# 098765432109876543 = ["ask"]
+
+[channel_features]
+
+# ============================================================================
+# BOT BEHAVIOR
+# ============================================================================
+
+# Whether to add a ⛔ reaction to images with no metadata
+REACT_ON_NO_METADATA = false
+
+# Emojis used for reactions
+EMOJI_METADATA_FOUND = "🔎"
+EMOJI_NO_METADATA = "⛔"
+
+# Maximum size of an image to scan (in bytes)
+SCAN_LIMIT_BYTES = 10485760 # 10MB
+
+# ============================================================================
+# LOGGING & DEBUGGING
+# ============================================================================
+
+# Set to "DEBUG" for more verbose logging
+LOG_LEVEL = "INFO"

@@ -15,6 +15,7 @@ import json
 import asyncio
 import logging
 import subprocess
+import warnings
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -26,6 +27,12 @@ import toml
 from PIL import Image
 import aiohttp
 
+# Suppress aiohttp unclosed client session warnings on shutdown
+warnings.filterwarnings("ignore", message="Unclosed client session", category=ResourceWarning)
+
+import google.genai as genai
+from google.genai import types
+
 # Local utilities
 from utils.security import RateLimiter, sanitize_text
 from utils.discord_formatter import format_metadata_embed, create_full_metadata_text
@@ -34,6 +41,14 @@ from utils.discord_formatter import format_metadata_embed, create_full_metadata_
 # Load environment variables
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+
+# Initialize Gemini client (new SDK)
+gemini_client = None
+if GEMINI_API_KEY:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+
 
 # Load config from toml file
 config = toml.load('config.toml') if Path('config.toml').exists() else {}
@@ -52,8 +67,30 @@ def parse_id_list(env_var_name: str, config_key: str) -> set:
     # Fall back to config.toml
     return set(config.get(config_key, []))
 
+def parse_channel_features(env_var_name: str, config_key: str) -> Dict[int, set]:
+    """Parse channel features from env var or config file."""
+    features = {}
+    env_value = os.getenv(env_var_name)
+    if env_value is not None:
+        # Parse env var: "channel_id:feature1,feature2;channel_id:feature1..."
+        for item in env_value.split(';'):
+            if ':' in item:
+                channel_id_str, features_str = item.split(':', 1)
+                if channel_id_str.isdigit():
+                    channel_id = int(channel_id_str)
+                    features[channel_id] = {f.strip() for f in features_str.split(',')}
+    else:
+        # Fall back to config.toml
+        if config and config_key in config:
+            config_features = config[config_key]
+            for channel_id, feature_list in config_features.items():
+                if isinstance(feature_list, list):
+                    features[int(channel_id)] = set(feature_list)
+    return features
+
 ALLOWED_GUILD_IDS = parse_id_list('ALLOWED_GUILD_IDS', 'ALLOWED_GUILD_IDS')
 MONITORED_CHANNEL_IDS = parse_id_list('MONITORED_CHANNEL_IDS', 'MONITORED_CHANNEL_IDS')
+CHANNEL_FEATURES = parse_channel_features('CHANNEL_FEATURES', 'channel_features')
 EMOJI_FOUND = config.get('EMOJI_METADATA_FOUND', '🔎')
 EMOJI_NOT_FOUND = config.get('EMOJI_NO_METADATA', '⛔')
 REACT_ON_NO_METADATA = config.get('REACT_ON_NO_METADATA', False)
@@ -72,7 +109,7 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
-rate_limiter = RateLimiter(max_requests=5, window_seconds=60)
+rate_limiter = RateLimiter(max_requests=5, window_seconds=30)
 
 # Track recently processed attachments to avoid double-processing PluralKit proxies
 # Use attachment URL instead of message ID since PluralKit creates new messages
@@ -307,6 +344,10 @@ async def on_message(message: discord.Message):
     """Auto-detect metadata in monitored channels and post public reply."""
     global processed_attachment_urls
 
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and message.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[message.channel.id]:
+        return
+
     # Ignore bot messages UNLESS it's a webhook (could be PluralKit!)
     if message.author.bot and not message.webhook_id:
         return
@@ -396,6 +437,10 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Post public metadata reply when user clicks magnifying glass."""
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and payload.channel_id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[payload.channel_id]:
+        return
+
     # Only respond to magnifying glass emoji
     if payload.emoji.name != EMOJI_FOUND:
         return
@@ -471,21 +516,24 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         interaction: Discord interaction
         image: Image attachment
     """
-    await interaction.response.defer(ephemeral=True)
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    await interaction.response.defer()
 
     # Rate limit check
     if rate_limiter.is_rate_limited(interaction.user.id):
         await interaction.followup.send(
-            "⏰ You're making requests too quickly. Please wait a minute.",
-            ephemeral=True
+            "⏰ You're making requests too quickly. Please wait a minute."
         )
         return
 
     # Validate file type
     if not image.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
         await interaction.followup.send(
-            "❌ Only PNG and JPEG images are supported.",
-            ephemeral=True
+            "❌ Only PNG and JPEG images are supported."
         )
         return
 
@@ -494,8 +542,7 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         size_mb = image.size / (1024 * 1024)
         limit_mb = SCAN_LIMIT_BYTES / (1024 * 1024)
         await interaction.followup.send(
-            f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB.",
-            ephemeral=True
+            f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB."
         )
         return
 
@@ -517,28 +564,144 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
 
             await interaction.followup.send(
                 embed=embed,
-                view=view,
-                ephemeral=True
+                view=view
             )
             logger.info("✅ /metadata command success for %s", interaction.user.name)
         else:
             await interaction.followup.send(
-                "❌ No metadata found in this image.",
-                ephemeral=True
+                "❌ No metadata found in this image."
             )
     except Exception as e:
         logger.error("Error in metadata_command: %s", e)
         await interaction.followup.send(
-            f"❌ Error parsing metadata: {str(e)}",
-            ephemeral=True
+            f"❌ Error parsing metadata: {str(e)}"
         )
+
+
+@bot.tree.command(name="ask", description="Ask a question to the bot.")
+async def ask_command(interaction: discord.Interaction, question: str):
+    """Slash command to ask a question to the bot."""
+    # Check if ask feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "ask" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    # Rate limit check
+    if rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+        return
+
+    # Check prompt length
+    if len(question) > 2000:
+        await interaction.response.send_message("❌ Your question is too long! Please keep it under 2000 characters.")
+        return
+
+    await interaction.response.defer()
+    response = await ask_gemini(interaction.user, question)
+    await interaction.followup.send(response)
+
+
+@bot.tree.command(name="describe", description="Describe an image using AI")
+@app_commands.choices(style=[
+    app_commands.Choice(name="Danbooru Tags", value="danbooru"),
+    app_commands.Choice(name="Natural Language", value="natural"),
+])
+async def describe_command(interaction: discord.Interaction, image: discord.Attachment, style: app_commands.Choice[str]):
+    """Slash command to describe an image using Gemini vision.
+
+    Args:
+        interaction: Discord interaction
+        image: Image attachment to describe
+        style: Description style (danbooru tags or natural language)
+    """
+    # Check if ask feature is enabled for this channel (describe uses same feature flag)
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "ask" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    # Rate limit check
+    if rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+        return
+
+    # Validate file type
+    if not image.content_type or not image.content_type.startswith("image/"):
+        await interaction.response.send_message("❌ Please provide a valid image file.")
+        return
+
+    # Validate file size (10MB limit)
+    if image.size > SCAN_LIMIT_BYTES:
+        size_mb = image.size / (1024 * 1024)
+        limit_mb = SCAN_LIMIT_BYTES / (1024 * 1024)
+        await interaction.response.send_message(f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB.")
+        return
+
+    await interaction.response.defer()
+
+    try:
+        image_data = await image.read()
+
+        # Create image part for Gemini
+        image_part = types.Part.from_bytes(
+            data=image_data,
+            mime_type=image.content_type
+        )
+
+        if style.value == "danbooru":
+            prompt_text = "Describe this image using Danbooru-style tags in comma-separated format, like a prompt. Output ONLY the tags separated by commas, no bullet points or explanations. Focus on descriptive tags about the character, clothing, pose, background, and art style. Exclude metadata tags like 'masterpiece' or 'high quality'. Example format: '1girl, long hair, blue eyes, school uniform, standing, outdoor, cherry blossoms, anime style'"
+        else:
+            prompt_text = "Describe this image in natural, descriptive language."
+
+        # Use the new SDK's generate_content method
+        response = await gemini_client.aio.models.generate_content(
+            model='gemini-2.0-flash-exp',
+            contents=[prompt_text, image_part]
+        )
+
+        await interaction.followup.send(f"🎨 **Image Description ({style.name}):**\n\n{response.text}")
+        logger.info("✅ /describe command success for %s", interaction.user.name)
+
+    except Exception as e:
+        logger.error("Error in describe_command: %s", e)
+        await interaction.followup.send(f"❌ Error generating description: {str(e)}")
+
+
+conversation_sessions = {}
+
+async def ask_gemini(user: discord.User, question: str) -> str:
+    """Asks a question to the Gemini API using the new SDK."""
+    if not gemini_client:
+        return "❌ Gemini API key is not configured."
+
+    try:
+        # Get or create chat session for the user
+        if user.id not in conversation_sessions:
+            # Create new chat session with system instruction
+            conversation_sessions[user.id] = gemini_client.aio.chats.create(
+                model='gemini-2.0-flash-exp',
+                config=types.GenerateContentConfig(
+                    system_instruction="You are a helpful assistant. Your goal is to provide accurate and concise answers."
+                )
+            )
+
+        chat = conversation_sessions[user.id]
+
+        # Send message and get response
+        response = await chat.send_message(question)
+
+        return response.text
+
+    except Exception as e:
+        logger.error("Error calling Gemini API: %s", e)
+        return f"❌ Error generating response: {e}"
+
+
 
 
 # =============================================================================
 # CONTEXT MENU (Right-click)
 # =============================================================================
 
-@bot.tree.context_menu(name="View Prompt")
 async def view_prompt_context(interaction: discord.Interaction, message: discord.Message):
     """Context menu to view prompts from a message.
 
@@ -546,6 +709,11 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
         interaction: Discord interaction
         message: Target message
     """
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
     await interaction.response.defer(ephemeral=True)
 
     # Rate limit check
@@ -768,6 +936,8 @@ class PublicMetadataView(discord.ui.View):
         )
 
 
+
+
 class FullMetadataView(discord.ui.View):
     """View with button to show full metadata with JSON pretty-printing."""
 
@@ -779,7 +949,7 @@ class FullMetadataView(discord.ui.View):
     async def full_params(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show full metadata as text file with JSON pretty-printing."""
         button.disabled = True
-        await interaction.response.edit_message(view=self)
+        await interaction.edit_original_response(view=self)
 
         # Create full text
         full_text = create_full_metadata_text(self.metadata)
@@ -815,6 +985,13 @@ class FullMetadataView(discord.ui.View):
 # =============================================================================
 # BOT LIFECYCLE
 # =============================================================================
+
+@bot.event
+async def on_close():
+    """Cleanup handler for graceful shutdown."""
+    logger.info("👋 Bot shutting down gracefully...")
+    # Give aiohttp time to cleanup sessions
+    await asyncio.sleep(0.1)
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
