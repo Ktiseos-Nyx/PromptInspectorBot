@@ -629,8 +629,8 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
         image: Image attachment to describe
         style: Description style (danbooru tags or natural language)
     """
-    # Check if ask feature is enabled for this channel (describe uses same feature flag)
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "ask" not in CHANNEL_FEATURES[interaction.channel.id]:
+    # Check if describe feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "describe" not in CHANNEL_FEATURES[interaction.channel.id]:
         await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
         return
 
