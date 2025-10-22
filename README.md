@@ -14,22 +14,26 @@ This Discord bot automatically detects and displays AI image generation metadata
 *   **Manual Metadata Entry:** For images like JPEGs or screenshots, you can manually add the prompt and other details.
 *   **Lightweight and Server-Friendly:** The bot runs the metadata parser in a separate process, keeping its memory usage low and making it suitable for free-tier hosting services.
 
-### Experimental Features
+### AI Features (Powered by Gemini)
 
-*   **✨ Describe Feature:** Uses the Gemini API to generate descriptions for images without metadata. You can choose between Danbooru-style tags or a natural language description.
-*   **🗣️ Ask/Discuss Feature:** A conversational AI feature that allows you to have a guided conversation with the Gemini API.
-*   **🎨 Dream/Imagine/Generate Feature:** An image generation feature that uses different style prompts to guide the Gemini API in creating images.
+*   **✨ Describe Feature (`/describe`):** Generate AI descriptions for any image. Choose between Danbooru-style tags or natural language descriptions.
+*   **🗣️ Conversational AI (`/ask`):** Have contextual conversations with Gemini. The bot remembers your conversation history per user, making it perfect for follow-up questions and multi-turn discussions.
 
 ## How to use
 
+### Metadata Inspection
+
 1.  **Post an image** in a monitored channel.
-2.  **React with 🔎:** If the bot finds metadata, it will add a 🔎 reaction. Click it to see the metadata.
+2.  **React with 🔎:** If the bot finds metadata, it will add a 🔎 reaction. Click it to see the metadata publicly.
 3.  **Use Slash Commands:**
-    *   `/metadata <image>`: Get a private metadata report for an image.
-    *   `/ask <question>`: Ask a question to the conversational AI.
-    *   `/dream <prompt> <style>`: Generate an image with a specific style.
+    *   `/metadata <image>`: Parse and display metadata from an uploaded image (public).
 4.  **Use the Context Menu:** Right-click on a message with an image and select "View Prompt".
-5.  **Describe an Image:** After getting a metadata report, click the "Describe" button to generate a description using the Gemini API.
+
+### AI Features (Requires Gemini API Key)
+
+*   `/ask <question>`: Have a conversation with AI. The bot remembers context within your conversation!
+*   `/describe <image> <style>`: Generate AI descriptions for images. Choose "Danbooru Tags" or "Natural Language" style.
+    *   Also available as a "Describe" button on metadata views for convenience.
 
 ## Setup
 
@@ -100,7 +104,21 @@ You can also customize the bot's behavior by copying `config.example.toml` to `c
 ### API Keys
 
 *   **Civitai API Key:** While optional, a Civitai API key is recommended for fetching detailed metadata about models and LoRAs. You can get a free API key from your [Civitai User Account Settings](https://civitai.com/user/account).
-*   **Gemini API Key:** To use the experimental "Describe", "Ask", and "Dream" features, you'll need a Gemini API key. You can get one for free from the [Google AI Studio](https://aistudio.google.com/app/apikey).
+*   **Gemini API Key:** To use the AI features (`/describe` and `/ask`), you'll need a Gemini API key. You can get one for free from the [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+### Future: Alternative LLM Support
+
+Currently, the bot uses Google's Gemini API for AI features. However, the architecture is designed to be extensible for future integration with other LLM providers:
+
+*   **Local LLM Support:** We plan to add support for locally-hosted models via Ollama, LM Studio, or similar frameworks
+*   **Multi-Provider Support:** Future versions could include a "flip switch" configuration to easily swap between providers (OpenAI, Anthropic Claude, Mistral, etc.)
+*   **Cost Control:** Local models would eliminate API costs entirely while maintaining privacy
+
+**For developers:** If you want to implement alternative LLM support now, the main functions to modify are:
+- `ask_gemini()` (bot_enhanced.py:602-627) - Handles conversational AI
+- `describe_command()` (bot_enhanced.py:600-662) - Handles image descriptions
+
+These functions could be abstracted into a provider-agnostic interface with adapters for different LLM backends. Pull requests welcome!
 
 ## Permissions
 
