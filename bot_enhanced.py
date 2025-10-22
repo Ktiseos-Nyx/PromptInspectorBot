@@ -118,6 +118,10 @@ rate_limiter = RateLimiter(max_requests=5, window_seconds=30)
 processed_attachment_urls = set()
 MAX_TRACKED_ATTACHMENTS = 1000
 
+# Cache metadata for multi-image messages (message_id -> list of {attachment, metadata})
+message_metadata_cache = {}
+MAX_CACHED_MESSAGES = 100
+
 
 def reformat_json(string: str, indent: int = 2) -> Optional[str]:
     """Reformat JSON string with proper indentation.
@@ -414,37 +418,66 @@ async def on_message(message: discord.Message):
 
     logger.info("Scanning message from %s with %s images", message.author, len(attachments))
 
-    # Check first attachment for metadata (usually enough)
     try:
-        attachment = attachments[0]
-        image_data = await attachment.read()
-        metadata = await parse_image_metadata(image_data, attachment.filename)
+        # Scan ALL images for metadata
+        images_with_metadata = []
+        for attachment in attachments:
+            image_data = await attachment.read()
+            metadata = await parse_image_metadata(image_data, attachment.filename)
+            if metadata:
+                images_with_metadata.append({
+                    'attachment': attachment,
+                    'metadata': metadata
+                })
+                logger.info("✅ Found metadata in %s", attachment.filename)
 
-        if metadata:
-            # Add reaction to indicate metadata found
-            await message.add_reaction(EMOJI_FOUND)
-            logger.info("✅ Found metadata in %s", attachment.filename)
-        else:
-            # No metadata found - offer manual entry option
+        if not images_with_metadata:
+            # No metadata in any image
             if REACT_ON_NO_METADATA:
                 await message.add_reaction(EMOJI_NOT_FOUND)
-                logger.info("❌ No metadata in %s", attachment.filename)
+                logger.info("❌ No metadata in any images")
 
-            # Post helpful message with manual entry button
-            view = ManualEntryPromptView(message, attachment)
+            # Offer manual entry for first image
+            view = ManualEntryPromptView(message, attachments[0])
             try:
                 await message.reply(
-                    "ℹ️ No metadata found in this image. Would you like to add details manually?",
+                    "ℹ️ No metadata found in these images. Would you like to add details manually?",
                     view=view,
                     mention_author=False
                 )
             except discord.NotFound:
-                # Message was deleted (likely by PluralKit) - send to channel instead
                 logger.debug("Original message deleted, posting to channel instead")
                 await message.channel.send(
-                    "ℹ️ No metadata found in that image. Would you like to add details manually?",
+                    "ℹ️ No metadata found in those images. Would you like to add details manually?",
                     view=view
                 )
+            return
+
+        # Found metadata! Store in cache for later retrieval
+        global message_metadata_cache
+        message_metadata_cache[message.id] = images_with_metadata
+
+        # Limit cache size
+        if len(message_metadata_cache) > MAX_CACHED_MESSAGES:
+            # Remove oldest entries (first 20)
+            oldest_keys = list(message_metadata_cache.keys())[:20]
+            for key in oldest_keys:
+                del message_metadata_cache[key]
+
+        # Decide reaction strategy based on count
+        num_images = len(images_with_metadata)
+
+        if num_images <= 5:
+            # 1-5 images: Add numbered reactions
+            number_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+            for i in range(num_images):
+                await message.add_reaction(number_emojis[i])
+            logger.info("✅ Added %d numbered reactions for individual inspection", num_images)
+        else:
+            # 6+ images: Add single reaction for batch download
+            await message.add_reaction('📦')
+            logger.info("✅ Added batch reaction for %d images", num_images)
+
     except discord.HTTPException as e:
         if e.code == 50035:  # Invalid Form Body - message deleted
             logger.debug("Message deleted by PluralKit proxy, skipping reply")
@@ -456,13 +489,9 @@ async def on_message(message: discord.Message):
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    """Post public metadata reply when user clicks magnifying glass."""
+    """Handle emoji reactions for metadata display (numbered or batch)."""
     # Check if metadata feature is enabled for this channel
     if CHANNEL_FEATURES and payload.channel_id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[payload.channel_id]:
-        return
-
-    # Only respond to magnifying glass emoji
-    if payload.emoji.name != EMOJI_FOUND:
         return
 
     # Only in monitored channels (empty set = monitor all channels)
@@ -478,47 +507,82 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         logger.warning("Rate limit exceeded for user %s", payload.user_id)
         return
 
+    # Check which emoji was clicked
+    emoji_name = payload.emoji.name
+    number_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+
+    # Only respond to our special emojis
+    if emoji_name not in number_emojis and emoji_name != '📦':
+        return
+
     try:
         # Fetch the message
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
 
-        # Get PNG/JPEG attachments
-        attachments = [
-            a for a in message.attachments
-            if a.filename.lower().endswith(('.png', '.jpg', '.jpeg')) and a.size < SCAN_LIMIT_BYTES
-        ]
-
-        if not attachments:
+        # Check if we have cached metadata for this message
+        if payload.message_id not in message_metadata_cache:
+            logger.warning("No cached metadata for message %s", payload.message_id)
             return
 
-        # Parse metadata from first attachment
-        attachment = attachments[0]
-        image_data = await attachment.read()
-        metadata = await parse_image_metadata(image_data, attachment.filename)
+        images_with_metadata = message_metadata_cache[payload.message_id]
+        real_author = await get_real_author(message)
 
-        if metadata:
-            # Get the real author (handles PluralKit proxies!)
-            real_author = await get_real_author(message)
+        if emoji_name == '📦':
+            # Batch download - create JSON with all metadata
+            batch_data = {
+                "batch_size": len(images_with_metadata),
+                "images": []
+            }
 
-            # Format public message with collapsible spoilers
+            for item in images_with_metadata:
+                batch_data["images"].append({
+                    "filename": item['attachment'].filename,
+                    "url": item['attachment'].url,
+                    "metadata": item['metadata']
+                })
+
+            # Create JSON file
+            json_str = json.dumps(batch_data, indent=2)
+            file_obj = discord.File(
+                io.StringIO(json_str),
+                filename=f"batch_metadata_{len(images_with_metadata)}_images.json"
+            )
+
+            # Send to user
+            await message.reply(
+                f"📦 **Batch Metadata** ({len(images_with_metadata)} images with metadata)\n"
+                f"Downloaded by {payload.member.mention}",
+                file=file_obj,
+                mention_author=False
+            )
+            logger.info("✅ Sent batch metadata for %d images (clicked by %s)",
+                       len(images_with_metadata), payload.member.name)
+
+        elif emoji_name in number_emojis:
+            # Individual image - find which number
+            image_index = number_emojis.index(emoji_name)
+
+            if image_index >= len(images_with_metadata):
+                logger.warning("Image index %d out of range for message %s", image_index, payload.message_id)
+                return
+
+            # Get the specific image's metadata
+            item = images_with_metadata[image_index]
+            metadata = item['metadata']
+
+            # Format public message
             public_message = format_public_metadata_message(metadata, real_author)
+            public_message = f"**Image {image_index + 1}/{len(images_with_metadata)}**\n\n{public_message}"
 
-            # Create view with Midjourney-style buttons
+            # Create view with buttons
             view = PublicMetadataView(metadata, real_author)
 
-            # Reply to the original message PUBLICLY
+            # Reply to the original message
             await message.reply(public_message, view=view, mention_author=False)
 
-            logger.info("✅ Posted public metadata for %s (clicked by %s)", attachments[0].filename, payload.member.name)
-        else:
-            # Send ephemeral message if no metadata found
-            user = await bot.fetch_user(payload.user_id)
-            try:
-                dm_channel = await user.create_dm()
-                await dm_channel.send("Sorry, couldn't find any metadata in that image!")
-            except discord.Forbidden:
-                logger.warning("Couldn't notify user %s (DMs disabled)", payload.user_id)
+            logger.info("✅ Posted metadata for image %d/%d (clicked by %s)",
+                       image_index + 1, len(images_with_metadata), payload.member.name)
 
     except Exception as e:
         logger.error("Error in on_raw_reaction_add: %s", e)
