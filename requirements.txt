@@ -25,6 +25,8 @@ beautifulsoup4==4.12.3
 pyexiv2>=2.8.0
 defusedxml>=0.7.1
 PyYAML>=6.0
+rich>=13.0.0
+pydantic>=2.0.0
 
 # For Gemini API
 google-genai>=0.3.1
