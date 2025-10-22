@@ -2,14 +2,14 @@
 discord.py>=2.3.0
 
 # Image Processing
-Pillow>=10.3.0
+Pillow==10.3.0
 
 # Configuration
 toml==0.10.2
 python-dotenv>=1.0.0
 
 # HTTP Requests
-requests==2.31.0
+requests>=2.32.1
 aiohttp>=3.8.0  # For PluralKit API async requests
 
 # Dependencies from dataset-tools
@@ -20,7 +20,7 @@ pandas==2.2.2
 numpy==1.26.4
 huggingface-hub==0.23.0
 safetensors==0.4.3
-protobuf==4.25.3
+protobuf>=5.26.1
 beautifulsoup4==4.12.3
 pyexiv2>=2.8.0
 defusedxml>=0.7.1
@@ -28,4 +28,3 @@ PyYAML>=6.0
 
 # For Gemini API
 google-genai>=0.3.1
-Pillow>=10.3.0
