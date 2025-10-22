@@ -490,12 +490,16 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle emoji reactions for metadata display (numbered or batch)."""
+    # For threads/forums, check parent channel ID
+    channel = bot.get_channel(payload.channel_id)
+    channel_id_to_check = channel.parent_id if hasattr(channel, 'parent_id') and channel.parent_id else payload.channel_id
+
     # Check if metadata feature is enabled for this channel
-    if CHANNEL_FEATURES and payload.channel_id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[payload.channel_id]:
+    if CHANNEL_FEATURES and channel_id_to_check in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[channel_id_to_check]:
         return
 
     # Only in monitored channels (empty set = monitor all channels)
-    if MONITORED_CHANNEL_IDS and payload.channel_id not in MONITORED_CHANNEL_IDS:
+    if MONITORED_CHANNEL_IDS and channel_id_to_check not in MONITORED_CHANNEL_IDS:
         return
 
     # Ignore bot's own reactions
