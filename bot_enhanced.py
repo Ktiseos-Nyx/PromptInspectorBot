@@ -108,6 +108,7 @@ logger = logging.getLogger('PromptInspector')
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.guilds = True  # Needed for thread events
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 rate_limiter = RateLimiter(max_requests=5, window_seconds=30)
@@ -360,7 +361,9 @@ async def on_message(message: discord.Message):
     global processed_attachment_urls
 
     # Check if metadata feature is enabled for this channel
-    if CHANNEL_FEATURES and message.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[message.channel.id]:
+    # For threads/forums, check the parent channel ID
+    channel_id_for_features = message.channel.parent_id if hasattr(message.channel, 'parent_id') and message.channel.parent_id else message.channel.id
+    if CHANNEL_FEATURES and channel_id_for_features in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[channel_id_for_features]:
         return
 
     # Ignore bot messages UNLESS it's a webhook (could be PluralKit!)
@@ -368,7 +371,9 @@ async def on_message(message: discord.Message):
         return
 
     # Only process in monitored channels (empty set = monitor all channels)
-    if MONITORED_CHANNEL_IDS and message.channel.id not in MONITORED_CHANNEL_IDS:
+    # For threads/forums, check the parent channel ID
+    channel_to_check = message.channel.parent_id if hasattr(message.channel, 'parent_id') and message.channel.parent_id else message.channel.id
+    if MONITORED_CHANNEL_IDS and channel_to_check not in MONITORED_CHANNEL_IDS:
         return
 
     # PluralKit handling: Wait a moment to see if message gets proxied
