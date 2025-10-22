@@ -33,7 +33,7 @@ class RateLimiter:
     Tracks requests per user and enforces limits.
     """
 
-    def __init__(self, max_requests: int = 5, window_seconds: int = 60):
+    def __init__(self, max_requests: int = 5, window_seconds: int = 30):
         """Initialize rate limiter.
 
         Args:

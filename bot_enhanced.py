@@ -28,12 +28,21 @@ import aiohttp
 
 # Local utilities
 from utils.security import RateLimiter, sanitize_text
+import google.genai as genai
+
+# Local utilities
+from utils.security import RateLimiter, sanitize_text
 from utils.discord_formatter import format_metadata_embed, create_full_metadata_text
 
 
 # Load environment variables
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+
+# Configure Gemini API
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # Load config from toml file
 config = toml.load('config.toml') if Path('config.toml').exists() else {}
@@ -52,8 +61,28 @@ def parse_id_list(env_var_name: str, config_key: str) -> set:
     # Fall back to config.toml
     return set(config.get(config_key, []))
 
+def parse_channel_features(env_var_name: str, config_key: str) -> Dict[int, set]:
+    """Parse channel features from env var or config file."""
+    features = {}
+    env_value = os.getenv(env_var_name)
+    if env_value is not None:
+        # Parse env var: "channel_id:feature1,feature2;channel_id:feature1..."
+        for item in env_value.split(';'):
+            if ':' in item:
+                channel_id_str, features_str = item.split(':', 1)
+                if channel_id_str.isdigit():
+                    channel_id = int(channel_id_str)
+                    features[channel_id] = {f.strip() for f in features_str.split(',')}
+    else:
+        # Fall back to config.toml
+        config_features = config.get(config_key, {})
+        for channel_id, feature_list in config_features.items():
+            features[int(channel_id)] = set(feature_list)
+    return features
+
 ALLOWED_GUILD_IDS = parse_id_list('ALLOWED_GUILD_IDS', 'ALLOWED_GUILD_IDS')
 MONITORED_CHANNEL_IDS = parse_id_list('MONITORED_CHANNEL_IDS', 'MONITORED_CHANNEL_IDS')
+CHANNEL_FEATURES = parse_channel_features('CHANNEL_FEATURES', 'channel_features')
 EMOJI_FOUND = config.get('EMOJI_METADATA_FOUND', '🔎')
 EMOJI_NOT_FOUND = config.get('EMOJI_NO_METADATA', '⛔')
 REACT_ON_NO_METADATA = config.get('REACT_ON_NO_METADATA', False)
@@ -307,6 +336,10 @@ async def on_message(message: discord.Message):
     """Auto-detect metadata in monitored channels and post public reply."""
     global processed_attachment_urls
 
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and message.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[message.channel.id]:
+        return
+
     # Ignore bot messages UNLESS it's a webhook (could be PluralKit!)
     if message.author.bot and not message.webhook_id:
         return
@@ -396,6 +429,10 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Post public metadata reply when user clicks magnifying glass."""
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and payload.channel_id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[payload.channel.id]:
+        return
+
     # Only respond to magnifying glass emoji
     if payload.emoji.name != EMOJI_FOUND:
         return
@@ -471,6 +508,11 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         interaction: Discord interaction
         image: Image attachment
     """
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
     await interaction.response.defer(ephemeral=True)
 
     # Rate limit check
@@ -534,11 +576,127 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         )
 
 
+@bot.tree.command(name="ask", description="Ask a question to the bot.")
+async def ask_command(interaction: discord.Interaction, question: str):
+    """Slash command to ask a question to the bot."""
+    # Check if ask feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "ask" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    # Check prompt length
+    if len(question) > 2000:
+        await interaction.response.send_message("❌ Your question is too long! Please keep it under 2000 characters.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    response = await ask_gemini(interaction.user, question)
+    await interaction.followup.send(response, ephemeral=True)
+
+
+conversation_history = {}
+
+async def ask_gemini(user: discord.User, question: str) -> str:
+    """Asks a question to the Gemini API."""
+    if not GEMINI_API_KEY:
+        return "❌ Gemini API key is not configured."
+
+    try:
+        model = genai.GenerativeModel('gemini-pro')
+
+        # Get conversation history for the user
+        if user.id not in conversation_history:
+            conversation_history[user.id] = []
+
+        # Add the new question to the history
+        conversation_history[user.id].append({"role": "user", "parts": [question]})
+
+        # Prepend a guiding prompt
+        guiding_prompt = "You are a helpful assistant. Your goal is to provide accurate and concise answers."
+        prompt_parts = [guiding_prompt] + conversation_history[user.id]
+
+        response = await model.generate_content_async(prompt_parts)
+
+        # Add the response to the history
+        conversation_history[user.id].append(response.candidates[0].content)
+
+        # Limit history size to avoid excessive token usage
+        if len(conversation_history[user.id]) > 10:
+            conversation_history[user.id] = conversation_history[user.id][-10:]
+
+        return response.text
+
+    except Exception as e:
+        logger.error("Error calling Gemini API: %s", e)
+        return f"❌ Error generating response: {e}"
+
+@bot.tree.command(name="dream", description="Generate an image with a specific style.")
+@app_commands.choices(style=[
+    app_commands.Choice(name="Photorealistic", value="photorealistic"),
+    app_commands.Choice(name="Anime", value="anime"),
+    app_commands.Choice(name="Vaporwave", value="vaporwave"),
+    app_commands.Choice(name="Steampunk", value="steampunk"),
+])
+async def dream_command(interaction: discord.Interaction, prompt: str, style: app_commands.Choice[str]):
+    """Slash command to generate an image with a specific style."""
+    # Check if dream feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "dream" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    # Check prompt length
+    if len(prompt) > 2000:
+        await interaction.response.send_message("❌ Your prompt is too long! Please keep it under 2000 characters.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    image_data = await dream_with_gemini(prompt, style.value)
+    if isinstance(image_data, str):
+        await interaction.followup.send(image_data, ephemeral=True)
+    else:
+        file = discord.File(io.BytesIO(image_data), filename="dream.png")
+        await interaction.followup.send(file=file, ephemeral=True)
+
+
+style_prompts = {
+    "photorealistic": ", photorealistic, 8k, hyper-detailed, cinematic lighting",
+    "anime": ", anime style, key visual, vibrant, studio trigger",
+    "vaporwave": ", vaporwave aesthetic, neon, retro, 80s, synthwave",
+    "steampunk": ", steampunk, gears, cogs, brass, victorian",
+}
+
+async def dream_with_gemini(prompt: str, style: str) -> Any:
+    """Generates an image using the Gemini API."""
+    if not GEMINI_API_KEY:
+        return "❌ Gemini API key is not configured."
+
+    try:
+        # NOTE: As of October 2025, the image generation model is not yet publicly available.
+        # This is a placeholder for the actual model name.
+        model = genai.GenerativeModel('gemini-pro-vision') # Placeholder
+
+        # Modify the prompt with the selected style
+        style_addition = style_prompts.get(style, "")
+        full_prompt = f"{prompt}{style_addition}"
+
+        # This is a placeholder for the actual image generation call
+        # The actual API call will likely be different.
+        # For now, we will just return a string.
+        # response = await model.generate_content_async(full_prompt)
+        # return response.image_data
+
+        return f"You dreamed of: {full_prompt}"
+
+    except Exception as e:
+        logger.error("Error calling Gemini API: %s", e)
+        return f"❌ Error generating image: {e}"
+
+
+
 # =============================================================================
 # CONTEXT MENU (Right-click)
 # =============================================================================
 
-@bot.tree.context_menu(name="View Prompt")
 async def view_prompt_context(interaction: discord.Interaction, message: discord.Message):
     """Context menu to view prompts from a message.
 
@@ -546,6 +704,11 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
         interaction: Discord interaction
         message: Target message
     """
+    # Check if metadata feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
     await interaction.response.defer(ephemeral=True)
 
     # Rate limit check
@@ -767,6 +930,69 @@ class PublicMetadataView(discord.ui.View):
             ephemeral=True
         )
 
+    @discord.ui.button(label="Describe", style=discord.ButtonStyle.secondary)
+    async def describe(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show modal for image description options."""
+        modal = DescribeModal(self.original_message)
+        await interaction.response.send_modal(modal)
+
+
+class DescribeModal(discord.ui.Modal, title="Describe Image"):
+    """Modal for choosing description style."""
+
+    def __init__(self, original_message: discord.Message):
+        super().__init__()
+        self.original_message = original_message
+
+    style = discord.ui.Select(
+        placeholder="Choose a description style...",
+        options=[
+            discord.SelectOption(label="Danbooru Tags", value="danbooru"),
+            discord.SelectOption(label="Natural Language", value="natural"),
+        ]
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle modal submission."""
+        await interaction.response.send_message("🎨 Generating description...", ephemeral=True)
+        # Placeholder for Gemini API call
+        description = await describe_image_with_gemini(self.original_message, self.style.values[0])
+        await interaction.followup.send(description, ephemeral=True)
+
+
+async def describe_image_with_gemini(message: discord.Message, style: str) -> str:
+    """Describes an image using the Gemini API."""
+    if not GEMINI_API_KEY:
+        return "❌ Gemini API key is not configured."
+
+    if not message.attachments:
+        return "❌ No image found in the message."
+
+    attachment = message.attachments[0]
+    if not attachment.content_type.startswith("image/"):
+        return "❌ Attachment is not an image."
+
+    try:
+        image_data = await attachment.read()
+        image_part = {
+            "mime_type": attachment.content_type,
+            "data": image_data
+        }
+
+        if style == "danbooru":
+            prompt = "Describe this image using Danbooru-style tags. Focus on descriptive tags about the character, clothing, and scene. Exclude metadata tags like 'masterpiece' or 'high quality'."
+        else:
+            prompt = "Describe this image in a natural, descriptive language."
+
+        model = genai.GenerativeModel('gemini-pro-vision')
+        response = await model.generate_content_async([prompt, image_part])
+
+        return response.text
+
+    except Exception as e:
+        logger.error("Error calling Gemini API: %s", e)
+        return f"❌ Error generating description: {e}"
+
 
 class FullMetadataView(discord.ui.View):
     """View with button to show full metadata with JSON pretty-printing."""
@@ -779,7 +1005,7 @@ class FullMetadataView(discord.ui.View):
     async def full_params(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show full metadata as text file with JSON pretty-printing."""
         button.disabled = True
-        await interaction.response.edit_message(view=self)
+        await interaction.edit_original_response(view=self)
 
         # Create full text
         full_text = create_full_metadata_text(self.metadata)

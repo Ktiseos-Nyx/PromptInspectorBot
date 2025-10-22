@@ -1,0 +1,7 @@
+[build]
+builder = "NIXPACKS"
+
+[build.nixpacksCmds]
+cmds = [
+    "git submodule update --init --recursive"
+]
