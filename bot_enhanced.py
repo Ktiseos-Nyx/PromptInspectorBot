@@ -97,6 +97,17 @@ EMOJI_NOT_FOUND = config.get('EMOJI_NO_METADATA', '⛔')
 REACT_ON_NO_METADATA = config.get('REACT_ON_NO_METADATA', False)
 SCAN_LIMIT_BYTES = config.get('SCAN_LIMIT_BYTES', 10 * 1024 * 1024)  # 10MB
 
+# Gemini AI configuration
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL') or config.get('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash-latest')
+GEMINI_FALLBACK_MODELS = config.get('GEMINI_FALLBACK_MODELS', [
+    'gemini-2.5-flash-latest',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-flash-latest'
+])
+GEMINI_MAX_RETRIES = int(os.getenv('GEMINI_MAX_RETRIES', config.get('GEMINI_MAX_RETRIES', 3)))
+GEMINI_RETRY_DELAY = float(os.getenv('GEMINI_RETRY_DELAY', config.get('GEMINI_RETRY_DELAY', 1.0)))
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -777,14 +788,20 @@ RULES:
 You are the IT person everyone WANTS to get assigned to their ticket because
 you're funny AND you fix the problem."""
 
-        response = await gemini_client.aio.models.generate_content(
-            model='gemini-2.0-flash-exp',
-            contents=issue,
-            config=types.GenerateContentConfig(
-                system_instruction=tech_support_instruction,
-                temperature=0.8  # Slightly higher for personality
-            )
-        )
+        # Wrap API call with retry logic and fallbacks
+        def make_call_factory(model_name):
+            async def make_call():
+                return await gemini_client.aio.models.generate_content(
+                    model=model_name,
+                    contents=issue,
+                    config=types.GenerateContentConfig(
+                        system_instruction=tech_support_instruction,
+                        temperature=0.8  # Slightly higher for personality
+                    )
+                )
+            return make_call
+
+        response = await call_gemini_with_retry(make_call_factory)
 
         message_content = f"🛠️ **Tech Support Ticket:**\n\n{response.text}"
 
@@ -875,14 +892,20 @@ RULES:
 - If showing multiple languages, label each code block
 - Include error handling when relevant"""
 
-        response = await gemini_client.aio.models.generate_content(
-            model='gemini-2.0-flash-exp',
-            contents=question,
-            config=types.GenerateContentConfig(
-                system_instruction=coder_instruction,
-                temperature=0.7  # Balanced for code accuracy and creativity
-            )
-        )
+        # Wrap API call with retry logic and fallbacks
+        def make_call_factory(model_name):
+            async def make_call():
+                return await gemini_client.aio.models.generate_content(
+                    model=model_name,
+                    contents=question,
+                    config=types.GenerateContentConfig(
+                        system_instruction=coder_instruction,
+                        temperature=0.7  # Balanced for code accuracy and creativity
+                    )
+                )
+            return make_call
+
+        response = await call_gemini_with_retry(make_call_factory)
 
         message_content = f"💻 **Coding Help:**\n\n{response.text}"
 
@@ -952,11 +975,16 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
         else:
             prompt_text = "Describe this image in natural, descriptive language."
 
-        # Use the new SDK's generate_content method
-        response = await gemini_client.aio.models.generate_content(
-            model='gemini-2.0-flash-exp',
-            contents=[prompt_text, image_part]
-        )
+        # Use the new SDK's generate_content method with retry logic and fallbacks
+        def make_call_factory(model_name):
+            async def make_call():
+                return await gemini_client.aio.models.generate_content(
+                    model=model_name,
+                    contents=[prompt_text, image_part]
+                )
+            return make_call
+
+        response = await call_gemini_with_retry(make_call_factory)
 
         message_content = f"🎨 **Image Description ({style.name}):**\n\n{response.text}"
 
@@ -977,17 +1005,81 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
 
 conversation_sessions = {}
 
+async def call_gemini_with_retry(api_call_factory, max_retries: int = None, base_delay: float = None, fallback_models: list = None):
+    """Call Gemini API with exponential backoff retry for 503 errors and model fallbacks.
+
+    Args:
+        api_call_factory: Callable that takes a model name and returns an async callable for the API call
+        max_retries: Maximum number of retry attempts per model (defaults to config value)
+        base_delay: Base delay in seconds (doubles with each retry, defaults to config value)
+        fallback_models: List of model names to try as fallbacks (defaults to config value)
+
+    Returns:
+        API response
+
+    Raises:
+        Exception: If all retries and fallbacks fail
+    """
+    if max_retries is None:
+        max_retries = GEMINI_MAX_RETRIES
+    if base_delay is None:
+        base_delay = GEMINI_RETRY_DELAY
+    if fallback_models is None:
+        fallback_models = GEMINI_FALLBACK_MODELS
+
+    last_error = None
+
+    # Try each model in the fallback chain
+    for model_idx, model_name in enumerate(fallback_models):
+        if model_idx > 0:
+            logger.info(f"Trying fallback model: {model_name}")
+
+        # Try the current model with retries
+        for attempt in range(max_retries):
+            try:
+                api_call = api_call_factory(model_name)
+                return await api_call()
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+
+                # Check if it's a 503 error or rate limit
+                is_service_error = any(keyword in error_str for keyword in [
+                    '503', 'service unavailable', 'overloaded', 'rate limit', '429'
+                ])
+
+                if is_service_error:
+                    if attempt < max_retries - 1:
+                        # Retry with exponential backoff
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"Gemini error with {model_name} (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                        continue
+                    elif model_idx < len(fallback_models) - 1:
+                        # Try next fallback model
+                        logger.warning(f"Model {model_name} failed after {max_retries} attempts, trying fallback...")
+                        break
+                    else:
+                        # All models exhausted
+                        logger.error(f"All Gemini models failed after retries")
+                else:
+                    # Not a service error, don't retry
+                    raise
+
+    # All retries and fallbacks failed
+    raise last_error
+
 async def ask_gemini(user: discord.User, question: str) -> str:
-    """Asks a question to the Gemini API using the new SDK."""
+    """Asks a question to the Gemini API using the new SDK with retry and fallback support."""
     if not gemini_client:
         return "❌ Gemini API key is not configured."
 
     try:
         # Get or create chat session for the user
         if user.id not in conversation_sessions:
-            # Create new chat session with system instruction
+            # Create new chat session with system instruction (using primary model)
             conversation_sessions[user.id] = gemini_client.aio.chats.create(
-                model='gemini-2.0-flash-exp',
+                model=GEMINI_PRIMARY_MODEL,
                 config=types.GenerateContentConfig(
                     system_instruction="You are a helpful assistant. Your goal is to provide accurate and concise answers."
                 )
@@ -995,9 +1087,25 @@ async def ask_gemini(user: discord.User, question: str) -> str:
 
         chat = conversation_sessions[user.id]
 
-        # Send message and get response
-        response = await chat.send_message(question)
+        # Send message with retry logic
+        def make_call_factory(model_name):
+            async def make_call():
+                # For chat sessions, we need to recreate the session if switching models
+                nonlocal chat
+                if model_name != GEMINI_PRIMARY_MODEL:
+                    logger.info(f"Recreating chat session with fallback model: {model_name}")
+                    chat = gemini_client.aio.chats.create(
+                        model=model_name,
+                        config=types.GenerateContentConfig(
+                            system_instruction="You are a helpful assistant. Your goal is to provide accurate and concise answers."
+                        )
+                    )
+                    conversation_sessions[user.id] = chat
 
+                return await chat.send_message(question)
+            return make_call
+
+        response = await call_gemini_with_retry(make_call_factory)
         return response.text
 
     except Exception as e:
