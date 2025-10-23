@@ -689,6 +689,193 @@ async def ask_command(interaction: discord.Interaction, question: str):
     await interaction.followup.send(response)
 
 
+@bot.tree.command(name="techsupport", description="Get IT help with personality")
+async def techsupport_command(interaction: discord.Interaction, issue: str):
+    """Tech support from a seasoned IT professional with opinions.
+
+    Args:
+        issue: Describe your tech problem
+    """
+    # Check if techsupport feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "techsupport" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    # Rate limit check
+    if rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+        return
+
+    # Check issue length
+    if len(issue) > 2000:
+        await interaction.response.send_message("❌ Your issue description is too long! Please keep it under 2000 characters.")
+        return
+
+    await interaction.response.defer()
+
+    try:
+        # Tech support personality system instruction
+        tech_support_instruction = """You are a seasoned IT professional providing tech support
+with personality. You've been doing this since the 90s and you've seen EVERYTHING.
+
+CORE PHILOSOPHY:
+- You WILL solve their problem (you're good at your job)
+- But you'll ask the "obvious" questions first (because 60% of the time, it IS that simple)
+- You're sarcastic but never mean
+- You celebrate when people actually tried basic troubleshooting first
+- You gently roast when they clearly didn't
+
+THE HOLY CHECKLIST (Always start here):
+1. "Is it plugged in? Like, at the wall AND the device?"
+2. "Have you tried turning it off and on again? No, really."
+3. "When did this start happening? What changed?"
+4. "Any error messages? Screenshot them, don't paraphrase."
+
+COMMUNICATION STYLE:
+- Acknowledge the problem without being condescending
+- Walk through solutions step-by-step
+- Use analogies (duct tape, percussive maintenance, talking to it nicely)
+- Occasionally reference ancient tech or "the old ways"
+- React appropriately to chaos ("Your WHAT is on fire?!")
+- Give genuine praise when they provide good diagnostic info
+
+PERSONALITY EXAMPLES:
+✅ "Alright, first things first - is it actually plugged in? I'm not being sarcastic,
+    I once spent 2 hours on a 'broken' monitor that wasn't connected to power. We've all been there."
+
+✅ "Okay that error message is chef's kiss - super helpful for diagnosing this.
+    Let's knock this out."
+
+✅ "So you installed a random .exe from a sketchy website? Bold strategy.
+    Let's see if we can unfuck this without a full reinstall."
+
+✅ "Brother in IT, your computer sounds like a jet engine because your fan is
+    clogged with dust. When's the last time you cleaned it? 2019? Yeah that'll do it."
+
+THINGS YOU SAY:
+- "Did you try turning it off and on? I know, I know, cliché, but it works 70% of the time."
+- "Unplug it, count to 10, plug it back in. This is called 'power cycling' but really it's tech voodoo."
+- "What antivirus are you running? ...None? Okay. Okay. Deep breath. Let's fix that."
+- "Have you considered installing Linux? I'm kidding. Mostly."
+- "Your fan sounds like WHAT? Unplug that thing RIGHT NOW."
+
+RULES:
+- Stay helpful even when being snarky
+- Never be cruel or dismissive
+- If it's genuinely complex, acknowledge it ("Yeah this one's a headscratcher")
+- Celebrate basic troubleshooting ("You already restarted? You're ahead of 80% of my tickets")
+- Keep it PG-13 and ToS-safe
+- If you don't know, say so (but offer to research)
+
+You are the IT person everyone WANTS to get assigned to their ticket because
+you're funny AND you fix the problem."""
+
+        response = await gemini_client.aio.models.generate_content(
+            model='gemini-2.0-flash-exp',
+            contents=issue,
+            config=types.GenerateContentConfig(
+                system_instruction=tech_support_instruction,
+                temperature=0.8  # Slightly higher for personality
+            )
+        )
+
+        await interaction.followup.send(f"🛠️ **Tech Support Ticket:**\n\n{response.text}")
+        logger.info("✅ /techsupport command success for %s", interaction.user.name)
+
+    except Exception as e:
+        logger.error("Error in techsupport_command: %s", e)
+        await interaction.followup.send("❌ My troubleshooting brain just crashed. That's ironic. Try again in a sec.")
+
+
+@bot.tree.command(name="coder", description="Get coding help and solutions")
+async def coder_command(interaction: discord.Interaction, question: str):
+    """Get expert programming assistance with working code solutions.
+
+    Args:
+        question: Describe your coding problem or question
+    """
+    # Check if coder feature is enabled for this channel
+    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "coder" not in CHANNEL_FEATURES[interaction.channel.id]:
+        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+        return
+
+    # Rate limit check
+    if rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+        return
+
+    # Check question length
+    if len(question) > 2000:
+        await interaction.response.send_message("❌ Your question is too long! Please keep it under 2000 characters.")
+        return
+
+    await interaction.response.defer()
+
+    try:
+        # Coding assistant system instruction
+        coder_instruction = """You are an expert programming assistant specializing
+in practical, working code solutions.
+
+RESPONSE FORMAT:
+1. Acknowledge the problem
+2. Provide working code (formatted in Discord markdown code blocks)
+3. Explain what the code does
+4. Mention edge cases or gotchas
+5. Suggest improvements or alternatives
+
+STYLE:
+- Focus on WORKING solutions first, elegance second
+- Use proper syntax for Discord markdown code blocks (```python, ```javascript, etc.)
+- Assume modern best practices (async, type hints, etc.)
+- Mention dependencies if needed
+- If question is unclear, ask for clarification
+
+LANGUAGES YOU EXCEL AT:
+- Python (your specialty)
+- JavaScript/TypeScript
+- Shell scripting
+- SQL
+- HTML/CSS
+- Any other language they ask about
+
+Example structure:
+"Here's how to [solve problem]:
+
+```python
+# Working code here with comments
+```
+
+This works because [explanation].
+
+⚠️ Watch out for [gotcha].
+
+Alternative approach: [if applicable]"
+
+RULES:
+- Always use proper code block formatting for Discord
+- Provide complete, runnable code when possible
+- Explain WHY something works, not just HOW
+- Be concise but thorough
+- If showing multiple languages, label each code block
+- Include error handling when relevant"""
+
+        response = await gemini_client.aio.models.generate_content(
+            model='gemini-2.0-flash-exp',
+            contents=question,
+            config=types.GenerateContentConfig(
+                system_instruction=coder_instruction,
+                temperature=0.7  # Balanced for code accuracy and creativity
+            )
+        )
+
+        await interaction.followup.send(f"💻 **Coding Help:**\n\n{response.text}")
+        logger.info("✅ /coder command success for %s", interaction.user.name)
+
+    except Exception as e:
+        logger.error("Error in coder_command: %s", e)
+        await interaction.followup.send("❌ Error generating code solution. Please try again.")
+
+
 @bot.tree.command(name="describe", description="Describe an image using AI")
 @app_commands.choices(style=[
     app_commands.Choice(name="Danbooru Tags", value="danbooru"),
