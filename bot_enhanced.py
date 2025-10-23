@@ -686,7 +686,14 @@ async def ask_command(interaction: discord.Interaction, question: str):
 
     await interaction.response.defer()
     response = await ask_gemini(interaction.user, question)
-    await interaction.followup.send(response)
+
+    # If response is too long for Discord, send as text file
+    if len(response) > 2000:
+        file_content = io.BytesIO(response.encode('utf-8'))
+        file = discord.File(file_content, filename="response.txt")
+        await interaction.followup.send("Response was too long, sent as file:", file=file)
+    else:
+        await interaction.followup.send(response)
 
 
 @bot.tree.command(name="techsupport", description="Get IT help with personality")
@@ -779,7 +786,16 @@ you're funny AND you fix the problem."""
             )
         )
 
-        await interaction.followup.send(f"🛠️ **Tech Support Ticket:**\n\n{response.text}")
+        message_content = f"🛠️ **Tech Support Ticket:**\n\n{response.text}"
+
+        # If response is too long for Discord, send as text file
+        if len(message_content) > 2000:
+            file_content = io.BytesIO(message_content.encode('utf-8'))
+            file = discord.File(file_content, filename="techsupport_response.txt")
+            await interaction.followup.send("Tech support response was too long, sent as file:", file=file)
+        else:
+            await interaction.followup.send(message_content)
+
         logger.info("✅ /techsupport command success for %s", interaction.user.name)
 
     except Exception as e:
@@ -868,7 +884,16 @@ RULES:
             )
         )
 
-        await interaction.followup.send(f"💻 **Coding Help:**\n\n{response.text}")
+        message_content = f"💻 **Coding Help:**\n\n{response.text}"
+
+        # If response is too long for Discord, send as text file
+        if len(message_content) > 2000:
+            file_content = io.BytesIO(message_content.encode('utf-8'))
+            file = discord.File(file_content, filename="coder_response.txt")
+            await interaction.followup.send("Coding help response was too long, sent as file:", file=file)
+        else:
+            await interaction.followup.send(message_content)
+
         logger.info("✅ /coder command success for %s", interaction.user.name)
 
     except Exception as e:
@@ -933,7 +958,16 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
             contents=[prompt_text, image_part]
         )
 
-        await interaction.followup.send(f"🎨 **Image Description ({style.name}):**\n\n{response.text}")
+        message_content = f"🎨 **Image Description ({style.name}):**\n\n{response.text}"
+
+        # If response is too long for Discord, send as text file
+        if len(message_content) > 2000:
+            file_content = io.BytesIO(message_content.encode('utf-8'))
+            file = discord.File(file_content, filename="description.txt")
+            await interaction.followup.send("Image description was too long, sent as file:", file=file)
+        else:
+            await interaction.followup.send(message_content)
+
         logger.info("✅ /describe command success for %s", interaction.user.name)
 
     except Exception as e:
