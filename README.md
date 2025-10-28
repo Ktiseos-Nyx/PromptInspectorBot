@@ -2,6 +2,8 @@
 
 Inspect prompts 🔎 from images uploaded to Discord. This is a fork of the original [PromptInspectorBot](https://github.com/sALTaccount/PromptInspectorBot), enhanced with more powerful features and a streamlined setup.
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/OCA5uC?referralCode=EQxw4P&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 ## What it does
 
 This Discord bot automatically detects and displays AI image generation metadata from various sources. It can read metadata from PNG files and, with the new **Describe** feature, can even generate descriptions for JPEGs and other images that have had their metadata stripped by Discord.
