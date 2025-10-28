@@ -47,7 +47,10 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 # Initialize Gemini client (new SDK)
 gemini_client = None
 if GEMINI_API_KEY:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    gemini_client = genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(api_version='v1')
+    )
 
 
 
@@ -98,12 +101,12 @@ REACT_ON_NO_METADATA = config.get('REACT_ON_NO_METADATA', False)
 SCAN_LIMIT_BYTES = config.get('SCAN_LIMIT_BYTES', 10 * 1024 * 1024)  # 10MB
 
 # Gemini AI configuration
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL') or config.get('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash-latest')
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL') or config.get('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash')
 GEMINI_FALLBACK_MODELS = config.get('GEMINI_FALLBACK_MODELS', [
-    'gemini-2.5-flash-latest',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
-    'gemini-flash-latest'
+    'gemini-flash-latest',
+    'gemini-2.5-pro'
 ])
 GEMINI_MAX_RETRIES = int(os.getenv('GEMINI_MAX_RETRIES', config.get('GEMINI_MAX_RETRIES', 3)))
 GEMINI_RETRY_DELAY = float(os.getenv('GEMINI_RETRY_DELAY', config.get('GEMINI_RETRY_DELAY', 1.0)))
@@ -122,7 +125,10 @@ intents.members = True
 intents.guilds = True  # Needed for thread events
 
 bot = commands.Bot(command_prefix='!', intents=intents)
-rate_limiter = RateLimiter(max_requests=5, window_seconds=30)
+
+# Separate rate limiters for different features
+rate_limiter = RateLimiter(max_requests=5, window_seconds=30)        # Metadata (local parsing - keep lenient)
+gemini_rate_limiter = RateLimiter(max_requests=1, window_seconds=10) # Gemini API - STRICT (1 per 10s to prevent quota abuse)
 
 # Track recently processed attachments to avoid double-processing PluralKit proxies
 # Use attachment URL instead of message ID since PluralKit creates new messages
@@ -392,9 +398,10 @@ async def on_message(message: discord.Message):
         return
 
     # PluralKit handling: Wait a moment to see if message gets proxied
-    # If it's NOT a webhook, wait 2 seconds to let PluralKit delete original
+    # If it's NOT a webhook, wait briefly to let PluralKit delete original
+    # REDUCED from 2s to 0.5s to avoid Discord rate limits and Railway timeouts
     if not message.webhook_id:
-        await asyncio.sleep(2)
+        await asyncio.sleep(0.5)  # Reduced wait time
         # Check if message still exists (PluralKit deletes originals)
         try:
             await message.channel.fetch_message(message.id)
@@ -403,12 +410,16 @@ async def on_message(message: discord.Message):
             # Message was deleted (PluralKit proxied it) - skip
             logger.debug("Message deleted by PluralKit, skipping original")
             return
+        except discord.HTTPException as e:
+            # Handle Discord API errors gracefully
+            logger.warning(f"Discord API error checking message: {e}")
+            return
     # If it IS a webhook, process immediately (it's the proxied version)
 
-    # Only process messages with PNG/JPEG attachments
+    # Only process messages with PNG/JPEG/WebP attachments
     attachments = [
         a for a in message.attachments
-        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg')) and a.size < SCAN_LIMIT_BYTES
+        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and a.size < SCAN_LIMIT_BYTES
     ]
 
     if not attachments:
@@ -448,18 +459,33 @@ async def on_message(message: discord.Message):
                 await message.add_reaction(EMOJI_NOT_FOUND)
                 logger.info("❌ No metadata in any images")
 
+            # Check if images are JPG/WebP (Discord strips metadata from these)
+            first_image = attachments[0]
+            is_jpg_or_webp = first_image.filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
+
+            # Customize message based on file type
+            if is_jpg_or_webp:
+                no_metadata_msg = (
+                    "ℹ️ **No metadata found!**\n"
+                    "📸 Discord strips metadata from JPG/WebP images when uploaded.\n"
+                    "💡 *Tip: PNG files preserve metadata!*\n\n"
+                    "Would you like to add details manually?"
+                )
+            else:
+                no_metadata_msg = "ℹ️ No metadata found in these images. Would you like to add details manually?"
+
             # Offer manual entry for first image
-            view = ManualEntryPromptView(message, attachments[0])
+            view = ManualEntryPromptView(message, first_image)
             try:
                 await message.reply(
-                    "ℹ️ No metadata found in these images. Would you like to add details manually?",
+                    no_metadata_msg,
                     view=view,
                     mention_author=False
                 )
             except discord.NotFound:
                 logger.debug("Original message deleted, posting to channel instead")
                 await message.channel.send(
-                    "ℹ️ No metadata found in those images. Would you like to add details manually?",
+                    no_metadata_msg,
                     view=view
                 )
             return
@@ -630,9 +656,9 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         return
 
     # Validate file type
-    if not image.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+    if not image.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
         await interaction.followup.send(
-            "❌ Only PNG and JPEG images are supported."
+            "❌ Only PNG, JPEG, and WebP images are supported."
         )
         return
 
@@ -685,9 +711,9 @@ async def ask_command(interaction: discord.Interaction, question: str):
         await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
         return
 
-    # Rate limit check
-    if rate_limiter.is_rate_limited(interaction.user.id):
-        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+    # STRICT rate limit for Gemini API (1 per 10 seconds)
+    if gemini_rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ **Slow down!** Gemini API limit: 1 request per 10 seconds. Please wait.", ephemeral=True)
         return
 
     # Check prompt length
@@ -719,9 +745,9 @@ async def techsupport_command(interaction: discord.Interaction, issue: str):
         await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
         return
 
-    # Rate limit check
-    if rate_limiter.is_rate_limited(interaction.user.id):
-        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+    # STRICT rate limit for Gemini API (1 per 10 seconds)
+    if gemini_rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ **Slow down!** Gemini API limit: 1 request per 10 seconds. Please wait.", ephemeral=True)
         return
 
     # Check issue length
@@ -832,9 +858,9 @@ async def coder_command(interaction: discord.Interaction, question: str):
         await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
         return
 
-    # Rate limit check
-    if rate_limiter.is_rate_limited(interaction.user.id):
-        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+    # STRICT rate limit for Gemini API (1 per 10 seconds)
+    if gemini_rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ **Slow down!** Gemini API limit: 1 request per 10 seconds. Please wait.", ephemeral=True)
         return
 
     # Check question length
@@ -942,9 +968,9 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
         await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
         return
 
-    # Rate limit check
-    if rate_limiter.is_rate_limited(interaction.user.id):
-        await interaction.response.send_message("⏰ You're making requests too quickly. Please wait a minute.")
+    # STRICT rate limit for Gemini API (1 per 10 seconds)
+    if gemini_rate_limiter.is_rate_limited(interaction.user.id):
+        await interaction.response.send_message("⏰ **Slow down!** Gemini API limit: 1 request per 10 seconds. Please wait.", ephemeral=True)
         return
 
     # Validate file type
@@ -1141,15 +1167,15 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
         )
         return
 
-    # Get PNG/JPEG attachments
+    # Get PNG/JPEG/WebP attachments
     attachments = [
         a for a in message.attachments
-        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg')) and a.size < SCAN_LIMIT_BYTES
+        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and a.size < SCAN_LIMIT_BYTES
     ]
 
     if not attachments:
         await interaction.followup.send(
-            "❌ No PNG or JPEG images found in this message.",
+            "❌ No PNG, JPEG, or WebP images found in this message.",
             ephemeral=True
         )
         return
@@ -1407,8 +1433,25 @@ class FullMetadataView(discord.ui.View):
 async def on_close():
     """Cleanup handler for graceful shutdown."""
     logger.info("👋 Bot shutting down gracefully...")
+    # Close all aiohttp sessions
+    try:
+        # Clear conversation sessions to prevent memory leaks
+        global conversation_sessions
+        conversation_sessions.clear()
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
     # Give aiohttp time to cleanup sessions
     await asyncio.sleep(0.1)
+
+@bot.event
+async def on_disconnect():
+    """Handle disconnection from Discord."""
+    logger.warning("⚠️ Bot disconnected from Discord! Will attempt to reconnect...")
+
+@bot.event
+async def on_resumed():
+    """Handle reconnection to Discord."""
+    logger.info("✅ Bot reconnected to Discord successfully!")
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
@@ -1474,7 +1517,44 @@ def main():
         return
 
     logger.info("🚀 Starting PromptInspectorBot-Enhanced...")
-    bot.run(BOT_TOKEN)
+
+    # Add retry logic with EXPONENTIAL BACKOFF to prevent Cloudflare rate limiting
+    max_retries = 5
+    retry_count = 0
+
+    while retry_count < max_retries:
+        try:
+            bot.run(BOT_TOKEN, reconnect=True)
+            break  # Exit loop if bot stops gracefully
+        except discord.LoginFailure:
+            logger.error("❌ INVALID TOKEN - Bot token may be banned or revoked!")
+            break  # Don't retry on auth failures
+        except discord.HTTPException as e:
+            # Check if it's a rate limit error (429 or Cloudflare block)
+            if '429' in str(e) or 'rate limit' in str(e).lower() or '1015' in str(e):
+                retry_count += 1
+                # Exponential backoff: 10s, 20s, 40s, 80s, 160s
+                wait_time = min(10 * (2 ** retry_count), 300)  # Cap at 5 minutes
+                logger.error(f"⚠️ RATE LIMITED by Discord/Cloudflare (attempt {retry_count}/{max_retries})")
+                logger.info(f"🕐 Waiting {wait_time}s before retry to avoid IP ban...")
+                import time
+                time.sleep(wait_time)
+            else:
+                # Other Discord HTTP errors
+                logger.error(f"❌ Discord HTTP error: {e}")
+                raise
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"❌ Bot crashed (attempt {retry_count}/{max_retries}): {e}")
+            if retry_count < max_retries:
+                # Shorter delay for non-rate-limit errors
+                wait_time = 5 * retry_count
+                logger.info(f"🔄 Restarting in {wait_time} seconds...")
+                import time
+                time.sleep(wait_time)
+            else:
+                logger.error("❌ Max retries reached. Bot shutting down.")
+                raise
 
 
 if __name__ == '__main__':
