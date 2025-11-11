@@ -10,7 +10,7 @@ import logging
 import re
 from typing import Any
 
-from dataset_tools.metadata_engine.utils import get_a1111_kv_block_utility
+from ..utils import get_a1111_kv_block_utility
 
 # Type aliases
 ContextData = dict[str, Any]

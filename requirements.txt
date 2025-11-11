@@ -28,5 +28,9 @@ PyYAML>=6.0
 rich>=13.0.0
 pydantic>=2.0.0
 
+# New dependencies (Phase 1 - Nov 11, 2025)
+cryptography>=41.0.0  # Fernet encryption for API keys
+pypng>=0.20220715.0   # Better PNG chunk reading for large ComfyUI workflows
+
 # For Gemini API
 google-genai>=0.3.1

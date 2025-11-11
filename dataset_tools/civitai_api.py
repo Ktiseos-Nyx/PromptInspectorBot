@@ -1,4 +1,4 @@
-"""Civitai API Interaction Module
+"""Civitai API Interaction Module.
 
 This module provides functions to interact with the Civitai API to fetch
 metadata for models, LORAs, and other resources.
@@ -9,27 +9,24 @@ import time
 from pathlib import Path
 from typing import Any
 
+import os
 import requests
 
+# Try to import QSettings for GUI mode, fall back to None for headless
+try:
+    from PyQt6.QtCore import QSettings
+    HAS_QSETTINGS = True
+except (ImportError, ModuleNotFoundError):
+    QSettings = None
+    HAS_QSETTINGS = False
+
 from dataset_tools.logger import error_message, info_monitor, warning_message
+from dataset_tools.crypto_secrets import get_civitai_api_key as get_encrypted_api_key
 
 # Cache configuration
 CACHE_DIR = Path.home() / ".cache" / "dataset-tools" / "civitai"
 CACHE_EXPIRY_DAYS = 7
 
-SECRETS_FILE = Path(__file__).parent / "secrets.json"
-
-def _get_api_key() -> str:
-    """Loads the Civitai API key from the secrets.json file."""
-    if not SECRETS_FILE.exists():
-        return ""
-    try:
-        with open(SECRETS_FILE, "r", encoding="utf-8") as f:
-            secrets = json.load(f)
-            return secrets.get("civitai_api_key", "")
-    except (json.JSONDecodeError, IOError) as e:
-        error_message("[Civitai API] Could not read secrets.json: %s", e)
-        return ""
 
 def _get_cache_path(cache_key: str) -> Path:
     """Get the cache file path for a given key."""
@@ -126,7 +123,8 @@ def get_model_info_by_hash(model_hash: str) -> dict[str, Any] | None:
     api_url = f"https://civitai.com/api/v1/model-versions/by-hash/{model_hash}"
     info_monitor("[Civitai API] Fetching model info from: %s", api_url)
 
-    api_key = _get_api_key()
+    # Get API key from encrypted storage (with QSettings + env fallback)
+    api_key = get_encrypted_api_key() or ""
 
     headers = {}
     if api_key:
@@ -178,6 +176,7 @@ def get_model_info_by_hash(model_hash: str) -> dict[str, Any] | None:
         error_message("[Civitai API] An unexpected error occurred: %s", e)
         return None
 
+
 def get_model_info_by_id(model_id: str) -> dict[str, Any] | None:
     """Fetches model information from Civitai using a model ID.
 
@@ -200,7 +199,8 @@ def get_model_info_by_id(model_id: str) -> dict[str, Any] | None:
     api_url = f"https://civitai.com/api/v1/models/{model_id}"
     info_monitor("[Civitai API] Fetching model info from: %s", api_url)
 
-    api_key = _get_api_key()
+    # Get API key from encrypted storage (with QSettings + env fallback)
+    api_key = get_encrypted_api_key() or ""
 
     headers = {}
     if api_key:
@@ -241,6 +241,7 @@ def get_model_info_by_id(model_id: str) -> dict[str, Any] | None:
         error_message("[Civitai API] An unexpected error occurred: %s", e)
         return None
 
+
 def get_model_version_info_by_id(version_id: str) -> dict[str, Any] | None:
     """Fetches model version information from Civitai using a model version ID.
 
@@ -263,7 +264,8 @@ def get_model_version_info_by_id(version_id: str) -> dict[str, Any] | None:
     api_url = f"https://civitai.com/api/v1/model-versions/{version_id}"
     info_monitor("[Civitai API] Fetching model version info from: %s", api_url)
 
-    api_key = _get_api_key()
+    # Get API key from encrypted storage (with QSettings + env fallback)
+    api_key = get_encrypted_api_key() or ""
 
     headers = {}
     if api_key:
