@@ -441,6 +441,18 @@ async def on_message(message: discord.Message):
     logger.info("Scanning message from %s with %s images", message.author, len(attachments))
 
     try:
+        # IMPORTANT: Discord strips JPEG/WebP metadata during processing!
+        # If we scan too fast, we'll see metadata that gets deleted moments later.
+        # Wait for Discord to finish processing before scanning.
+        has_jpeg_or_webp = any(
+            a.filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
+            for a in attachments
+        )
+        if has_jpeg_or_webp:
+            # Give Discord time to strip metadata from JPEGs/WebP
+            await asyncio.sleep(2.0)
+            logger.debug("Waited for Discord to process JPEG/WebP files")
+
         # Scan ALL images for metadata
         images_with_metadata = []
         for attachment in attachments:
