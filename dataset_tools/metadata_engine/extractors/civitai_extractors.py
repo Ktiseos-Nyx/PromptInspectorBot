@@ -18,9 +18,9 @@ import logging
 import re
 from typing import Any
 
-from dataset_tools import civitai_api
-from dataset_tools.correct_types import DownField, UpField
-from dataset_tools.metadata_engine.utils import json_path_get_utility
+from ... import civitai_api
+from ...correct_types import DownField, UpField
+from ..utils import json_path_get_utility
 
 # Type aliases
 ContextData = dict[str, Any]
@@ -274,6 +274,10 @@ class CivitaiExtractor:
 
         self.logger.info("[CIVITAI_EXTRACTOR] Found IDs to fetch: %s", ids_to_fetch)
 
-        # Return IDs for UI to fetch asynchronously - NO API CALLS HERE
-        # This keeps metadata loading fast and UI responsive
-        return {"ids_to_fetch": ids_to_fetch, "fetch_pending": len(ids_to_fetch) > 0}
+        # ONLY return if we actually have IDs - don't create empty fetch requests
+        if ids_to_fetch:
+            self.logger.info("[CIVITAI_EXTRACTOR] Returning %d IDs for async fetch", len(ids_to_fetch))
+            return {"ids_to_fetch": ids_to_fetch, "fetch_pending": True}
+        else:
+            self.logger.debug("[CIVITAI_EXTRACTOR] No Civitai IDs found - returning None")
+            return None

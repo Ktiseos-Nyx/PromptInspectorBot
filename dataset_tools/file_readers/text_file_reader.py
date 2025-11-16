@@ -11,9 +11,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from dataset_tools.correct_types import UpField
-from dataset_tools.logger import debug_monitor, get_logger
-from dataset_tools.logger import info_monitor as nfo
+from ..correct_types import UpField
+from ..logger import debug_monitor, get_logger
+from ..logger import info_monitor as nfo
 
 
 class TextFileReader:

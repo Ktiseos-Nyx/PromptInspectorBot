@@ -33,9 +33,9 @@ except ImportError:
     # Do NOT fall back to xml.etree.ElementTree to avoid XXE vulnerabilities
     XML_AVAILABLE = False
 
-from dataset_tools.correct_types import DownField, EmptyField
-from dataset_tools.logger import debug_monitor, get_logger
-from dataset_tools.logger import info_monitor as nfo
+from ..correct_types import DownField, EmptyField
+from ..logger import debug_monitor, get_logger
+from ..logger import info_monitor as nfo
 
 
 class SchemaFileReader:

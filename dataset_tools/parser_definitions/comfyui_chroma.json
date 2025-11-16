@@ -1,7 +1,7 @@
 {
-  "parser_name": "ComfyUI AuraFlow",
-  "priority": 155,
-  "description": "AuraFlow and LUMINA workflows using ModelSamplingAuraFlow nodes",
+  "parser_name": "ComfyUI Chroma",
+  "priority": 250,
+  "description": "Chroma models using ModelSamplingAuraFlow architecture but with Chroma-specific training",
   "version": "1.0",
   "maintainer": "Dataset-Tools",
   "target_file_types": [
@@ -9,9 +9,14 @@
   ],
   "detection_rules": [
     {
-      "comment": "Rule 1: Must have ComfyUI JSON structure",
-      "operator": "OR",
+      "comment": "Rule 1: Must have workflow with Chroma model/LoRA AND ModelSamplingAuraFlow node",
+      "operator": "AND",
       "rules": [
+        {
+          "source_type": "pil_info_key",
+          "source_key": "workflow",
+          "operator": "exists"
+        },
         {
           "source_type": "pil_info_key",
           "source_key": "workflow",
@@ -19,22 +24,27 @@
         },
         {
           "source_type": "pil_info_key",
-          "source_key": "prompt",
-          "operator": "is_valid_json"
+          "source_key": "workflow",
+          "operator": "contains",
+          "value": "ModelSamplingAuraFlow"
+        },
+        {
+          "operator": "OR",
+          "rules": [
+            {
+              "source_type": "pil_info_key",
+              "source_key": "workflow",
+              "operator": "contains",
+              "value": "chroma"
+            },
+            {
+              "source_type": "pil_info_key",
+              "source_key": "workflow",
+              "operator": "contains",
+              "value": "Chroma"
+            }
+          ]
         }
-      ]
-    },
-    {
-      "comment": "Rule 2: Must contain ModelSamplingAuraFlow (unique to AuraFlow architecture)",
-      "source_type": "pil_info_key",
-      "source_key_options": [
-        "workflow",
-        "prompt"
-      ],
-      "json_query_type": "has_any_node_class_type",
-      "operator": "is_true",
-      "class_types_to_check": [
-        "ModelSamplingAuraFlow"
       ]
     }
   ],
@@ -58,14 +68,39 @@
     },
     "fields": [
       {
+        "comment": "Try text combiner extraction first (for Text Concatenate nodes)",
         "target_key": "prompt",
-        "method": "comfyui_targeted_prompt_extraction",
-        "target_input": "positive"
+        "method": "text_combiner_extract_combined_text",
+        "text_encoder_node_types": [
+          "CLIPTextEncode",
+          "BNK_CLIPTextEncodeAdvanced",
+          "T5TextEncode",
+          "PrimitiveStringMultiline",
+          "easy positive"
+        ]
+      },
+      {
+        "comment": "Fallback to legacy workflow extraction if combiner doesn't find anything",
+        "target_key": "prompt",
+        "method": "comfyui_extract_prompt_from_workflow",
+        "text_encoder_node_types": [
+          "CLIPTextEncode",
+          "BNK_CLIPTextEncodeAdvanced",
+          "T5TextEncode",
+          "PrimitiveStringMultiline",
+          "easy positive"
+        ]
       },
       {
         "target_key": "negative_prompt",
-        "method": "comfyui_targeted_prompt_extraction",
-        "target_input": "negative"
+        "method": "comfyui_extract_negative_prompt_from_workflow",
+        "text_encoder_node_types": [
+          "CLIPTextEncode",
+          "BNK_CLIPTextEncodeAdvanced",
+          "T5TextEncode",
+          "PrimitiveStringMultiline",
+          "easy positive"
+        ]
       },
       {
         "target_key": "parameters.model",
@@ -76,17 +111,17 @@
         ],
         "input_field": "ckpt_name",
         "data_type": "string",
-        "fallback": "Unknown AuraFlow Model"
+        "fallback": "Unknown Chroma Model"
       },
       {
-        "target_key": "parameters.auraflow_shift",
+        "target_key": "parameters.flow_shift",
         "method": "comfy_find_input_of_node_type",
         "node_types": [
           "ModelSamplingAuraFlow"
         ],
         "input_field": "shift",
         "data_type": "float",
-        "fallback": 1.73
+        "fallback": 1.0
       },
       {
         "target_key": "parameters.steps",
@@ -106,13 +141,13 @@
         "method": "comfy_find_input_of_main_sampler",
         "sampler_node_types": [
           "SamplerCustom",
-          "SamplerCustomAdvanced", 
+          "SamplerCustomAdvanced",
           "KSampler",
           "KSamplerAdvanced"
         ],
         "input_key": "cfg",
         "value_type": "float",
-        "fallback": 5.5
+        "fallback": 3.6
       },
       {
         "target_key": "parameters.sampler_name",
@@ -120,7 +155,7 @@
         "sampler_node_types": [
           "SamplerCustom",
           "SamplerCustomAdvanced",
-          "KSampler", 
+          "KSampler",
           "KSamplerAdvanced"
         ],
         "input_key": "sampler_name",
@@ -136,9 +171,9 @@
           "KSampler",
           "KSamplerAdvanced"
         ],
-        "input_key": "scheduler", 
+        "input_key": "scheduler",
         "value_type": "string",
-        "fallback": "normal"
+        "fallback": "beta"
       },
       {
         "target_key": "parameters.width",
@@ -168,14 +203,14 @@
       }
     ],
     "output_template": {
-      "parser_name_from_engine": "ComfyUI AuraFlow",
-      "tool": "ComfyUI AuraFlow",
-      "format": "AuraFlow Text-to-Image",
+      "parser_name_from_engine": "ComfyUI Chroma",
+      "tool": "ComfyUI Chroma",
+      "format": "Chroma Text-to-Image",
       "prompt": "$prompt",
       "negative_prompt": "$negative_prompt",
       "parameters": {
         "model": "$parameters.model",
-        "auraflow_shift": "$parameters.auraflow_shift",
+        "flow_shift": "$parameters.flow_shift",
         "steps": "$parameters.steps",
         "cfg_scale": "$parameters.cfg_scale",
         "sampler_name": "$parameters.sampler_name",
@@ -185,16 +220,16 @@
       },
       "raw_metadata": "$raw_metadata",
       "architecture_info": {
-        "detected_as": "AuraFlow architecture",
-        "text_encoder": "Gemma/T5-based", 
-        "model_type": "Flow Matching Transformer",
-        "sampling_method": "AuraFlow Custom"
+        "detected_as": "Chroma architecture",
+        "text_encoder": "T5-based (Chroma-specific training)",
+        "model_type": "Flow Matching Transformer (Chroma)",
+        "sampling_method": "AuraFlow-style (Chroma tuning)"
       },
       "workflow_metadata": {
         "source": "ComfyUI workflow",
-        "parser_priority": 155,
+        "parser_priority": 160,
         "confidence": "high",
-        "auraflow_workflow": true,
+        "chroma_workflow": true,
         "flow_matching": true
       }
     }
@@ -205,10 +240,10 @@
     "validation_level": "strict"
   },
   "notes": [
-    "Specifically designed for AuraFlow and LUMINA workflows",
-    "Uses ModelSamplingAuraFlow as the unique identifying node",
-    "Handles both simple AuraFlow and complex multi-model pipelines",
-    "Priority 155 puts it above generic ComfyUI parsers",
-    "Covers AuraFlow base models and derivatives like LUMINA"
+    "Specifically designed for Chroma model workflows",
+    "Uses ModelSamplingAuraFlow architecture with Chroma-specific training",
+    "Detects 'chroma' string in model names or LoRAs for identification",
+    "Priority 160 puts it above generic AuraFlow (155) and ComfyUI (100)",
+    "Handles PrimitiveStringMultiline prompt nodes used in Chroma workflows"
   ]
 }
