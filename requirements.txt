@@ -33,4 +33,4 @@ cryptography>=41.0.0  # Fernet encryption for API keys
 pypng>=0.20220715.0   # Better PNG chunk reading for large ComfyUI workflows
 
 # For Gemini API
-google-genai>=0.3.1
+google-genai==1.51.0
