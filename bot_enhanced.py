@@ -179,6 +179,13 @@ R2_ENABLED = all([
 ])
 R2_UPLOAD_EXPIRATION = config.get('R2_UPLOAD_EXPIRATION', 3600) # Pre-signed URL expiry in seconds
 
+# Setup logging (MUST be before R2 setup so logger exists!)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('PromptInspector')
+
 r2_client = None
 if R2_ENABLED:
     try:
@@ -195,13 +202,6 @@ if R2_ENABLED:
         R2_ENABLED = False
 else:
     logger.info("ℹ️ R2 environment variables not set. /upload_image will be disabled.")
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('PromptInspector')
 
 # Log available LLM providers
 if AVAILABLE_PROVIDERS:
