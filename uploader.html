@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Uploader</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #36393f;
+            color: #dcddde;
+        }
+        .container {
+            background-color: #2f3136;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 {
+            color: #ffffff;
+            margin-top: 0;
+        }
+        p {
+            color: #b9bbbe;
+        }
+        .upload-area {
+            border: 2px dashed #4f545c;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-top: 1.5rem;
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+        .upload-area:hover {
+            border-color: #7289da;
+            background-color: #3a3d42;
+        }
+        .upload-area.drag-over {
+            border-color: #7289da;
+            background-color: #3a3d42;
+        }
+        #file-input {
+            display: none;
+        }
+        #upload-button {
+            background-color: #7289da;
+            color: #ffffff;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+            width: 100%;
+            transition: background-color 0.2s;
+        }
+        #upload-button:disabled {
+            background-color: #4f545c;
+            cursor: not-allowed;
+        }
+        #upload-button:hover:not(:disabled) {
+            background-color: #677bc4;
+        }
+        #status {
+            margin-top: 1.5rem;
+            font-weight: bold;
+        }
+        .status-success {
+            color: #43b581;
+        }
+        .status-error {
+            color: #f04747;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #7289da;
+            margin: 1rem auto 0;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Upload Your Image</h1>
+        <p>Select your original JPEG or WebP file to process its metadata.</p>
+
+        <!-- Security Warning -->
+        <div style="background-color: #faa81a; color: #000; padding: 1rem; border-radius: 5px; margin: 1rem 0; font-size: 0.9rem;">
+            <strong>⚠️ Security Notice:</strong>
+            <ul style="text-align: left; margin: 0.5rem 0; padding-left: 1.5rem;">
+                <li><strong>Not 100% secure</strong> - Only upload images you're comfortable sharing</li>
+                <li><strong>30-day retention</strong> - Files automatically deleted after 30 days</li>
+                <li><strong>AI metadata only</strong> - For JPEG/WebP with ComfyUI/A1111/Forge metadata</li>
+                <li><strong>Max 10MB</strong> - Larger files will be rejected</li>
+            </ul>
+        </div>
+
+        <div class="upload-area" id="upload-area">
+            <p id="upload-text">Click or drag & drop a file here</p>
+            <p style="font-size: 0.8rem; color: #72767d; margin-top: 0.5rem;">JPEG/WebP only • Max 10MB</p>
+        </div>
+
+        <button id="upload-button" disabled>Upload</button>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.id = 'file-input';
+        fileInput.accept = 'image/jpeg,image/webp'; // Only JPEG/WebP for metadata preservation
+        document.body.appendChild(fileInput);
+
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+
+        const uploadButton = document.getElementById('upload-button');
+        const statusDiv = document.getElementById('status');
+        const uploadText = document.getElementById('upload-text');
+
+        let selectedFile = null;
+
+        // --- Event Listeners ---
+        uploadArea.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        uploadButton.addEventListener('click', handleUpload);
+
+        // Drag and drop listeners
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelect({ target: fileInput });
+            }
+        });
+
+
+        function handleFileSelect(event) {
+            selectedFile = event.target.files[0];
+            if (selectedFile) {
+                // Validate file type
+                const validTypes = ['image/jpeg', 'image/webp'];
+                if (!validTypes.includes(selectedFile.type)) {
+                    showStatus('❌ Invalid file type. Only JPEG and WebP files are supported.', 'error');
+                    selectedFile = null;
+                    uploadButton.disabled = true;
+                    uploadText.textContent = 'Click or drag & drop a file here';
+                    return;
+                }
+
+                // Validate file size (10MB max)
+                if (selectedFile.size > MAX_FILE_SIZE) {
+                    const sizeMB = (selectedFile.size / 1024 / 1024).toFixed(2);
+                    showStatus(`❌ File too large (${sizeMB}MB). Maximum size is 10MB.`, 'error');
+                    selectedFile = null;
+                    uploadButton.disabled = true;
+                    uploadText.textContent = 'Click or drag & drop a file here';
+                    return;
+                }
+
+                // File is valid
+                const sizeMB = (selectedFile.size / 1024 / 1024).toFixed(2);
+                uploadText.textContent = `Selected: ${selectedFile.name} (${sizeMB}MB)`;
+                uploadButton.disabled = false;
+                statusDiv.innerHTML = '';
+            } else {
+                uploadText.textContent = 'Click or drag & drop a file here';
+                uploadButton.disabled = true;
+            }
+        }
+
+        async function handleUpload() {
+            if (!selectedFile) {
+                showStatus('Please select a file first.', 'error');
+                return;
+            }
+
+            const params = new URLSearchParams(window.location.search);
+            const uploadUrl = params.get('upload_url');
+
+            if (!uploadUrl) {
+                showStatus('Error: No upload URL provided. Please use the link from the bot again.', 'error');
+                return;
+            }
+
+            setUploadingState(true);
+
+            try {
+                const response = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: selectedFile,
+                    headers: {
+                        'Content-Type': selectedFile.type || 'application/octet-stream'
+                    }
+                });
+
+                if (response.ok) {
+                    showStatus('✅ Success! You can now go back to Discord and click the "Process" button.', 'success');
+                    uploadButton.disabled = true; // Prevent re-upload
+                } else {
+                    const errorText = await response.text();
+                    console.error('Upload failed:', errorText);
+                    showStatus(`❌ Upload Failed: Server responded with status ${response.status}. The link may have expired. Please try again.`, 'error');
+                }
+            } catch (error) {
+                console.error('Network or other error:', error);
+                showStatus('❌ An error occurred during upload. Check the console for details.', 'error');
+            } finally {
+                setUploadingState(false);
+            }
+        }
+        
+        function setUploadingState(isUploading) {
+            uploadButton.disabled = isUploading;
+            if (isUploading) {
+                statusDiv.innerHTML = '<div class="spinner"></div><p>Uploading...</p>';
+            }
+        }
+
+        function showStatus(message, type) {
+            statusDiv.innerHTML = `<p class="status-${type}">${message}</p>`;
+        }
+
+    </script>
+</body>
+</html>

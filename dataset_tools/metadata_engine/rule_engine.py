@@ -477,36 +477,48 @@ class DataSourceHandler:
 
     def _handle_a1111_parameter_string(self, context: ContextData) -> tuple[Any, bool]:
         """Handle A1111 parameter string extraction."""
-        self.logger.info("=== A1111 PARAMETER STRING DEBUG ===")
-        self.logger.info(f"Context keys available: {list(context.keys())}")
+        # Check cache first to avoid redundant extraction
+        cache_key = "_a1111_param_cache"
+        if cache_key in context:
+            self.logger.debug("=== A1111 PARAMETER STRING (CACHED) ===")
+            return context[cache_key]
+
+        self.logger.debug("=== A1111 PARAMETER STRING DEBUG ===")
+        self.logger.debug(f"Context keys available: {list(context.keys())}")
 
         # Check what's in pil_info
         pil_info = context.get("pil_info", {})
-        self.logger.info(f"pil_info keys: {list(pil_info.keys()) if isinstance(pil_info, dict) else 'NOT_DICT'}")
+        self.logger.debug(f"pil_info keys: {list(pil_info.keys()) if isinstance(pil_info, dict) else 'NOT_DICT'}")
 
         # Try parameters chunk first
         param_str = pil_info.get("parameters") if isinstance(pil_info, dict) else None
-        self.logger.info(f"param_str from pil_info['parameters']: {repr(param_str)[:100] if param_str else 'NONE'}")
+        self.logger.debug(f"param_str from pil_info['parameters']: {repr(param_str)[:100] if param_str else 'NONE'}")
 
         if param_str is None:
             param_str = context.get("raw_user_comment_str")
-            self.logger.info(f"param_str from raw_user_comment_str: {repr(param_str)[:100] if param_str else 'NONE'}")
+            self.logger.debug(f"param_str from raw_user_comment_str: {repr(param_str)[:100] if param_str else 'NONE'}")
 
         if param_str is None:
-            self.logger.info("=== FINAL RESULT: None, False ===")
-            return None, False
+            self.logger.debug("=== FINAL RESULT: None, False ===")
+            result = (None, False)
+            context[cache_key] = result
+            return result
 
         # Check if it's wrapped in JSON
         try:
             wrapper = json.loads(param_str)
             if isinstance(wrapper, dict) and "parameters" in wrapper and isinstance(wrapper["parameters"], str):
-                self.logger.info("=== UNWRAPPED JSON PARAMETERS ===")
-                return wrapper["parameters"], True
+                self.logger.debug("=== UNWRAPPED JSON PARAMETERS ===")
+                result = (wrapper["parameters"], True)
+                context[cache_key] = result
+                return result
         except json.JSONDecodeError:
             pass
 
-        self.logger.info(f"=== FINAL RESULT: param_str (length: {len(param_str)}), True ===")
-        return param_str, True
+        self.logger.debug(f"=== FINAL RESULT: param_str (length: {len(param_str)}), True ===")
+        result = (param_str, True)
+        context[cache_key] = result
+        return result
 
     def _handle_pil_info_json_path(self, rule: RuleDict, context: ContextData) -> tuple[Any, bool]:
         """Handle PIL info JSON path extraction."""
