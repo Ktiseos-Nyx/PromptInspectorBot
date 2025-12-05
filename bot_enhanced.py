@@ -26,6 +26,10 @@ from dotenv import load_dotenv
 import toml
 from PIL import Image
 import aiohttp
+import boto3
+import botocore
+import uuid
+import urllib.parse
 
 # Suppress aiohttp unclosed client session warnings on shutdown
 warnings.filterwarnings("ignore", message="Unclosed client session", category=ResourceWarning)
@@ -43,12 +47,21 @@ from dataset_tools.metadata_parser import parse_metadata
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 
 # Initialize Gemini client (new SDK)
 gemini_client = None
 if GEMINI_API_KEY:
     gemini_client = genai.Client(
         api_key=GEMINI_API_KEY
+    )
+
+# Initialize Claude client (Anthropic SDK)
+claude_client = None
+if ANTHROPIC_API_KEY:
+    from anthropic import AsyncAnthropic
+    claude_client = AsyncAnthropic(
+        api_key=ANTHROPIC_API_KEY
     )
 
 
@@ -101,14 +114,87 @@ SCAN_LIMIT_BYTES = config.get('SCAN_LIMIT_BYTES', 10 * 1024 * 1024)  # 10MB
 
 # Gemini AI configuration
 GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL') or config.get('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash')
-GEMINI_FALLBACK_MODELS = config.get('GEMINI_FALLBACK_MODELS', [
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-flash-latest',
-    'gemini-2.5-pro'
-])
+
+# Fallback models - support both env var (comma-separated) and config.toml (list)
+fallback_env = os.getenv('GEMINI_FALLBACK_MODELS')
+if fallback_env:
+    # Parse comma-separated env var: "model1,model2,model3"
+    GEMINI_FALLBACK_MODELS = [m.strip() for m in fallback_env.split(',')]
+else:
+    GEMINI_FALLBACK_MODELS = config.get('GEMINI_FALLBACK_MODELS', [
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-flash-latest',
+        'gemini-2.5-pro'
+    ])
+
 GEMINI_MAX_RETRIES = int(os.getenv('GEMINI_MAX_RETRIES', config.get('GEMINI_MAX_RETRIES', 3)))
 GEMINI_RETRY_DELAY = float(os.getenv('GEMINI_RETRY_DELAY', config.get('GEMINI_RETRY_DELAY', 1.0)))
+
+# Claude AI configuration
+# Default to Haiku for cost-efficiency (works great for image descriptions, 10x cheaper than Sonnet)
+CLAUDE_PRIMARY_MODEL = os.getenv('CLAUDE_PRIMARY_MODEL') or config.get('CLAUDE_PRIMARY_MODEL', 'claude-3-5-haiku-20241022')
+CLAUDE_FALLBACK_MODELS = config.get('CLAUDE_FALLBACK_MODELS', [
+    'claude-3-5-haiku-20241022',
+    'claude-3-5-sonnet-20241022',
+    'claude-3-haiku-20240307'
+])
+
+# LLM Provider Selection
+# Auto-detect available providers based on API keys
+AVAILABLE_PROVIDERS = []
+if gemini_client:
+    AVAILABLE_PROVIDERS.append('gemini')
+if claude_client:
+    AVAILABLE_PROVIDERS.append('claude')
+
+# Provider priority (which to try first)
+provider_priority_env = os.getenv('LLM_PROVIDER_PRIORITY')
+if provider_priority_env:
+    LLM_PROVIDER_PRIORITY = [p.strip() for p in provider_priority_env.split(',')]
+else:
+    LLM_PROVIDER_PRIORITY = config.get('LLM_PROVIDER_PRIORITY', ['gemini', 'claude'])
+
+# Filter to only available providers
+LLM_PROVIDER_PRIORITY = [p for p in LLM_PROVIDER_PRIORITY if p in AVAILABLE_PROVIDERS]
+
+# NSFW Mode: Skip Gemini's strict filters for artistic/suggestive content
+# Set to "claude" to use only Claude for /describe (bypasses Gemini's overly strict safety filters)
+# Useful for artistic nudity, suggestive content, or PG-13/R-rated images that Gemini blocks
+NSFW_PROVIDER_OVERRIDE = os.getenv('NSFW_PROVIDER_OVERRIDE', config.get('NSFW_PROVIDER_OVERRIDE', None))
+
+# R2 Configuration (Optional)
+R2_ACCOUNT_ID = os.getenv('R2_ACCOUNT_ID')
+R2_ACCESS_KEY_ID = os.getenv('R2_ACCESS_KEY_ID')
+R2_SECRET_ACCESS_KEY = os.getenv('R2_SECRET_ACCESS_KEY')
+R2_BUCKET_NAME = os.getenv('R2_BUCKET_NAME')
+UPLOADER_URL = os.getenv('UPLOADER_URL')
+
+R2_ENABLED = all([
+    R2_ACCOUNT_ID,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    R2_BUCKET_NAME,
+    UPLOADER_URL
+])
+R2_UPLOAD_EXPIRATION = config.get('R2_UPLOAD_EXPIRATION', 3600) # Pre-signed URL expiry in seconds
+
+r2_client = None
+if R2_ENABLED:
+    try:
+        r2_client = boto3.client(
+            's3',
+            endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+            config=botocore.client.Config(signature_version='s3v4')
+        )
+        logger.info("✅ R2 client initialized. /upload_image command will be enabled.")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize R2 client: {e}")
+        R2_ENABLED = False
+else:
+    logger.info("ℹ️ R2 environment variables not set. /upload_image will be disabled.")
 
 # Setup logging
 logging.basicConfig(
@@ -116,6 +202,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('PromptInspector')
+
+# Log available LLM providers
+if AVAILABLE_PROVIDERS:
+    logger.info(f"🤖 Available LLM providers: {', '.join(AVAILABLE_PROVIDERS)}")
+    logger.info(f"📋 Provider priority: {' → '.join(LLM_PROVIDER_PRIORITY)}")
+else:
+    logger.warning("⚠️ No LLM providers available! Set GEMINI_API_KEY or ANTHROPIC_API_KEY.")
 
 # Initialize bot with all intents needed
 intents = discord.Intents.default()
@@ -137,6 +230,349 @@ MAX_TRACKED_ATTACHMENTS = 1000
 # Cache metadata for multi-image messages (message_id -> list of {attachment, metadata})
 message_metadata_cache = {}
 MAX_CACHED_MESSAGES = 100
+
+# Semaphore to limit concurrent image processing (prevents CPU spikes)
+# Process max 1 image at a time to keep CPU usage low and prevent RAM overflow
+metadata_processing_semaphore = asyncio.Semaphore(1)
+
+
+# ============================================================================
+# SECURITY SYSTEM - Anti-Scam Detection
+# ============================================================================
+# This system detects and prevents two main scammer types:
+# 1. Wallet Scammers: Crypto wallet spam with currency symbols in name, ALL CAPS
+# 2. Screenshot Spammers: 4+ crypto screenshots, cross-posting, gibberish text
+
+# Security configuration
+CATCHER_ROLE_ID = int(os.getenv('CATCHER_ROLE_ID', config.get('CATCHER_ROLE_ID', 0)))
+TRUSTED_USER_IDS = parse_id_list('TRUSTED_USER_IDS', 'TRUSTED_USER_IDS')
+ADMIN_CHANNEL_ID = int(os.getenv('ADMIN_CHANNEL_ID', config.get('ADMIN_CHANNEL_ID', 0)))
+
+# Message tracking for cross-posting detection
+# Structure: {user_id: [{'fingerprint': hash, 'channel_id': int, 'timestamp': float, 'message_id': int}, ...]}
+user_recent_messages: Dict[int, list] = {}
+MAX_TRACKED_MESSAGES_PER_USER = 50
+CROSS_POST_WINDOW_SECONDS = 300  # 5 minutes
+
+# Crypto scam keyword patterns (case-insensitive, with point values)
+import re
+CRYPTO_SCAM_PATTERNS = {
+    r'\bWALL?LET\b': 50,
+    r'\b\d+\s*SOL\b': 50,
+    r'\bDEAD\s+TOKENS?\b': 50,
+    r'\bPAY\s+HIM\b': 50,
+    r'\bPLENTY\s+TRANSACTIONS?\b': 40,
+    r'\bEMPTY\s+WALLET\b': 40,
+    r'\bCRYPTO\b': 20,
+    r'\bDM\s+ME\b': 30,
+    r'\bBUY\b.*\bWALLET\b': 40,
+}
+
+
+def get_message_fingerprint(message: discord.Message) -> str:
+    """Create a hash of message content + attachments for duplicate detection."""
+    import hashlib
+    fingerprint = message.content.strip()
+    for att in message.attachments:
+        fingerprint += f"|{att.filename}|{att.size}"
+    return hashlib.md5(fingerprint.encode()).hexdigest()
+
+
+async def track_message(message: discord.Message):
+    """Track message for cross-posting detection."""
+    user_id = message.author.id
+    fingerprint = get_message_fingerprint(message)
+    timestamp = message.created_at.timestamp()
+
+    if user_id not in user_recent_messages:
+        user_recent_messages[user_id] = []
+
+    user_recent_messages[user_id].append({
+        'fingerprint': fingerprint,
+        'channel_id': message.channel.id,
+        'timestamp': timestamp,
+        'message_id': message.id
+    })
+
+    # Clean old messages (older than window)
+    current_time = timestamp
+    user_recent_messages[user_id] = [
+        m for m in user_recent_messages[user_id]
+        if current_time - m['timestamp'] < CROSS_POST_WINDOW_SECONDS
+    ]
+
+    # Limit tracking per user
+    if len(user_recent_messages[user_id]) > MAX_TRACKED_MESSAGES_PER_USER:
+        user_recent_messages[user_id] = user_recent_messages[user_id][-MAX_TRACKED_MESSAGES_PER_USER:]
+
+
+async def check_cross_posting(message: discord.Message) -> int:
+    """Check if user posted same content in multiple channels recently.
+
+    Returns:
+        Number of different channels where same message was posted
+    """
+    user_id = message.author.id
+    if user_id not in user_recent_messages:
+        return 0
+
+    fingerprint = get_message_fingerprint(message)
+    recent = user_recent_messages[user_id]
+
+    # Find all messages with same fingerprint
+    same_message_posts = [m for m in recent if m['fingerprint'] == fingerprint]
+
+    # Count unique channels
+    unique_channels = set(m['channel_id'] for m in same_message_posts)
+    return len(unique_channels)
+
+
+def is_gibberish_or_spam(text: str, user_has_roles: bool = True, has_images: bool = False) -> bool:
+    """Detect gibberish, spam, or suspicious text patterns.
+
+    Args:
+        text: Message content
+        user_has_roles: Does user have roles beyond @everyone?
+        has_images: Does message have image attachments?
+
+    Returns:
+        True if text appears to be gibberish/spam
+    """
+    text = text.strip()
+
+    # Empty messages are only suspicious if there are no images
+    if len(text) == 0:
+        return not has_images
+
+    # === ALLOW EMOTIONAL EXPRESSIONS FOR USERS WITH ROLES ===
+    if user_has_roles:
+        # "AAAA", "lmao", "omg", etc. are fine if user has roles
+        # Pure repeated letter spam (like "AAAAAAaaaaaaaaAAAAA")
+        unique_chars = set(text.replace(' ', '').lower())
+        if len(unique_chars) <= 2:  # Only 1-2 unique letters
+            return False  # Allow emotional spam for users with roles
+
+    # === STRICT CHECKS FOR NO-ROLE USERS ===
+
+    # Random letter string (like "tdnfaagoie")
+    if text.isalpha() and ' ' not in text:
+        if 5 <= len(text) <= 20:
+            # Common okay words
+            common_ok = [
+                'hello', 'hi', 'thanks', 'thank', 'please', 'welcome',
+                'yes', 'no', 'okay', 'ok', 'sure', 'nice', 'good',
+                'great', 'awesome', 'cool', 'wow', 'lol', 'lmao',
+                'rofl', 'omg', 'wtf', 'brb', 'afk', 'gg', 'gn',
+            ]
+
+            if text.lower() in common_ok:
+                return False
+
+            # If user has roles, be lenient
+            if user_has_roles:
+                return False
+
+            # No roles + random string = gibberish
+            return True
+
+    return False
+
+
+def calculate_wallet_scam_score(message: discord.Message) -> tuple[int, list[str]]:
+    """Calculate scam likelihood score for wallet/crypto scammers.
+
+    Returns:
+        (score, reasons) where higher score = more likely scam
+        100+ = instant ban
+        75-99 = delete + alert admins
+        50-74 = watchlist
+    """
+    import datetime
+    score = 0
+    reasons = []
+
+    # Username checks
+    name = message.author.display_name
+
+    # Currency symbols in username (hoisting technique)
+    if any(c in name for c in ['£', '€', '¥', '₿', '$', '₹', '₽']):
+        score += 20
+        reasons.append("Currency symbols in username")
+
+    # Hoisting characters (to appear at top of member list)
+    if name and name[0] in ['!', '=', '#', '@', '.', '_', '-', '~']:
+        score += 20
+        reasons.append("Hoisting character in username")
+
+    # Check for auto-generated username patterns (e.g., word.word####_#####)
+    if re.search(r'[a-z]+\.[a-z]+\d{2,4}_\d{4,}', name.lower()):
+        score += 15
+        reasons.append("Suspicious username pattern")
+
+    # Caps spam in message
+    if len(message.content) > 20:
+        caps_count = sum(1 for c in message.content if c.isupper())
+        caps_ratio = caps_count / len(message.content)
+        if caps_ratio > 0.7:
+            score += 30
+            reasons.append(f"Caps spam ({caps_ratio*100:.0f}%)")
+
+    # Check for crypto scam keywords
+    content = message.content.upper()
+    for pattern, points in CRYPTO_SCAM_PATTERNS.items():
+        if re.search(pattern, content):
+            score += points
+            reasons.append(f"Keyword: {pattern}")
+
+    # Only has CATCHER role (scammers exploit this to look legit)
+    if CATCHER_ROLE_ID and len(message.author.roles) == 2:  # @everyone + CATCHER
+        catcher_role = discord.utils.get(message.author.roles, id=CATCHER_ROLE_ID)
+        if catcher_role:
+            score += 30
+            reasons.append("Only has CATCHER role")
+
+    # No roles at all (even worse than just CATCHER)
+    elif len(message.author.roles) == 1:  # Only @everyone
+        score += 20
+        reasons.append("No roles (only @everyone)")
+
+    # No profile picture (red flag, but not damning on its own)
+    # Scammers often have Member + CATCHER + no profile pic, then post spam
+    if message.author.avatar is None:
+        score += 15
+        reasons.append("No profile picture")
+
+    # Note: We don't check account age - real scammers can be years old!
+
+    return (score, reasons)
+
+
+def verify_image_safety(file_data: bytes, filename: str) -> tuple[bool, str]:
+    """Check if file is actually an image, not malware.
+
+    Returns:
+        (is_safe, reason) where is_safe=False triggers instant ban
+    """
+    if len(file_data) < 4:
+        return (False, "File too small")
+
+    magic = file_data[:4]
+
+    # Executables (INSTANT BAN)
+    if magic[:2] == b'MZ':  # Windows .exe
+        return (False, "Windows executable (.exe) disguised as image")
+
+    if magic == b'\x7fELF':  # Linux binary
+        return (False, "Linux binary (ELF) disguised as image")
+
+    # Valid images
+    if magic[:2] == b'\xff\xd8':  # JPEG
+        return (True, "JPEG")
+    if magic == b'\x89PNG':  # PNG
+        return (True, "PNG")
+    if magic[:4] == b'RIFF':  # WebP
+        return (True, "WebP")
+    if magic[:2] == b'BM':  # BMP
+        return (True, "BMP")
+    if magic[:3] == b'GIF':  # GIF
+        return (True, "GIF")
+
+    # Unknown format
+    return (False, f"Unknown file format (magic: {magic.hex()})")
+
+
+async def instant_ban(message: discord.Message, reason: str, details: list = None):
+    """Ban user and delete all their recent messages."""
+    logger.critical(f"🚨 INSTANT BAN: {message.author} ({message.author.id}) - {reason}")
+
+    try:
+        # Delete the message first
+        await message.delete()
+
+        # Delete all recent messages from this user (last 5 minutes)
+        await delete_all_user_messages(message.author, message.channel.guild, minutes=5)
+
+        # Ban the user
+        ban_reason = f"Auto-ban: {reason}"
+        if details:
+            ban_reason += f" | {', '.join(details[:3])}"  # First 3 details
+
+        await message.guild.ban(message.author, reason=ban_reason, delete_message_seconds=300)
+
+        # Alert admins
+        await alert_admins(message.guild, message.author, reason, details, action="BANNED")
+
+    except discord.Forbidden:
+        logger.error(f"❌ Missing permissions to ban {message.author}")
+        await alert_admins(message.guild, message.author, reason, details, action="FAILED - Missing permissions")
+    except Exception as e:
+        logger.error(f"Error banning user: {e}")
+
+
+async def delete_all_user_messages(user: discord.User, guild: discord.Guild, minutes: int = 5):
+    """Delete all messages from a user in the guild from the last N minutes."""
+    import datetime
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes)
+
+    for channel in guild.text_channels:
+        try:
+            async for msg in channel.history(limit=100, after=cutoff):
+                if msg.author.id == user.id:
+                    await msg.delete()
+                    logger.info(f"🗑️ Deleted message from {user} in {channel.name}")
+        except discord.Forbidden:
+            continue  # Skip channels bot can't access
+        except Exception as e:
+            logger.warning(f"Error deleting messages in {channel.name}: {e}")
+
+
+async def alert_admins(guild: discord.Guild, user: discord.User, reason: str, details: list = None, action: str = "ALERT"):
+    """Send alert to admin channel about security event."""
+    if not ADMIN_CHANNEL_ID:
+        return  # No admin channel configured
+
+    channel = guild.get_channel(ADMIN_CHANNEL_ID)
+    if not channel:
+        logger.warning(f"Admin channel {ADMIN_CHANNEL_ID} not found")
+        return
+
+    # Choose color based on severity
+    color_map = {
+        "BANNED": discord.Color.red(),           # Red = instant ban
+        "COMPROMISED": discord.Color.gold(),     # Gold = possible hacked account
+        "DELETED": discord.Color.orange(),       # Orange = suspicious but not banned
+        "ALERT": discord.Color.yellow()          # Yellow = low priority alert
+    }
+    embed_color = color_map.get(action, discord.Color.orange())
+
+    embed = discord.Embed(
+        title=f"🚨 Security {action}",
+        description=f"**User:** {user.mention} (`{user.id}`)\n**Reason:** {reason}",
+        color=embed_color
+    )
+
+    if details:
+        embed.add_field(name="Details", value="\n".join(f"• {d}" for d in details[:10]))
+
+    # Add special note for compromised accounts
+    if action == "COMPROMISED":
+        embed.add_field(
+            name="⚠️ Action Required",
+            value="This is a veteran account posting scam content. The account may be hacked. Consider:\n"
+                  "• DM the user to verify their account security\n"
+                  "• Temporarily mute them until they respond\n"
+                  "• Do NOT ban unless confirmed malicious",
+            inline=False
+        )
+
+    embed.set_footer(text=f"User: {user}")
+    if user.avatar:
+        embed.set_thumbnail(url=user.avatar.url)
+
+    try:
+        await channel.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Failed to send admin alert: {e}")
 
 
 def reformat_json(string: str, indent: int = 2) -> Optional[str]:
@@ -390,6 +826,134 @@ async def on_message(message: discord.Message):
     if message.author.bot and not message.webhook_id:
         return
 
+    # ============================================================================
+    # SECURITY CHECKS - Run BEFORE processing to catch scammers early
+    # ============================================================================
+
+    # BYPASS CONDITIONS - Skip security checks for trusted users ONLY
+    # 1. Server owner (you literally own the server)
+    # 2. Manually trusted users (TRUSTED_USER_IDS in config)
+    # NOTE: We don't bypass based on account age anymore - real scammers can be years old!
+    is_server_owner = message.author.id == message.guild.owner_id
+    is_trusted_user = message.author.id in TRUSTED_USER_IDS
+
+    # Full bypass for server owner and manually trusted users
+    if is_server_owner or is_trusted_user:
+        if is_server_owner:
+            logger.debug(f"✅ Security bypass: {message.author} is server owner")
+        # Continue processing normally
+    else:
+        # Track message for cross-posting detection
+        await track_message(message)
+
+        # Get user context for security checks
+        user_has_roles = len(message.author.roles) > 1  # More than just @everyone
+
+        # --- UNIFIED IMAGE GATHERING (Attachments & Embeds) ---
+        images_to_check = []
+        
+        # 1. Gather from attachments
+        for attachment in message.attachments:
+            if attachment.content_type and attachment.content_type.startswith('image/'):
+                images_to_check.append({
+                    "source": "attachment",
+                    "object": attachment,
+                    "filename": attachment.filename
+                })
+        
+        # 2. Gather from embeds
+        for embed in message.embeds:
+            if embed.image and embed.image.url:
+                # To get a filename, we'll parse it from the URL
+                filename = Path(embed.image.url).name.split('?')[0]
+                images_to_check.append({
+                    "source": "embed",
+                    "object": embed.image,
+                    "filename": filename
+                })
+
+        image_count = len(images_to_check)
+        has_images = image_count > 0
+
+        # === CHECK 1: MAGIC BYTES - Detect malware disguised as images ===
+        if has_images:
+            # Use a single session for all downloads
+            async with aiohttp.ClientSession() as session:
+                for image_info in images_to_check:
+                    try:
+                        file_data = None
+                        if image_info["source"] == "attachment":
+                            # Read from attachment
+                            file_data = await image_info["object"].read()
+                        elif image_info["source"] == "embed":
+                            # Download from embed URL
+                            async with session.get(image_info["object"].url) as response:
+                                if response.status == 200:
+                                    file_data = await response.read()
+                                else:
+                                    logger.warning(f"Failed to download embed image: {image_info['object'].url} (Status: {response.status})")
+                                    continue
+                        
+                        if file_data:
+                            is_safe, reason = verify_image_safety(file_data, image_info["filename"])
+                            if not is_safe:
+                                # INSTANT BAN - Malware detected
+                                await instant_ban(message, f"{reason} from {image_info['source']}")
+                                return
+
+                    except Exception as e:
+                        logger.warning(f"Error checking file safety for {image_info['filename']}: {e}")
+
+        # === CHECK 2: SCREENSHOT SPAMMER (4+ images + cross-posting) ===
+        if image_count >= 4:
+            cross_post_count = await check_cross_posting(message)
+
+            # 4+ images posted to 2+ channels = INSTANT BAN
+            if cross_post_count >= 2:
+                await instant_ban(
+                    message,
+                    f"Screenshot spam ({image_count} images, {cross_post_count} channels)",
+                    [f"{image_count} images", f"{cross_post_count} channels", "Cross-posting"]
+                )
+                return
+
+            # 4+ images + no roles + gibberish = ALSO INSTANT BAN
+            if not user_has_roles:
+                # The `has_images` flag is passed here to prevent false positives on image-only posts
+                if is_gibberish_or_spam(message.content, user_has_roles=False, has_images=has_images):
+                    await instant_ban(
+                        message,
+                        f"Screenshot spam ({image_count} images + gibberish)",
+                        [f"{image_count} images", "No roles", "Gibberish text"]
+                    )
+                    return
+
+        # === CHECK 3: WALLET SCAMMER (crypto keywords, caps spam, etc.) ===
+        scam_score, reasons = calculate_wallet_scam_score(message)
+
+        if scam_score >= 100:
+            # High confidence scam - INSTANT BAN (regardless of account age)
+            await instant_ban(message, f"Wallet scam (Score: {scam_score})", reasons)
+            return
+
+        elif scam_score >= 75:
+            # Medium confidence - Delete message and alert admins
+            logger.warning(f"⚠️ Suspicious message from {message.author} (Score: {scam_score})")
+            try:
+                await message.delete()
+                await alert_admins(message.guild, message.author, f"Suspicious (Score: {scam_score})", reasons, action="DELETED")
+            except discord.Forbidden:
+                logger.warning("Missing permissions to delete suspicious message")
+            return
+
+        elif scam_score >= 50:
+            # Low confidence - Just log for monitoring
+            logger.info(f"📊 Watchlist: {message.author} (Score: {scam_score}) - {', '.join(reasons[:3])}")
+
+    # ============================================================================
+    # END SECURITY CHECKS
+    # ============================================================================
+
     # Only process in monitored channels (empty set = monitor all channels)
     # For threads/forums, check the parent channel ID
     channel_to_check = message.channel.parent_id if hasattr(message.channel, 'parent_id') and message.channel.parent_id else message.channel.id
@@ -453,34 +1017,45 @@ async def on_message(message: discord.Message):
             logger.debug("Waited for Discord to process JPEG/WebP files")
 
         # Scan ALL images for metadata
+        # Use semaphore to process one image at a time (prevents CPU spikes & RAM overflow)
         images_with_metadata = []
         for attachment in attachments:
-            image_data = await attachment.read()
-            metadata = await parse_image_metadata(image_data, attachment.filename)
-            if metadata:
-                images_with_metadata.append({
-                    'attachment': attachment,
-                    'metadata': metadata
-                })
-                logger.info("✅ Found metadata in %s", attachment.filename)
+            # Semaphore ensures only 1 image processes at a time
+            async with metadata_processing_semaphore:
+                image_data = await attachment.read()
+                metadata = await parse_image_metadata(image_data, attachment.filename)
+                if metadata:
+                    # Log what type of metadata was found
+                    metadata_type = metadata.get('tool', 'Unknown')
+                    logger.info("✅ Found metadata in %s - Type: %s", attachment.filename, metadata_type)
+                    images_with_metadata.append({
+                        'attachment': attachment,
+                        'metadata': metadata
+                    })
+                else:
+                    logger.info("❌ No metadata found in %s", attachment.filename)
 
         if not images_with_metadata:
             # No metadata in any image
-            if REACT_ON_NO_METADATA:
-                await message.add_reaction(EMOJI_NOT_FOUND)
-                logger.info("❌ No metadata in any images")
-
             # Check if images are JPG/WebP (Discord strips metadata from these)
             first_image = attachments[0]
             is_jpg_or_webp = first_image.filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
 
+            # Only react with ⛔ for PNG files with no metadata
+            # JPEG/WebP never have metadata anyway, so don't spam reactions
+            if REACT_ON_NO_METADATA and not is_jpg_or_webp:
+                await message.add_reaction(EMOJI_NOT_FOUND)
+                logger.info("❌ No metadata in PNG image")
+
             # Customize message based on file type
             if is_jpg_or_webp:
                 no_metadata_msg = (
-                    "ℹ️ **No metadata found!**\n"
-                    "📸 Discord strips metadata from JPG/WebP images when uploaded.\n"
-                    "💡 *Tip: PNG files preserve metadata!*\n\n"
-                    "Would you like to add details manually?"
+                    "📸 **JPEG/WebP detected!**\n"
+                    "Discord strips metadata from these formats when uploaded.\n\n"
+                    "💡 **Options:**\n"
+                    "• Use `/describe` to generate AI tags\n"
+                    "• Re-upload as PNG to preserve metadata\n"
+                    "• Add details manually below"
                 )
             else:
                 no_metadata_msg = "ℹ️ No metadata found in these images. Would you like to add details manually?"
@@ -512,7 +1087,26 @@ async def on_message(message: discord.Message):
             for key in oldest_keys:
                 del message_metadata_cache[key]
 
-        # Decide reaction strategy based on count
+        # Check if all images are JPEG/WebP (likely false positives due to Discord race condition)
+        all_stripped_formats = all(
+            img['attachment'].filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
+            for img in images_with_metadata
+        )
+
+        if all_stripped_formats:
+            # Don't add emoji reactions for JPEG/WebP - Discord strips metadata anyway
+            # Any "metadata" found is likely a race condition before Discord finishes processing
+            logger.info("⚠️ Skipping emoji reactions for JPEG/WebP (Discord strips metadata)")
+            # Show helpful message instead
+            await message.reply(
+                "📸 **JPEG/WebP detected!**\n"
+                "These formats lose metadata on Discord.\n\n"
+                "💡 Use `/describe` to generate AI tags for these images!",
+                mention_author=False
+            )
+            return
+
+        # Decide reaction strategy based on count (PNG files only at this point)
         num_images = len(images_with_metadata)
 
         if num_images <= 5:
@@ -966,13 +1560,13 @@ RULES:
     app_commands.Choice(name="Danbooru Tags", value="danbooru"),
     app_commands.Choice(name="Natural Language", value="natural"),
 ])
-async def describe_command(interaction: discord.Interaction, image: discord.Attachment, style: app_commands.Choice[str]):
+async def describe_command(interaction: discord.Interaction, style: app_commands.Choice[str], image: discord.Attachment = None):
     """Slash command to describe an image using Gemini vision.
 
     Args:
         interaction: Discord interaction
-        image: Image attachment to describe
         style: Description style (danbooru tags or natural language)
+        image: Image attachment to describe (optional if replying to a message with an image)
     """
     # Check if describe feature is enabled for this channel
     if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "describe" not in CHANNEL_FEATURES[interaction.channel.id]:
@@ -983,6 +1577,31 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
     if gemini_rate_limiter.is_rate_limited(interaction.user.id):
         await interaction.response.send_message("⏰ **Slow down!** Gemini API limit: 1 request per 10 seconds. Please wait.", ephemeral=True)
         return
+
+    # If no image provided, check if this is a reply to a message with an image
+    if not image:
+        # Check if command was used as a reply
+        if hasattr(interaction, 'message') and interaction.message and interaction.message.reference:
+            # Fetch the replied-to message
+            try:
+                replied_msg = await interaction.channel.fetch_message(interaction.message.reference.message_id)
+                if replied_msg.attachments:
+                    # Use the first image attachment from the replied message
+                    for att in replied_msg.attachments:
+                        if att.content_type and att.content_type.startswith("image/"):
+                            image = att
+                            break
+            except:
+                pass
+
+        if not image:
+            await interaction.response.send_message(
+                "❌ No image found! Either:\n"
+                "• Upload an image with the command\n"
+                "• Reply to a message containing an image",
+                ephemeral=True
+            )
+            return
 
     # Validate file type
     if not image.content_type or not image.content_type.startswith("image/"):
@@ -1001,37 +1620,122 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
     try:
         image_data = await image.read()
 
-        # Create image part for Gemini
-        image_part = types.Part.from_bytes(
-            data=image_data,
-            mime_type=image.content_type
-        )
-
         if style.value == "danbooru":
             prompt_text = "Describe this image using Danbooru-style tags in comma-separated format, like a prompt. Output ONLY the tags separated by commas, no bullet points or explanations. Focus on descriptive tags about the character, clothing, pose, background, and art style. Exclude metadata tags like 'masterpiece' or 'high quality'. Example format: '1girl, long hair, blue eyes, school uniform, standing, outdoor, cherry blossoms, anime style'"
         else:
             prompt_text = "Describe this image in natural, descriptive language."
 
-        # Use the new SDK's generate_content method with retry logic and fallbacks
-        def make_call_factory(model_name):
-            async def make_call():
-                return await gemini_client.aio.models.generate_content(
-                    model=model_name,
-                    contents=[prompt_text, image_part]
-                )
-            return make_call
+        # Try providers in priority order
+        description_text = None
+        provider_used = None
+        last_error = None
 
-        response = await call_gemini_with_retry(make_call_factory)
+        # Check for NSFW override (skip Gemini's strict filters)
+        providers_to_try = LLM_PROVIDER_PRIORITY
+        if NSFW_PROVIDER_OVERRIDE:
+            # Override enabled - use only the specified provider (typically Claude to bypass Gemini filters)
+            providers_to_try = [NSFW_PROVIDER_OVERRIDE] if NSFW_PROVIDER_OVERRIDE in AVAILABLE_PROVIDERS else LLM_PROVIDER_PRIORITY
+            if NSFW_PROVIDER_OVERRIDE in AVAILABLE_PROVIDERS:
+                logger.info(f"🔞 NSFW mode enabled - using only {NSFW_PROVIDER_OVERRIDE} for /describe")
 
-        message_content = f"🎨 **Image Description ({style.name}):**\n\n{response.text}"
+        for provider in providers_to_try:
+            try:
+                if provider == 'claude' and claude_client:
+                    logger.info(f"Trying Claude for /describe")
+                    description_text = await describe_image_with_claude(
+                        image_data=image_data,
+                        mime_type=image.content_type,
+                        prompt=prompt_text
+                    )
+                    provider_used = 'Claude'
+                    break
 
-        # If response is too long for Discord, send as text file
-        if len(message_content) > 2000:
-            file_content = io.BytesIO(message_content.encode('utf-8'))
-            file = discord.File(file_content, filename="description.txt")
-            await interaction.followup.send("Image description was too long, sent as file:", file=file)
+                elif provider == 'gemini' and gemini_client:
+                    logger.info(f"Trying Gemini for /describe")
+                    # Create image part for Gemini
+                    image_part = types.Part.from_bytes(
+                        data=image_data,
+                        mime_type=image.content_type
+                    )
+
+                    # Use Gemini with retry logic
+                    def make_call_factory(model_name):
+                        async def make_call():
+                            return await gemini_client.aio.models.generate_content(
+                                model=model_name,
+                                contents=[prompt_text, image_part],
+                                config=types.GenerateContentConfig(
+                                    safety_settings=[
+                                        types.SafetySetting(
+                                            category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                                            threshold='BLOCK_ONLY_HIGH'
+                                        ),
+                                        types.SafetySetting(
+                                            category='HARM_CATEGORY_HATE_SPEECH',
+                                            threshold='BLOCK_ONLY_HIGH'
+                                        ),
+                                        types.SafetySetting(
+                                            category='HARM_CATEGORY_HARASSMENT',
+                                            threshold='BLOCK_ONLY_HIGH'
+                                        ),
+                                        types.SafetySetting(
+                                            category='HARM_CATEGORY_DANGEROUS_CONTENT',
+                                            threshold='BLOCK_ONLY_HIGH'
+                                        ),
+                                    ]
+                                )
+                            )
+                        return make_call
+
+                    response = await call_gemini_with_retry(make_call_factory)
+                    if response and response.text:
+                        description_text = response.text
+                        provider_used = 'Gemini'
+                        break
+
+            except Exception as e:
+                logger.warning(f"{provider} failed: {e}")
+                last_error = e
+                continue  # Try next provider
+
+        # Check if we got a description
+        if not description_text:
+            logger.error("All providers failed for /describe")
+            await interaction.followup.send(
+                "❌ All AI providers failed. This might be due to:\n"
+                "• Content safety filters\n"
+                "• API quota limits\n"
+                "• Temporary service issue\n\n"
+                f"Last error: {last_error}\n\n"
+                "Try again in a moment or try a different image."
+            )
+            return
+
+        # Create an embed for the response
+        embed = discord.Embed(
+            title=f"🎨 Image Description ({style.name})",
+            description=f"_via {provider_used}_\n\n{description_text}",
+            color=discord.Color.blurple()
+        )
+        embed.set_image(url=image.url)  # Use the original image URL for a clean embed
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
+
+        # The embed description has a 4096 character limit.
+        if len(embed.description) > 4096:
+            # Fallback for very long descriptions
+            text_file_content = f"🎨 Image Description ({style.name}):\n_via {provider_used}_\n\n{description_text}"
+            text_file = discord.File(io.BytesIO(text_file_content.encode('utf-8')), filename="description.txt")
+            
+            # Since we're not using an embed, attach the image file manually
+            image_file = discord.File(io.BytesIO(image_data), filename=image.filename)
+            
+            await interaction.followup.send(
+                "📝 The generated description was too long, so I've sent it as a file.",
+                files=[image_file, text_file]
+            )
         else:
-            await interaction.followup.send(message_content)
+            # Send the response with the embed
+            await interaction.followup.send(embed=embed)
 
         logger.info("✅ /describe command success for %s", interaction.user.name)
 
@@ -1041,6 +1745,58 @@ async def describe_command(interaction: discord.Interaction, image: discord.Atta
 
 
 conversation_sessions = {}
+
+async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: str, model: str = None) -> str:
+    """Describe an image using Claude's vision API.
+
+    Args:
+        image_data: Raw image bytes
+        mime_type: Image MIME type (e.g. 'image/jpeg')
+        prompt: Description prompt
+        model: Claude model to use (defaults to CLAUDE_PRIMARY_MODEL)
+
+    Returns:
+        Description text from Claude
+    """
+    if not claude_client:
+        raise Exception("Claude API not initialized - set ANTHROPIC_API_KEY")
+
+    if model is None:
+        model = CLAUDE_PRIMARY_MODEL
+
+    # Encode image to base64 for Claude
+    import base64
+    image_base64 = base64.b64encode(image_data).decode('utf-8')
+
+    # Claude vision API call
+    response = await claude_client.messages.create(
+        model=model,
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime_type,
+                            "data": image_base64
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+    )
+
+    # Extract text from response
+    if response.content and len(response.content) > 0:
+        return response.content[0].text
+    return None
 
 async def call_gemini_with_retry(api_call_factory, max_retries: int = None, base_delay: float = None, fallback_models: list = None):
     """Call Gemini API with exponential backoff retry for 503 errors and model fallbacks.
@@ -1434,6 +2190,163 @@ class FullMetadataView(discord.ui.View):
                 followup_text = f"```\n{full_text}\n```"
 
             await interaction.followup.send(followup_text, ephemeral=True)
+
+
+# =============================================================================
+# R2 UPLOAD WORKFLOW (for JPEG/WebP metadata)
+# =============================================================================
+
+# Rate limiting for uploads (prevent abuse)
+user_upload_timestamps = {}  # {user_id: [timestamp1, timestamp2, ...]}
+MAX_UPLOADS_PER_DAY = 5
+UPLOAD_RATE_LIMIT_WINDOW = 86400  # 24 hours in seconds
+
+def check_upload_rate_limit(user_id: int) -> tuple[bool, int]:
+    """Check if user can upload. Returns (can_upload, remaining_uploads)."""
+    import time
+    current_time = time.time()
+
+    # Clean old timestamps
+    if user_id in user_upload_timestamps:
+        user_upload_timestamps[user_id] = [
+            ts for ts in user_upload_timestamps[user_id]
+            if current_time - ts < UPLOAD_RATE_LIMIT_WINDOW
+        ]
+    else:
+        user_upload_timestamps[user_id] = []
+
+    # Check limit
+    upload_count = len(user_upload_timestamps[user_id])
+    remaining = MAX_UPLOADS_PER_DAY - upload_count
+
+    if upload_count >= MAX_UPLOADS_PER_DAY:
+        return (False, 0)
+
+    # Track this upload
+    user_upload_timestamps[user_id].append(current_time)
+    return (True, remaining - 1)
+
+# This command is only registered if R2 is enabled
+if R2_ENABLED:
+    @bot.tree.command(name="upload_image", description="Upload a JPEG/WebP to get its metadata without stripping.")
+    async def upload_image_command(interaction: discord.Interaction):
+        if not R2_ENABLED or not r2_client:
+            await interaction.response.send_message("❌ R2 upload feature is not configured on the bot.", ephemeral=True)
+            return
+
+        # Check rate limit
+        can_upload, remaining = check_upload_rate_limit(interaction.user.id)
+        if not can_upload:
+            await interaction.response.send_message(
+                "❌ **Upload limit reached!** You can upload up to 5 images per day. Please try again tomorrow.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        try:
+            # Generate a unique key for the file
+            file_key = f"uploads/{uuid.uuid4()}.tmp"
+
+            # Generate the pre-signed URL for a PUT request
+            presigned_url = r2_client.generate_presigned_url(
+                'put_object',
+                Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
+                ExpiresIn=R2_UPLOAD_EXPIRATION
+            )
+
+            # --- Define the View with the Button and its Callback ---
+            view = discord.ui.View(timeout=R2_UPLOAD_EXPIRATION)
+
+            async def process_button_callback(button_interaction: discord.Interaction):
+                # The callback has access to 'file_key' from the outer scope
+                await button_interaction.response.defer(thinking=True, ephemeral=True)
+                
+                try:
+                    # Download the file from R2
+                    response = r2_client.get_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                    image_data = response['Body'].read()
+                    logger.info(f"Downloaded {file_key} from R2 for processing by {button_interaction.user.name}")
+
+                    # Parse metadata
+                    metadata = await parse_image_metadata(image_data, file_key)
+
+                    if metadata:
+                        embed = format_metadata_embed(metadata, button_interaction.user)
+                        view = FullMetadataView(metadata)
+                        
+                        await interaction.channel.send(
+                            f"✨ Metadata processed for {button_interaction.user.mention} (from direct upload):",
+                            embed=embed, 
+                            view=view
+                        )
+                        await button_interaction.followup.send("✅ Metadata posted in the channel!", ephemeral=True)
+                    else:
+                        await button_interaction.followup.send("❌ No metadata found in the uploaded image.", ephemeral=True)
+
+                    # Clean up the file from R2
+                    try:
+                        r2_client.delete_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                        logger.info(f"Cleaned up {file_key} from R2 bucket.")
+                    except Exception as e:
+                        logger.error(f"Failed to delete {file_key} from R2: {e}")
+
+                except botocore.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] == 'NoSuchKey':
+                        await button_interaction.followup.send("❌ It looks like the file wasn't uploaded correctly. Please try the `/upload_image` command again.", ephemeral=True)
+                    else:
+                        logger.error(f"R2 Boto3 error: {e}")
+                        await button_interaction.followup.send(f"❌ An error occurred with the R2 service: {e}", ephemeral=True)
+                except Exception as e:
+                    logger.error(f"Error processing R2 upload: {e}")
+                    await button_interaction.followup.send(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+                
+                # Disable the button after it's been used
+                button.disabled = True
+                await interaction.edit_original_response(view=view)
+
+
+            process_button = discord.ui.Button(
+                label="Process Uploaded Image", 
+                style=discord.ButtonStyle.green, 
+            )
+            process_button.callback = process_button_callback
+            view.add_item(process_button)
+
+            # --- Create and send the initial response ---
+            uploader_base_url = UPLOADER_URL
+            params = {'upload_url': presigned_url}
+            uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
+
+            embed = discord.Embed(
+                title="🖼️ Upload Image for Metadata Processing",
+                description=(
+                    "To get metadata from a **JPEG or WebP** file without Discord stripping it, follow these steps:\n\n"
+                    "1. **Click the link below** to open the secure upload page.\n"
+                    "2. **Upload your original image file** on that page (Max 10MB).\n"
+                    "3. Once you see 'Success', come back here and click the **Process Uploaded Image** button."
+                ),
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="🔗 Secure Upload Link", value=f"[Click here to open the uploader]({uploader_link})", inline=False)
+            embed.add_field(
+                name="⚠️ Security & Privacy Notice",
+                value=(
+                    "• **Not 100% secure** - Only upload images you're comfortable sharing\n"
+                    "• **30-day retention** - Files auto-deleted after 30 days\n"
+                    "• **AI metadata only** - For JPEG/WebP with ComfyUI/A1111/Forge metadata\n"
+                    f"• **Rate limit** - {remaining} uploads remaining today ({MAX_UPLOADS_PER_DAY}/day)"
+                ),
+                inline=False
+            )
+            embed.set_footer(text=f"This link and button are valid for {R2_UPLOAD_EXPIRATION // 60} minutes.")
+
+            await interaction.followup.send(embed=embed, view=view)
+
+        except Exception as e:
+            logger.error(f"Error generating pre-signed URL: {e}")
+            await interaction.followup.send(f"❌ An error occurred while creating the upload link: {e}", ephemeral=True)
 
 
 # =============================================================================

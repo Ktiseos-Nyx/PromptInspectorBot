@@ -106,32 +106,309 @@ You can also customize the bot's behavior by copying `config.example.toml` to `c
 ### API Keys
 
 *   **Civitai API Key:** While optional, a Civitai API key is recommended for fetching detailed metadata about models and LoRAs. You can get a free API key from your [Civitai User Account Settings](https://civitai.com/user/account).
-*   **Gemini API Key:** To use the AI features (`/describe` and `/ask`), you'll need a Gemini API key. You can get one for free from the [Google AI Studio](https://aistudio.google.com/app/apikey).
+*   **Gemini API Key:** For Google's Gemini AI (free tier available). Get one from [Google AI Studio](https://aistudio.google.com/app/apikey).
+*   **Claude API Key:** For Anthropic's Claude AI (pay-as-you-go, $5 starter credit). Get one from [Anthropic Console](https://console.anthropic.com).
 
-### Future: Alternative LLM Support
+**Note:** You can use **either or both** AI providers! The bot will automatically detect which API keys you've set and use them based on your configured priority.
 
-Currently, the bot uses Google's Gemini API for AI features. However, the architecture is designed to be extensible for future integration with other LLM providers:
+### AI Provider Configuration
 
-*   **Local LLM Support:** We plan to add support for locally-hosted models via Ollama, LM Studio, or similar frameworks
-*   **Multi-Provider Support:** Future versions could include a "flip switch" configuration to easily swap between providers (OpenAI, Anthropic Claude, Mistral, etc.)
-*   **Cost Control:** Local models would eliminate API costs entirely while maintaining privacy
+The bot supports **multiple LLM providers** with automatic detection and fallback! You can use Gemini, Claude, or both. Configure via **environment variables** (recommended for Railway/cloud hosting) or **config.toml** (for local/advanced setups).
 
-**For developers:** If you want to implement alternative LLM support now, the main functions to modify are:
-- `ask_gemini()` (bot_enhanced.py:602-627) - Handles conversational AI
-- `describe_command()` (bot_enhanced.py:600-662) - Handles image descriptions
+#### Environment Variables (Railway/Cloud Hosting)
 
-These functions could be abstracted into a provider-agnostic interface with adapters for different LLM backends. Pull requests welcome!
+```env
+# ============ AI Provider Selection ============
+# Set API keys for the providers you want to use
+GEMINI_API_KEY=your_gemini_key_here
+ANTHROPIC_API_KEY=your_claude_key_here
+
+# Provider priority: tries first provider, falls back to next if it fails
+# Options: "gemini", "claude"
+LLM_PROVIDER_PRIORITY=claude,gemini
+
+# ============ Gemini Configuration ============
+GEMINI_PRIMARY_MODEL=gemini-flash-latest
+GEMINI_FALLBACK_MODELS=gemini-flash-latest,gemini-2.5-pro,gemini-2.5-flash
+GEMINI_MAX_RETRIES=3
+GEMINI_RETRY_DELAY=1.0
+
+# ============ Claude Configuration ============
+CLAUDE_PRIMARY_MODEL=claude-3-5-haiku-20241022
+
+# ============ NSFW/Artistic Content Handling ============
+# Skip Gemini's strict filters for artistic/suggestive content
+# Set to "claude" to use only Claude for /describe
+# NSFW_PROVIDER_OVERRIDE=claude
+```
+
+#### Config.toml (Advanced/Per-Server Customization)
+
+For per-server or per-channel model customization, edit `config.toml`:
+
+```toml
+# ============ Provider Selection ============
+# Which providers to use in order (only enabled if API key is set)
+LLM_PROVIDER_PRIORITY = ["claude", "gemini"]
+
+# ============ Gemini Configuration ============
+GEMINI_PRIMARY_MODEL = "gemini-flash-latest"
+GEMINI_FALLBACK_MODELS = [
+    "gemini-flash-latest",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite"
+]
+
+# ============ Claude Configuration ============
+CLAUDE_PRIMARY_MODEL = "claude-3-5-haiku-20241022"
+CLAUDE_FALLBACK_MODELS = [
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-haiku-20240307"
+]
+
+# ============ NSFW/Artistic Content ============
+# Uncomment to bypass Gemini's strict filters
+# NSFW_PROVIDER_OVERRIDE = "claude"
+```
+
+#### Gemini Model Recommendations
+
+| Model | Speed | Quality | Sensitivity | Free Tier Limits | Best For |
+|-------|-------|---------|-------------|------------------|----------|
+| `gemini-flash-latest` | ⚡⚡⚡ | Good | Medium | 15/min, 1500/day | **Recommended** - Best balance |
+| `gemini-2.5-pro` | ⚡ | Excellent | Low | 2/min, 50/day | Artistic content, complex tasks |
+| `gemini-2.5-flash` | ⚡⚡⚡ | Good | **High** | 15/min, 1500/day | ⚠️ Overly strict filters |
+| `gemini-2.5-flash-lite` | ⚡⚡⚡⚡ | Basic | **Very High** | 15/min, 1500/day | ⚠️ Very strict, not recommended |
+
+**Note:** `gemini-2.5-flash` and `flash-lite` are **very sensitive** to artistic nudity and suggestive content, even in PG-13/anime contexts. Use `flash-latest` or `pro` if you encounter frequent content filtering.
+
+#### Claude Model Recommendations & Pricing
+
+| Model | Speed | Quality | Cost (Input/Output per 1M tokens) | Best For |
+|-------|-------|---------|-----------------------------------|----------|
+| `claude-3-5-haiku-20241022` | ⚡⚡⚡ | Good | $0.25 / $1.25 | **Recommended** - Best cost/performance for images! |
+| `claude-3-5-sonnet-20241022` | ⚡⚡ | Excellent | $3 / $15 | Higher quality descriptions |
+| `claude-opus-4-20250514` | ⚡ | Best | $15 / $75 | Maximum quality (not yet added) |
+| `claude-3-haiku-20240307` | ⚡⚡⚡ | Good | $0.25 / $1.25 | Older Haiku (fallback) |
+
+**Budget tip:** With the $5 starter credit, **Haiku 3.5 can process ~1,500+ image descriptions** (10x cheaper than Sonnet)! Haiku works great for image descriptions and handles artistic content much better than Gemini.
+
+### Multi-Provider LLM System
+
+The bot features a **smart provider fallback system** that automatically switches between AI providers if one fails:
+
+**How it works:**
+1. **Automatic Detection:** Bot detects which providers you have API keys for
+2. **Priority-Based Selection:** Tries providers in your configured order (`LLM_PROVIDER_PRIORITY`)
+3. **Graceful Fallback:** If one provider fails (rate limit, content filter, API error), automatically tries the next
+4. **Cost Control:** Configure priority to use cheaper/free providers first
+
+**Example configurations:**
+
+```env
+# Prioritize free tier (Gemini) with paid fallback (Claude)
+LLM_PROVIDER_PRIORITY=gemini,claude
+
+# Prioritize quality (Claude) with free fallback (Gemini)
+LLM_PROVIDER_PRIORITY=claude,gemini
+
+# Use only one provider
+LLM_PROVIDER_PRIORITY=claude
+# (Just don't set the other API key)
+```
+
+**Per-server customization:** Users can configure different providers for different Discord servers by editing `config.toml` directly. This allows server-specific cost optimization and quality preferences.
+
+#### NSFW/Artistic Content Mode
+
+If you're working with artistic content that triggers Gemini's overly strict safety filters (suggestive poses, artistic nudity, PG-13/R-rated content), you can enable **NSFW Provider Override** to skip Gemini entirely:
+
+```env
+# Environment variable
+NSFW_PROVIDER_OVERRIDE=claude
+```
+
+```toml
+# Or in config.toml
+NSFW_PROVIDER_OVERRIDE = "claude"
+```
+
+**When to use this:**
+- Artistic nudity (no explicit content, but suggestive)
+- Open shirts, swimwear, lingerie
+- Suggestive poses or angles
+- Anime/manga art with cleavage or midriff
+- Any content that's PG-13/R but not NC-17
+
+**How it works:** When enabled, `/describe` will **only** use Claude and skip Gemini completely. Claude is much more lenient with artistic content while still blocking actual explicit material.
+
+### Future LLM Support
+
+The architecture is designed for easy extension to additional providers:
+
+*   **Local LLM Support:** Planned support for Ollama, LM Studio, or similar frameworks
+*   **OpenAI/GPT Support:** Could be added with minimal changes
+*   **Mistral/Other APIs:** Extensible provider system makes adding new APIs straightforward
+
+**For developers:** To add a new provider, implement a describe function similar to `describe_image_with_claude()` or `describe_image_with_gemini()` in `bot_enhanced.py`, then add it to the provider priority logic in `/describe` command. Pull requests welcome!
+
+## Security System
+
+The bot includes a comprehensive **anti-scam detection system** to protect your server from common attack patterns. This system automatically detects and bans scammers without manual intervention.
+
+### What It Detects
+
+The security system catches two main scammer types:
+
+**1. Wallet Scammers**
+- Crypto wallet spam with ALL CAPS messages
+- Currency symbols in username (£, €, ¥, ₿)
+- Hoisting characters (!, =, #) to appear at top of member list
+- Keywords: "WALLET", "SOL", "DEAD TOKENS", "PAY HIM", etc.
+
+Example:
+> Username: `=££BOSHGO`
+> Message: "ANYONE WHO CAN GET ME A WALLLET THAT HAVE PLENTY TRANSACTIONS I WILL PAY HIM 3SOL..."
+
+**2. Screenshot Spammers**
+- 4+ crypto screenshot images
+- Cross-posting same message in multiple channels
+- Gibberish text or empty messages
+- No profile picture, no roles
+
+### How It Works
+
+The system uses a **behavior-based scam score** with automatic actions:
+
+| Score | Action | Description |
+|-------|--------|-------------|
+| 100+ | **Instant Ban** | High confidence scam - user banned, all messages deleted (last 5 min) |
+| 75-99 | **Delete + Alert** | Medium confidence - message deleted, admins notified |
+| 50-74 | **Watchlist** | Low confidence - logged for monitoring |
+
+**Why behavior-based?**
+- Real scammers can have profile pics and accounts that are years old
+- The system focuses on **what they do**, not what they look like:
+  - ✅ Cross-posting same content in 5+ channels
+  - ✅ Crypto keyword spam patterns
+  - ✅ Gibberish text or empty messages
+  - ✅ Role exploitation (CATCHER-only)
+
+**Detection Methods:**
+- ✅ **Magic Bytes Check:** Prevents malware disguised as images (.exe as .jpg) - checks attachments AND embeds
+- ✅ **Cross-Posting Detection:** Same message in 2+ channels = instant ban
+- ✅ **Gibberish Detection:** Context-aware (allows "AAAA" from users with roles, allows images without text)
+- ✅ **Keyword Scanning:** Crypto scam patterns with weighted scores
+- ✅ **Role Tracking:** CATCHER role exploitation, no roles at all
+- ✅ **Username Analysis:** Hoisting characters (=, !, #), currency symbols (£, €, ₿), auto-generated names (word.word1234_5678)
+- ✅ **Profile Analysis:** No profile picture adds to scam score (but not sole factor)
+
+### Automatic Bypass
+
+The security system **only** bypasses checks for:
+- ✅ **Server owners** (you literally own the server)
+- ✅ **Trusted users** (manually configured in TRUSTED_USER_IDS)
+
+**Everyone else gets checked** - doesn't matter if they have a profile pic or if their account is years old. The system focuses on **behavior**, not appearance.
+
+### Configuration
+
+Set these in `config.toml` or as environment variables:
+
+```toml
+# CATCHER role ID (self-assignable color role that scammers exploit)
+CATCHER_ROLE_ID = 1336289642789470228
+
+# Trusted user IDs who bypass all security checks (mods, bots, etc.)
+# NOTE: You probably don't need to add yourself if you're the server owner or have a 1+ year account!
+TRUSTED_USER_IDS = [123456789, 987654321]
+
+# Admin alert channel ID for ban notifications
+ADMIN_CHANNEL_ID = 1234567890
+```
+
+Or as environment variables:
+```env
+CATCHER_ROLE_ID=1336289642789470228
+TRUSTED_USER_IDS=123456789,987654321
+ADMIN_CHANNEL_ID=1234567890
+```
+
+**How to get IDs:**
+1. Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
+2. Right-click user/role/channel → Copy ID
+
+### Required Permissions
+
+For the security system to work, the bot needs:
+- **Ban Members:** To ban detected scammers
+- **Manage Messages:** To delete spam messages
+- **Read Message History:** To clean up all messages from banned users
+
+**Note:** The security system is completely optional. If you don't configure it, the bot will still work normally for metadata inspection without any security features.
+
+## R2 Upload Feature (Optional)
+
+The bot can use Cloudflare R2 to handle JPEG/WebP uploads, allowing metadata extraction from formats that Discord normally strips.
+
+### Features
+- 📤 **Direct Upload** - Upload JPEG/WebP files without Discord stripping metadata
+- 🔒 **Rate Limited** - 5 uploads per user per day (prevents abuse)
+- 🗑️ **Auto-Delete** - Files automatically deleted after 30 days
+- 📏 **Size Limited** - 10MB maximum file size
+- ⚠️ **Security Warnings** - Clear notices that uploads are not 100% secure
+
+### Configuration
+
+Set these environment variables to enable R2 uploads:
+
+```env
+R2_ACCOUNT_ID=your_account_id
+R2_ACCESS_KEY_ID=your_access_key
+R2_SECRET_ACCESS_KEY=your_secret_key
+R2_BUCKET_NAME=your_bucket_name
+UPLOADER_URL=https://your-pages-url.pages.dev/uploader.html
+```
+
+### Cloudflare R2 Setup
+
+1. **Create R2 Bucket** in Cloudflare dashboard
+2. **Create API Token** with R2 read/write permissions
+3. **Set Lifecycle Rule** for 30-day auto-deletion:
+   - Prefix: `uploads/`
+   - Action: Delete object
+   - Days: 30
+4. **Deploy uploader.html** to Cloudflare Pages
+
+### Security & Privacy
+
+The upload system includes multiple safeguards:
+- ✅ Rate limiting (5 uploads/day per user)
+- ✅ File size validation (10MB max)
+- ✅ File type validation (JPEG/WebP only)
+- ✅ Presigned URL expiry (1 hour)
+- ✅ 30-day auto-deletion
+- ⚠️ Users warned: "Not 100% secure - only upload images you're comfortable sharing"
+
+**Note:** This feature is completely optional. If R2 is not configured, the bot works normally without it.
 
 ## Permissions
 
 For the bot to function correctly, it needs the following permissions in your Discord server:
 
+### Core Permissions (Required)
 *   **Read Messages/View Channel:** To see messages and images in channels.
 *   **Send Messages:** To send metadata replies.
 *   **Read Message History:** To fetch the original message when a reaction is added.
 *   **Add Reactions:** To add the 🔎 and ⛔ reactions to messages.
 *   **Use External Emojis:** If you are using custom emojis for the reactions.
 *   **Attach Files:** To send metadata as a file if it's too long.
+
+### Security Permissions (Optional - Only needed if using the Security System)
+*   **Ban Members:** To ban detected scammers automatically.
+*   **Manage Messages:** To delete spam messages and clean up banned users' messages.
 
 ## Troubleshooting
 

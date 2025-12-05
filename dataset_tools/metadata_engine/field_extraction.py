@@ -14,6 +14,8 @@ from dataset_tools.metadata_engine.extractors.a1111_extractors import A1111Extra
 from dataset_tools.metadata_engine.extractors.civitai_extractors import CivitaiExtractor
 from dataset_tools.metadata_engine.extractors.comfyui_enhanced_extractor import ComfyUIEnhancedExtractor
 from dataset_tools.metadata_engine.extractors.comfyui_extractors import ComfyUIExtractor
+from dataset_tools.metadata_engine.extractors.comfyui_griptape import ComfyUIGriptapeExtractor
+from dataset_tools.metadata_engine.extractors.comfyui_pixart import ComfyUIPixArtExtractor
 
 # Import extraction modules
 from dataset_tools.metadata_engine.extractors.direct_extractors import DirectValueExtractor
@@ -46,6 +48,8 @@ class FieldExtractor:
         self.civitai_extractor = CivitaiExtractor(self.logger)
         self.comfyui_extractor = ComfyUIExtractor(self.logger)
         self.comfyui_enhanced_extractor = ComfyUIEnhancedExtractor(self.logger)
+        self.comfyui_griptape_extractor = ComfyUIGriptapeExtractor(self.logger)
+        self.comfyui_pixart_extractor = ComfyUIPixArtExtractor(self.logger)
         self.drawthings_extractor = DrawThingsExtractor(self.logger)
         self.invokeai_extractor = InvokeAIExtractor(self.logger)
         self.json_extractor = JSONExtractor(self.logger)
@@ -76,6 +80,12 @@ class FieldExtractor:
 
         # Enhanced ComfyUI methods (priority over standard)
         self._method_registry.update(self.comfyui_enhanced_extractor.get_methods())
+
+        # Griptape-specific ComfyUI methods
+        self._method_registry.update(self.comfyui_griptape_extractor.get_methods())
+
+        # PixArt-specific ComfyUI methods
+        self._method_registry.update(self.comfyui_pixart_extractor.get_methods())
 
         # DrawThings methods
         self._method_registry.update(self.drawthings_extractor.get_methods())
