@@ -13,34 +13,41 @@ ALLOWED_GUILD_IDS = []  # Example: [123456789, 987654321]
 MONITORED_CHANNEL_IDS = []
 
 # ============================================================================
-# FEATURE MANAGEMENT (Per-Channel)
+# FEATURE MANAGEMENT (Per-Server)
 # ============================================================================
-# Define which features are active in which channels.
-# This allows you to keep channels clean and focused.
+# Feature toggles are now managed per-server via guild_settings.json
+# Administrators can use the /settings command in Discord to configure features
 #
-# Format: channel_id = ["feature1", "feature2", ...]
-#
-# Available features:
+# Available features (configured via /settings command):
 # - "metadata" (enables emoji reactions, /metadata, and context menu)
 # - "describe" (enables the /describe command and button)
 # - "ask" (enables the /ask command for conversational AI)
-# - "dream" (enables the /dream command for image generation)
+# - "techsupport" (enables the /techsupport command for IT help)
+# - "coder" (enables the /coder command for programming help)
+# - "fun_commands" (enables /decide, /poll, /wildcard commands)
+# - "qotd" (enables Question of the Day feature)
+# - "interact" (enables /interact command for user interactions)
 #
-# Example:
-# [channel_features]
-# 123456789012345678 = ["metadata", "describe"]
-# 098765432109876543 = ["ask"]
-
-[channel_features]
+# See guild_settings.json for current configuration
 
 # ============================================================================
 # R2 UPLOAD & RATE LIMITING
 # ============================================================================
 
-# Ko-fi Supporter Role ID (for unlimited uploads)
-# Users with this role get 500 uploads/day instead of 100
+# Ko-fi Supporter Role IDs (for increased upload limits)
+# Users with these roles get 500 uploads/day instead of 100
 # Get role ID: Discord Server Settings → Roles → Right-click role → Copy ID
-KOFI_SUPPORTER_ROLE_ID = 0  # Set to your Ko-fi/supporter role ID
+# Supports multiple roles (e.g., Ko-fi supporters, admins, moderators)
+SUPPORTER_ROLE_IDS = []  # Example: [123456789, 987654321]
+
+# ============================================================================
+# ADMIN & SECURITY ALERTS
+# ============================================================================
+
+# Admin Channel IDs for security alerts (supports multiple channels/servers)
+# Security events (NSFW attempts, rate limit hits, etc.) will be posted here
+# Get channel ID: Right-click channel → Copy Channel ID
+ADMIN_CHANNEL_IDS = []  # Example: [123456789, 987654321]
 
 # ============================================================================
 # BOT BEHAVIOR
