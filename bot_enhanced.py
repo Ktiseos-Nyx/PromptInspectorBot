@@ -1574,9 +1574,9 @@ async def techsupport_command(interaction: discord.Interaction, issue: str):
     Args:
         issue: Describe your tech problem
     """
-    # Check if techsupport feature is enabled for this channel
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "techsupport" not in CHANNEL_FEATURES[interaction.channel.id]:
-        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+    # Check if techsupport feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "techsupport", default=False):
+        await interaction.response.send_message("❌ The `/techsupport` command is not enabled on this server.", ephemeral=True)
         return
 
     # STRICT rate limit for Gemini API (1 per 10 seconds)
@@ -1687,9 +1687,9 @@ async def coder_command(interaction: discord.Interaction, question: str):
     Args:
         question: Describe your coding problem or question
     """
-    # Check if coder feature is enabled for this channel
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "coder" not in CHANNEL_FEATURES[interaction.channel.id]:
-        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+    # Check if coder feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "coder", default=False):
+        await interaction.response.send_message("❌ The `/coder` command is not enabled on this server.", ephemeral=True)
         return
 
     # STRICT rate limit for Gemini API (1 per 10 seconds)
@@ -1989,6 +1989,11 @@ async def decide_command(interaction: discord.Interaction, choices: str):
     Args:
         choices: Comma-separated list of options (e.g. "pizza, tacos, sushi")
     """
+    # Check if fun_commands feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "fun_commands", default=True):
+        await interaction.response.send_message("❌ Fun commands are not enabled on this server.", ephemeral=True)
+        return
+
     # Split by comma and clean up whitespace
     options = [opt.strip() for opt in choices.split(',') if opt.strip()]
 
@@ -2041,6 +2046,11 @@ async def poll_command(interaction: discord.Interaction, question: str, poll_typ
         option_a: Option A text (required for A/B polls)
         option_b: Option B text (required for A/B polls)
     """
+    # Check if fun_commands feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "fun_commands", default=True):
+        await interaction.response.send_message("❌ Fun commands are not enabled on this server.", ephemeral=True)
+        return
+
     if poll_type.value == "ab":
         if not option_a or not option_b:
             await interaction.response.send_message(
@@ -2076,6 +2086,11 @@ async def poll_command(interaction: discord.Interaction, question: str, poll_typ
 @bot.tree.command(name="wildcard", description="Generate a random art prompt")
 async def wildcard_command(interaction: discord.Interaction):
     """Generates a random art prompt using wildcards."""
+    # Check if fun_commands feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "fun_commands", default=True):
+        await interaction.response.send_message("❌ Fun commands are not enabled on this server.", ephemeral=True)
+        return
+
     import random
 
     try:
