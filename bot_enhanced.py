@@ -331,6 +331,115 @@ def get_all_guild_settings(guild_id: int) -> dict:
 
 
 # ============================================================================
+# QOTD SYSTEM - Question of the Day Management
+# ============================================================================
+
+QOTD_FILE = Path('qotd.json')
+
+def load_qotd_data() -> dict:
+    """Load QOTD data from JSON file."""
+    if not QOTD_FILE.exists():
+        return {
+            "questions": [],
+            "used_questions": [],
+            "last_posted": None
+        }
+
+    try:
+        with open(QOTD_FILE, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading QOTD data: {e}")
+        return {"questions": [], "used_questions": [], "last_posted": None}
+
+def save_qotd_data(data: dict):
+    """Save QOTD data to JSON file."""
+    try:
+        with open(QOTD_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving QOTD data: {e}")
+
+def get_random_qotd() -> tuple[str, int]:
+    """Get a random unused question from the pool.
+
+    Returns:
+        Tuple of (question_text, question_index) or (None, -1) if no questions available
+    """
+    data = load_qotd_data()
+
+    # Get unused questions
+    all_questions = data.get("questions", [])
+    used_questions = data.get("used_questions", [])
+
+    # Find unused questions
+    unused = [q for q in all_questions if q not in used_questions]
+
+    # If all questions used, reset the pool
+    if not unused and all_questions:
+        logger.info("All QOTD questions used - resetting pool")
+        data["used_questions"] = []
+        save_qotd_data(data)
+        unused = all_questions
+
+    if not unused:
+        return None, -1
+
+    # Pick random question
+    import random
+    question = random.choice(unused)
+    question_index = all_questions.index(question)
+
+    return question, question_index
+
+def mark_qotd_used(question: str):
+    """Mark a question as used and update last_posted timestamp."""
+    import time
+    data = load_qotd_data()
+
+    if question not in data.get("used_questions", []):
+        data.setdefault("used_questions", []).append(question)
+
+    data["last_posted"] = time.time()
+    save_qotd_data(data)
+
+def add_qotd_question(question: str) -> bool:
+    """Add a new question to the pool.
+
+    Returns:
+        True if added successfully, False if duplicate
+    """
+    data = load_qotd_data()
+
+    # Check for duplicates
+    if question in data.get("questions", []):
+        return False
+
+    data.setdefault("questions", []).append(question)
+    save_qotd_data(data)
+    logger.info(f"Added new QOTD question: {question[:50]}...")
+    return True
+
+def get_qotd_stats() -> dict:
+    """Get statistics about the QOTD pool.
+
+    Returns:
+        Dictionary with total, used, and remaining counts
+    """
+    data = load_qotd_data()
+    total = len(data.get("questions", []))
+    used = len(data.get("used_questions", []))
+    remaining = total - used
+
+    return {
+        "total": total,
+        "used": used,
+        "remaining": remaining,
+        "last_posted": data.get("last_posted")
+    }
+
+
+# ============================================================================
 # SECURITY SYSTEM - Anti-Scam Detection
 # ============================================================================
 # This system detects and prevents two main scammer types:
@@ -2177,6 +2286,137 @@ async def settings_command(interaction: discord.Interaction):
 
     view = SettingsView().create_updated_view()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+@bot.tree.command(name="qotd", description="Post the Question of the Day")
+async def qotd_command(interaction: discord.Interaction):
+    """Post a random Question of the Day and create a discussion thread."""
+    # Check if QOTD feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "qotd", default=False):
+        await interaction.response.send_message(
+            "❌ The QOTD system is not enabled in this server.\n"
+            "_Administrators can enable it with `/settings`_",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    try:
+        # Get random question
+        question, idx = get_random_qotd()
+
+        if not question:
+            await interaction.followup.send(
+                "❌ No questions available in the QOTD pool!\n"
+                "Add questions with `/qotd_add`",
+                ephemeral=True
+            )
+            return
+
+        # Get stats for footer
+        stats = get_qotd_stats()
+
+        # Create embed
+        embed = discord.Embed(
+            title="❓ Question of the Day",
+            description=f"**{question}**",
+            color=discord.Color.purple()
+        )
+
+        embed.set_footer(
+            text=f"Question #{idx + 1} • {stats['remaining']} questions remaining in pool"
+        )
+
+        # Post the question
+        message = await interaction.followup.send(embed=embed)
+
+        # Create a thread for discussion
+        try:
+            thread = await message.create_thread(
+                name=f"QOTD: {question[:80]}{'...' if len(question) > 80 else ''}",
+                auto_archive_duration=1440  # 24 hours
+            )
+
+            # Send a starter message in the thread
+            await thread.send(
+                "💬 **Discuss your answers here!** Share your thoughts and read what others have to say."
+            )
+
+            logger.info(f"QOTD posted in {interaction.guild.name}: {question[:50]}...")
+
+        except Exception as e:
+            logger.error(f"Error creating QOTD thread: {e}")
+            # Thread creation failed, but question was posted successfully
+
+        # Mark question as used
+        mark_qotd_used(question)
+
+    except Exception as e:
+        logger.error(f"Error in qotd_command: {e}")
+        await interaction.followup.send(
+            "❌ An error occurred while posting QOTD. Please try again.",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="qotd_add", description="Add a question to the QOTD pool")
+async def qotd_add_command(interaction: discord.Interaction, question: str):
+    """Add a new question to the Question of the Day pool.
+
+    Args:
+        question: The question to add
+    """
+    # Check if QOTD feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "qotd", default=False):
+        await interaction.response.send_message(
+            "❌ The QOTD system is not enabled in this server.\n"
+            "_Administrators can enable it with `/settings`_",
+            ephemeral=True
+        )
+        return
+
+    # Validate question length
+    if len(question) < 10:
+        await interaction.response.send_message(
+            "❌ Question too short! Please provide a meaningful question (at least 10 characters).",
+            ephemeral=True
+        )
+        return
+
+    if len(question) > 500:
+        await interaction.response.send_message(
+            "❌ Question too long! Please keep it under 500 characters.",
+            ephemeral=True
+        )
+        return
+
+    # Add question to pool
+    added = add_qotd_question(question)
+
+    if not added:
+        await interaction.response.send_message(
+            "❌ This question already exists in the pool!",
+            ephemeral=True
+        )
+        return
+
+    # Get updated stats
+    stats = get_qotd_stats()
+
+    # Success message
+    embed = discord.Embed(
+        title="✅ Question Added!",
+        description=f"Your question has been added to the QOTD pool:\n\n**{question}**",
+        color=discord.Color.green()
+    )
+
+    embed.set_footer(
+        text=f"Total questions in pool: {stats['total']} • {stats['remaining']} unused"
+    )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    logger.info(f"User {interaction.user.name} added QOTD: {question[:50]}...")
 
 
 # =============================================================================
