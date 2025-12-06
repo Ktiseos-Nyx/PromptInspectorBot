@@ -362,6 +362,47 @@ ADMIN_CHANNEL_ID = 0
 
 ---
 
+## Forking This Bot
+
+<details>
+<summary><b>🍴 Important Notes for Forks</b></summary>
+
+If you're forking this bot for your own use, please update the following:
+
+### Required Changes
+
+1. **Ko-fi Links** - Replace with your own:   - `uploader.html`: Lines 112, 114
+   - `bot_enhanced.py`: Search for `ko-fi.com/OTNAngel` and `ko-fi.com/duskfallcrew`
+   - Update to your Ko-fi/donation links
+
+2. **Discord Invite** - Replace with your server:
+   - `uploader.html`: Line 117 - `discord.gg/HhBSvM9gBY`
+   - `bot_enhanced.py`: Search for `discord.gg/HhBSvM9gBY`
+   - Update to your support server invite
+
+3. **Ko-fi Role ID** - Set your role ID:
+   - `config.toml`: Add `KOFI_SUPPORTER_ROLE_ID = your_role_id`
+   - Get from Discord → Server Settings → Roles → Right-click role → Copy ID
+
+### Optional (But Appreciated)
+
+- Keep the Ko-fi link in `uploader.html` if you want to support the original developer
+- Credit this fork in your README
+- Share improvements back via pull requests!
+
+### Rate Limits (Configurable)
+
+You can adjust these in `bot_enhanced.py`:
+```python
+MAX_UPLOADS_PER_MINUTE = 10  # Burst protection
+MAX_UPLOADS_PER_DAY_FREE = 100  # Free users
+MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters
+```
+
+</details>
+
+---
+
 ## Legal
 
 - 📄 **[Privacy Policy](PRIVACY.md)** - How we handle data (TL;DR: we don't store it)

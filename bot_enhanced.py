@@ -2200,35 +2200,73 @@ class FullMetadataView(discord.ui.View):
 # R2 UPLOAD WORKFLOW (for JPEG/WebP metadata)
 # =============================================================================
 
-# Rate limiting for uploads (prevent abuse)
+# Rate limiting for uploads (DDoS protection + fair use)
 user_upload_timestamps = {}  # {user_id: [timestamp1, timestamp2, ...]}
-MAX_UPLOADS_PER_DAY = 5
-UPLOAD_RATE_LIMIT_WINDOW = 86400  # 24 hours in seconds
 
-def check_upload_rate_limit(user_id: int) -> tuple[bool, int]:
-    """Check if user can upload. Returns (can_upload, remaining_uploads)."""
+# Rate limit tiers
+MAX_UPLOADS_PER_MINUTE = 10  # Burst protection (DDoS prevention)
+MAX_UPLOADS_PER_DAY_FREE = 100  # Free tier (generous!)
+MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters (practically unlimited)
+
+# Time windows
+BURST_WINDOW = 60  # 1 minute in seconds
+DAILY_WINDOW = 86400  # 24 hours in seconds
+
+# Ko-fi supporter role ID (replace with your server's role)
+# Get this from: Discord Server Settings → Roles → Right-click role → Copy ID
+KOFI_SUPPORTER_ROLE_ID = config.get('KOFI_SUPPORTER_ROLE_ID', 0)  # Set in config.toml
+
+def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool, int, str]:
+    """
+    Check if user can upload. Returns (can_upload, remaining_uploads, limit_type).
+
+    Args:
+        user_id: Discord user ID
+        user_roles: List of role IDs the user has (optional)
+
+    Returns:
+        (can_upload, remaining, limit_type) where limit_type is 'burst', 'daily_free', or 'daily_supporter'
+    """
     import time
     current_time = time.time()
 
-    # Clean old timestamps
-    if user_id in user_upload_timestamps:
-        user_upload_timestamps[user_id] = [
-            ts for ts in user_upload_timestamps[user_id]
-            if current_time - ts < UPLOAD_RATE_LIMIT_WINDOW
-        ]
-    else:
+    # Initialize user timestamps if needed
+    if user_id not in user_upload_timestamps:
         user_upload_timestamps[user_id] = []
 
-    # Check limit
-    upload_count = len(user_upload_timestamps[user_id])
-    remaining = MAX_UPLOADS_PER_DAY - upload_count
+    # Clean old timestamps (remove anything older than 24 hours)
+    user_upload_timestamps[user_id] = [
+        ts for ts in user_upload_timestamps[user_id]
+        if current_time - ts < DAILY_WINDOW
+    ]
 
-    if upload_count >= MAX_UPLOADS_PER_DAY:
-        return (False, 0)
+    # Check if user is a Ko-fi supporter
+    is_supporter = False
+    if user_roles and KOFI_SUPPORTER_ROLE_ID:
+        is_supporter = KOFI_SUPPORTER_ROLE_ID in user_roles
 
-    # Track this upload
+    # BURST PROTECTION (applies to everyone, even supporters)
+    burst_uploads = [
+        ts for ts in user_upload_timestamps[user_id]
+        if current_time - ts < BURST_WINDOW
+    ]
+    if len(burst_uploads) >= MAX_UPLOADS_PER_MINUTE:
+        return (False, 0, 'burst')
+
+    # DAILY LIMIT (varies by supporter status)
+    daily_uploads = len(user_upload_timestamps[user_id])
+    max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
+
+    if daily_uploads >= max_daily:
+        limit_type = 'daily_supporter' if is_supporter else 'daily_free'
+        return (False, 0, limit_type)
+
+    # User can upload! Track this upload
     user_upload_timestamps[user_id].append(current_time)
-    return (True, remaining - 1)
+    remaining = max_daily - daily_uploads - 1
+    limit_type = 'daily_supporter' if is_supporter else 'daily_free'
+
+    return (True, remaining, limit_type)
 
 # This command is only registered if R2 is enabled
 if R2_ENABLED:
@@ -2238,13 +2276,31 @@ if R2_ENABLED:
             await interaction.response.send_message("❌ R2 upload feature is not configured on the bot.", ephemeral=True)
             return
 
-        # Check rate limit
-        can_upload, remaining = check_upload_rate_limit(interaction.user.id)
+        # Check rate limit (with role-based limits)
+        user_role_ids = [role.id for role in interaction.user.roles] if hasattr(interaction.user, 'roles') else []
+        can_upload, remaining, limit_type = check_upload_rate_limit(interaction.user.id, user_role_ids)
+
         if not can_upload:
-            await interaction.response.send_message(
-                "❌ **Upload limit reached!** You can upload up to 5 images per day. Please try again tomorrow.",
-                ephemeral=True
-            )
+            # Different messages based on limit type
+            if limit_type == 'burst':
+                await interaction.response.send_message(
+                    "⏰ **Whoa there!** You're uploading too fast. Please wait a minute before trying again.\n"
+                    "_(DDoS protection: Max 10 uploads per minute)_",
+                    ephemeral=True
+                )
+            elif limit_type == 'daily_supporter':
+                await interaction.response.send_message(
+                    f"✅ **Ko-fi Supporter limit reached!** You've hit your {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day limit. Try again tomorrow!\n"
+                    "_(This is to protect R2 storage costs)_",
+                    ephemeral=True
+                )
+            else:  # daily_free
+                await interaction.response.send_message(
+                    f"📦 **Daily limit reached!** Free users get {MAX_UPLOADS_PER_DAY_FREE} uploads per day.\n\n"
+                    f"💰 **Want unlimited?** Support us on Ko-fi to get {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day!\n"
+                    f"🔗 https://ko-fi.com/OTNAngel/",
+                    ephemeral=True
+                )
             return
 
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -2323,28 +2379,40 @@ if R2_ENABLED:
             params = {'upload_url': presigned_url}
             uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
 
+            # Determine user tier for display
+            is_supporter = KOFI_SUPPORTER_ROLE_ID in user_role_ids if KOFI_SUPPORTER_ROLE_ID else False
+            tier_name = "Ko-fi Supporter" if is_supporter else "Free"
+            max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
+
             embed = discord.Embed(
-                title="🖼️ Upload Image for Metadata Processing",
+                title="📤 Upload Images for Metadata Extraction",
                 description=(
-                    "To get metadata from a **JPEG or WebP** file without Discord stripping it, follow these steps:\n\n"
-                    "1. **Click the link below** to open the secure upload page.\n"
-                    "2. **Upload your original image file** on that page (Max 10MB).\n"
-                    "3. Once you see 'Success', come back here and click the **Process Uploaded Image** button."
+                    "Upload JPEG or WebP files to extract metadata:\n\n"
+                    "1. **Click the link below** to open the uploader\n"
+                    "2. **Select your images** (Max 10MB each)\n"
+                    "3. **Click Upload**\n"
+                    "4. Come back and click **Process** when done"
                 ),
                 color=discord.Color.blue()
             )
-            embed.add_field(name="🔗 Secure Upload Link", value=f"[Click here to open the uploader]({uploader_link})", inline=False)
+            embed.add_field(name="🔗 Upload Link", value=f"[Click here to upload]({uploader_link})", inline=False)
             embed.add_field(
-                name="⚠️ Security & Privacy Notice",
+                name="ℹ️ Info",
                 value=(
-                    "• **Not 100% secure** - Only upload images you're comfortable sharing\n"
-                    "• **30-day retention** - Files auto-deleted after 30 days\n"
-                    "• **AI metadata only** - For JPEG/WebP with ComfyUI/A1111/Forge metadata\n"
-                    f"• **Rate limit** - {remaining} uploads remaining today ({MAX_UPLOADS_PER_DAY}/day)"
+                    f"• **{tier_name}** - {remaining}/{max_daily} uploads remaining today\n"
+                    f"• **Auto-cleanup** - Files deleted after processing\n"
+                    f"• **JPEG/WebP only** - For ComfyUI/A1111/Forge metadata\n"
+                    f"• **Max 10MB** per file"
                 ),
                 inline=False
             )
-            embed.set_footer(text=f"This link and button are valid for {R2_UPLOAD_EXPIRATION // 60} minutes.")
+            if not is_supporter:
+                embed.add_field(
+                    name="💰 Want More Uploads?",
+                    value=f"[Support on Ko-fi]({' https://ko-fi.com/OTNAngel/'}) to get {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day!",
+                    inline=False
+                )
+            embed.set_footer(text=f"Link valid for {R2_UPLOAD_EXPIRATION // 60} min • Need help? discord.gg/HhBSvM9gBY")
 
             await interaction.followup.send(embed=embed, view=view)
 

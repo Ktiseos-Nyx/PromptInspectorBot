@@ -34,6 +34,15 @@ MONITORED_CHANNEL_IDS = []
 [channel_features]
 
 # ============================================================================
+# R2 UPLOAD & RATE LIMITING
+# ============================================================================
+
+# Ko-fi Supporter Role ID (for unlimited uploads)
+# Users with this role get 500 uploads/day instead of 100
+# Get role ID: Discord Server Settings → Roles → Right-click role → Copy ID
+KOFI_SUPPORTER_ROLE_ID = 0  # Set to your Ko-fi/supporter role ID
+
+# ============================================================================
 # BOT BEHAVIOR
 # ============================================================================
 

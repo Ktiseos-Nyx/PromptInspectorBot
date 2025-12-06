@@ -97,17 +97,24 @@
 <body>
     <div class="container">
         <h1>Upload Your Image</h1>
-        <p>Select your original JPEG or WebP file to process its metadata.</p>
+        <p>Select your JPEG or WebP file to extract metadata.</p>
 
-        <!-- Security Warning -->
-        <div style="background-color: #faa81a; color: #000; padding: 1rem; border-radius: 5px; margin: 1rem 0; font-size: 0.9rem;">
-            <strong>⚠️ Security Notice:</strong>
-            <ul style="text-align: left; margin: 0.5rem 0; padding-left: 1.5rem;">
-                <li><strong>Not 100% secure</strong> - Only upload images you're comfortable sharing</li>
-                <li><strong>30-day retention</strong> - Files automatically deleted after 30 days</li>
-                <li><strong>AI metadata only</strong> - For JPEG/WebP with ComfyUI/A1111/Forge metadata</li>
-                <li><strong>Max 10MB</strong> - Larger files will be rejected</li>
-            </ul>
+        <!-- Info Notice -->
+        <div style="background-color: #5865f2; color: #fff; padding: 0.75rem; border-radius: 5px; margin: 1rem 0; font-size: 0.9rem;">
+            📤 Upload your original image here<br>
+            🔎 Bot will extract and post metadata to Discord<br>
+            🗑️ Files auto-deleted after processing
+        </div>
+
+        <!-- Support Links -->
+        <div style="background-color: #2f3136; padding: 0.75rem; border-radius: 5px; margin: 1rem 0; font-size: 0.85rem; border: 1px solid #4f545c;">
+            <strong>💰 Want unlimited uploads?</strong><br>
+            <a href="https://ko-fi.com/OTNAngel/" target="_blank" style="color: #7289da;">Support on Ko-fi</a> to get 500 uploads/day!<br><br>
+            <strong>💖 General support:</strong><br>
+            <a href="https://ko-fi.com/duskfallcrew/" target="_blank" style="color: #7289da;">Ko-fi</a> •
+            <a href="https://duskfallcrew-shop.fourthwall.com/" target="_blank" style="color: #7289da;">Shop</a><br><br>
+            <strong>❓ Need help?</strong><br>
+            <a href="https://discord.gg/HhBSvM9gBY" target="_blank" style="color: #7289da;">Join our Discord</a>
         </div>
 
         <div class="upload-area" id="upload-area">
