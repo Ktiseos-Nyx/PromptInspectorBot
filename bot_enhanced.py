@@ -2864,13 +2864,18 @@ async def ask_gemini(user: discord.User, question: str, user_display_name: str =
 # CONTEXT MENU (Right-click)
 # =============================================================================
 
+# =============================================================================
+# CONTEXT MENU (Right-click)
+# =============================================================================
+
+# 👇 THIS LINE WAS MISSING 👇
+@bot.tree.context_menu(name="View Prompts")
 async def view_prompt_context(interaction: discord.Interaction, message: discord.Message):
     """Context menu to view prompts from a message.
 
     Args:
         interaction: Discord interaction
         message: Target message
-
     """
     # Check if metadata feature is enabled for this channel
     if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
@@ -2883,20 +2888,20 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
     if rate_limiter.is_rate_limited(interaction.user.id):
         await interaction.followup.send(
             "⏰ You're making requests too quickly. Please wait a minute.",
-            ephemeral=True,
+            ephemeral=True
         )
         return
 
     # Get PNG/JPEG/WebP attachments
     attachments = [
         a for a in message.attachments
-        if a.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and a.size < SCAN_LIMIT_BYTES
+        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and a.size < SCAN_LIMIT_BYTES
     ]
 
     if not attachments:
         await interaction.followup.send(
             "❌ No PNG, JPEG, or WebP images found in this message.",
-            ephemeral=True,
+            ephemeral=True
         )
         return
 
@@ -2912,14 +2917,14 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
             await interaction.followup.send(
                 embed=embed,
                 view=view,
-                ephemeral=True,
+                ephemeral=True
             )
             sent_count += 1
 
     if sent_count == 0:
         await interaction.followup.send(
             "❌ No metadata found in any images.",
-            ephemeral=True,
+            ephemeral=True
         )
 
 
