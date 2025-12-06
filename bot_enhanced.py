@@ -826,6 +826,10 @@ async def on_message(message: discord.Message):
     if message.author.bot and not message.webhook_id:
         return
 
+    # Ignore DMs (only process server messages)
+    if not message.guild:
+        return
+
     # ============================================================================
     # SECURITY CHECKS - Run BEFORE processing to catch scammers early
     # ============================================================================
