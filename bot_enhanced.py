@@ -29,14 +29,12 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from PIL import Image
+from utils.security import RateLimiter, sanitize_text
+from dataset_tools.metadata_parser import parse_metadata
+from utils.discord_formatter import create_full_metadata_text, format_metadata_embed
 
 # Suppress aiohttp unclosed client session warnings on shutdown
 warnings.filterwarnings("ignore", message="Unclosed client session", category=ResourceWarning)
-
-from dataset_tools.metadata_parser import parse_metadata
-
-# Local utilities
-from utils.discord_formatter import create_full_metadata_text, format_metadata_embed
 
 # Load environment variables
 load_dotenv()

@@ -6,6 +6,22 @@ venv
 config.toml
 ENV_SETUP_GUIDE.html
 
+# Security
+.env
+config.toml
+
+# Python Garbage
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS Garbage
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
 # macOS system files
 .DS_Store
 .AppleDouble
