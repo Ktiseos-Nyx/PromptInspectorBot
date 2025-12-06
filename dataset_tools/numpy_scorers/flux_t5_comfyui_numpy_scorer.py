@@ -11,12 +11,17 @@ from pathlib import Path
 from typing import Any
 
 from dataset_tools.logger import get_logger
-from dataset_tools.numpy_scorers.base_numpy_scorer import RUNTIME_ANALYTICS, WORKFLOW_CACHE, BaseNumpyScorer
+from dataset_tools.numpy_scorers.base_numpy_scorer import (
+    RUNTIME_ANALYTICS,
+    WORKFLOW_CACHE,
+    BaseNumpyScorer,
+)
 
 logger = get_logger(__name__)
 
 
 class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
+
     """Specialized numpy scorer for FLUX/T5 ComfyUI workflows."""
 
     def __init__(self):
@@ -27,24 +32,24 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
         self.FLUX_SAMPLER_NODES = {
             "SamplerCustomAdvanced",
             "SamplerCustom",
-            "FluxSampler"
+            "FluxSampler",
         }
 
         self.FLUX_GUIDER_NODES = {
             "BasicGuider",
             "CFGGuider",
-            "FluxGuider"
+            "FluxGuider",
         }
 
         self.T5_ENCODER_NODES = {
             "T5TextEncode",
             "PixArtT5TextEncode",
-            "CLIPTextEncodeFlux"
+            "CLIPTextEncodeFlux",
         }
 
         self.FLUX_CONDITIONING_NODES = {
             "FluxGuidance",
-            "ConditioningSetTimestepRange"
+            "ConditioningSetTimestepRange",
         }
 
         # Performance limits
@@ -56,7 +61,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
             "masterpiece", "high quality", "detailed", "beautiful", "best quality",
             "intricate", "photorealistic", "cinematic", "portrait", "landscape",
             "anime", "realistic", "stunning", "gorgeous", "amazing", "professional",
-            "artstation", "8k", "4k", "ultra detailed", "sharp focus", "vivid colors"
+            "artstation", "8k", "4k", "ultra detailed", "sharp focus", "vivid colors",
         ]
 
         self.negative_keywords = [
@@ -64,13 +69,13 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
             "nsfw", "bad anatomy", "missing", "distorted", "jpeg artifacts",
             "watermark", "signature", "logo", "cropped", "out of frame",
             "text overlay", "boring", "amateur", "pixelated", "overexposed",
-            "mutation", "mutated", "extra limb", "extra hands", "poorly drawn", "lowres"
+            "mutation", "mutated", "extra limb", "extra hands", "poorly drawn", "lowres",
         ]
 
         self.technical_terms = [
             "lanczos", "bilinear", "ddim", "euler", "dpmpp", "cfg", "randomize",
             "steps", "sampler", "scheduler", "denoise", "seed", "checkpoint",
-            "lora", "embedding", "hypernetwork", "vae", "controlnet"
+            "lora", "embedding", "hypernetwork", "vae", "controlnet",
         ]
 
     def extract_text_candidates_from_workflow(self, workflow_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -99,7 +104,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
             # STEP 2: Trace from samplers through guiders to conditioning
             for sampler in flux_samplers:
                 sampler_candidates = self._trace_flux_sampler_conditioning(
-                    sampler, link_map, nodes
+                    sampler, link_map, nodes,
                 )
                 candidates.extend(sampler_candidates)
 
@@ -158,7 +163,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
                         "source_node_type": source_node.get("type") or source_node.get("class_type", ""),
                         "source_slot": source_slot,
                         "target_node_id": target_node_id,
-                        "target_slot": target_slot
+                        "target_slot": target_slot,
                     }
 
         return link_map
@@ -178,7 +183,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
         return samplers
 
     def _trace_flux_sampler_conditioning(
-        self, sampler_node: dict[str, Any], link_map: dict[int, dict[str, Any]], all_nodes: list[dict[str, Any]]
+        self, sampler_node: dict[str, Any], link_map: dict[int, dict[str, Any]], all_nodes: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Trace FLUX sampler inputs to find conditioning through guider chains."""
         candidates = []
@@ -270,7 +275,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
                     "connection_strength": 1.0,
                     "target_node_type": source_node_type,
                     "target_node_id": source_node.get("id"),
-                    "node_title": source_node.get("title", "")
+                    "node_title": source_node.get("title", ""),
                 })
         else:
             # Continue tracing through intermediate nodes (FluxGuidance, etc.)
@@ -320,7 +325,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
                         "connection_strength": 0.5,  # Lower confidence for direct extraction
                         "target_node_type": node_type,
                         "target_node_id": node.get("id"),
-                        "node_title": node.get("title", "")
+                        "node_title": node.get("title", ""),
                     })
 
         return candidates
@@ -390,7 +395,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
                         "is_connected": True,
                         "connection_strength": 0.8,  # Lower than final generation (1.2)
                         "target_node_type": target_node_type,
-                        "target_node_id": target_node_id
+                        "target_node_id": target_node_id,
                     })
                     self.logger.debug("Extracted dynamic prompt result: '%s...'", display_content[:60])
 
@@ -427,7 +432,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
                         "is_connected": True,
                         "connection_strength": 1.2,  # High strength for final generated content
                         "target_node_type": target_node_type,
-                        "target_node_id": target_node_id
+                        "target_node_id": target_node_id,
                     })
                     self.logger.debug("Found final generated content: '%s...'", encoder_content[:60])
 
@@ -611,7 +616,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
             "confidence": confidence,
             "prompt_type": prompt_type,
             "reasons": reasons,
-            "is_template": is_template
+            "is_template": is_template,
         })
 
         return enhanced_candidate
@@ -862,16 +867,16 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
                 "text": best_positive["text"][:100] + "..." if best_positive and len(best_positive["text"]) > 100 else best_positive["text"] if best_positive else None,
                 "score": best_positive["final_score"] if best_positive else None,
                 "node_type": best_positive.get("node_type") if best_positive else None,
-                "confidence": best_positive.get("confidence") if best_positive else None
+                "confidence": best_positive.get("confidence") if best_positive else None,
             } if best_positive else None,
             "top_candidates": [
                 {
                     "text": c["text"][:50] + "..." if len(c["text"]) > 50 else c["text"],
                     "score": c["final_score"],
                     "type": c["prompt_type"],
-                    "node_type": c.get("node_type")
+                    "node_type": c.get("node_type"),
                 } for c in scored_candidates[:3]  # Top 3 for debugging
-            ]
+            ],
         }
 
         # Cache results for future use
@@ -880,7 +885,7 @@ class FluxT5ComfyUINumpyScorer(BaseNumpyScorer):
             "enhanced_negative": enhanced_result.get("negative_prompt") if enhancement_applied else None,
             "workflow_type": f"flux_t5_{workflow_type}",
             "candidates_found": len(candidates),
-            "processing_time": processing_time
+            "processing_time": processing_time,
         }
         WORKFLOW_CACHE[cache_key] = cache_data
 

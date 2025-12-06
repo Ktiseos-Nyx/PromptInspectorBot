@@ -11,6 +11,7 @@ from .base_format import BaseFormat
 
 
 class MidjourneySignatureType(Enum):
+
     """Types of Midjourney signatures for identification"""
 
     XMP_DIGITAL_GUID = "xmp_digital_guid"
@@ -21,6 +22,7 @@ class MidjourneySignatureType(Enum):
 
 @dataclass
 class MidjourneyConfig:
+
     """Configuration for Midjourney format parsing - systematically organized"""
 
     # Parameter regex patterns for Midjourney commands
@@ -43,7 +45,7 @@ class MidjourneyConfig:
             "stop": re.compile(r"--stop\s+(\d+)", re.IGNORECASE),
             "no": re.compile(r"--no\s+([^-]+?)(?=\s*--|\s*$)", re.IGNORECASE),
             "aspect": re.compile(r"--aspect\s+([\d:\.]+)", re.IGNORECASE),  # Alternative to --ar
-        }
+        },
     )
 
     # Flag parameters (no values)
@@ -72,7 +74,7 @@ class MidjourneyConfig:
             "style": "style_preset",
             "niji": "niji_version",
             "tile": "tile_mode",
-        }
+        },
     )
 
     # XMP keys for Midjourney identification
@@ -82,7 +84,7 @@ class MidjourneyConfig:
             "iptcExt:DigImageGUID",
             "Xmp.dc.description",
             "dc:description",
-        }
+        },
     )
 
     # EXIF keys that might contain Midjourney signatures
@@ -91,7 +93,7 @@ class MidjourneyConfig:
             "Exif.Image.Make",
             "Exif.Image.Software",
             "Exif.Photo.UserComment",
-        }
+        },
     )
 
     # Job ID pattern
@@ -99,7 +101,7 @@ class MidjourneyConfig:
         default_factory=lambda: re.compile(
             r"Job ID:\s*([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})",
             re.IGNORECASE,
-        )
+        ),
     )
 
     # Midjourney-specific identifiers in text
@@ -110,11 +112,12 @@ class MidjourneyConfig:
             "/imagine",
             "mj_",
             "--",
-        }
+        },
     )
 
 
 class MidjourneySignatureDetector:
+
     """Advanced signature detection for Midjourney identification"""
 
     def __init__(self, config: MidjourneyConfig, logger: logging.Logger):
@@ -152,7 +155,7 @@ class MidjourneySignatureDetector:
 
         self.logger.debug(
             f"Midjourney detection: confidence={detection_result['confidence_score']:.2f}, "
-            f"signatures={len(detection_result['signatures_found'])}"
+            f"signatures={len(detection_result['signatures_found'])}",
         )
 
         return detection_result
@@ -240,7 +243,7 @@ class MidjourneySignatureDetector:
         return score
 
     def _analyze_description_signatures(
-        self, info_data: dict[str, Any], raw_data: str, result: dict[str, Any]
+        self, info_data: dict[str, Any], raw_data: str, result: dict[str, Any],
     ) -> float:
         """Analyze description/text content for Midjourney signatures"""
         description_texts = self._extract_all_description_sources(info_data, raw_data)
@@ -356,7 +359,7 @@ class MidjourneySignatureDetector:
 
         # EXIF Make + parameters in description
         if result["exif_analysis"].get("make_is_midjourney") and result["description_analysis"].get(
-            "has_mj_parameters"
+            "has_mj_parameters",
         ):
             return True
 
@@ -375,6 +378,7 @@ class MidjourneySignatureDetector:
 
 
 class MidjourneyParameterExtractor:
+
     """Extracts and processes Midjourney parameters from text"""
 
     def __init__(self, config: MidjourneyConfig, logger: logging.Logger):
@@ -490,6 +494,7 @@ class MidjourneyParameterExtractor:
 
 
 class MidjourneyFormat(BaseFormat):
+
     """Enhanced Midjourney format parser with comprehensive signature detection.
 
     Handles multiple Midjourney identification methods:
@@ -546,7 +551,7 @@ class MidjourneyFormat(BaseFormat):
             confidence = self._detection_result["confidence_score"]
             signatures = len(self._detection_result["signatures_found"])
             self._logger.debug(
-                f"{self.tool}: Not identified as Midjourney (confidence: {confidence:.2f}, signatures: {signatures})"
+                f"{self.tool}: Not identified as Midjourney (confidence: {confidence:.2f}, signatures: {signatures})",
             )
             self.status = self.Status.FORMAT_DETECTION_ERROR
             self._error = "No definitive Midjourney signatures found"
@@ -558,7 +563,7 @@ class MidjourneyFormat(BaseFormat):
             return  # Error already set
 
         self._logger.info(
-            f"{self.tool}: Successfully parsed with {self._detection_result['confidence_score']:.2f} confidence"
+            f"{self.tool}: Successfully parsed with {self._detection_result['confidence_score']:.2f} confidence",
         )
 
     def _extract_midjourney_data(self) -> bool:

@@ -11,6 +11,7 @@ from .a1111 import A1111
 
 
 class ForgeFormat(A1111):
+
     """Parser for Forge/ReForge.
 
     Inherits from A1111 to use its helper methods

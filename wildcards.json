@@ -3,42 +3,58 @@
     "warrior", "mage", "dragon", "phoenix", "cat", "wolf", "robot", "cyborg",
     "knight", "princess", "demon", "angel", "witch", "wizard", "samurai",
     "ninja", "pirate", "astronaut", "scientist", "detective", "vampire",
-    "werewolf", "fairy", "mermaid", "centaur", "elf", "dwarf", "orc"
+    "werewolf", "fairy", "mermaid", "centaur", "elf", "dwarf", "orc",
+    "Cyberpunk Samurai", "Hamster Wizard", "Gothic Cathedral", "Neon Ramen Shop",
+    "Steampunk Airship", "Eldritch Horror", "Slice of Life Cafe", "Abandoned Mall",
+    "Space Station", "Underwater City", "Forest Spirit", "Mecha Pilot"
   ],
   "styles": [
     "anime", "realistic", "oil painting", "watercolor", "pixel art", "sketch",
     "digital art", "3D render", "cartoon", "comic book", "manga", "chibi",
     "photorealistic", "impressionist", "cyberpunk", "steampunk", "fantasy",
-    "sci-fi", "horror", "noir", "vaporwave", "synthwave", "low poly"
+    "sci-fi", "horror", "noir", "vaporwave", "synthwave", "low poly","Oil Painting",
+    "Unreal Engine 5", "Pixel Art", "Ukiyo-e", "Polaroid",
+    "Synthwave", "Dark Fantasy", "Studio Ghibli", "1990s Anime", "Watercolor",
+    "Cyberpunk", "Steampunk", "Vaporwave", "Noir", "Renaissance"
   ],
   "settings": [
     "futuristic city", "medieval castle", "enchanted forest", "desert wasteland",
     "underwater kingdom", "space station", "cyberpunk alley", "ancient ruins",
     "mountain peak", "volcanic landscape", "frozen tundra", "tropical beach",
     "haunted mansion", "mystical cave", "floating islands", "post-apocalyptic",
-    "victorian street", "japanese temple", "alien planet", "crystal cavern"
+    "victorian street", "japanese temple", "alien planet", "crystal cavern",
+    "in a rainstorm", "during sunset", "in a neon city", "underwater", "in space",
+    "in a forest", "in a desert", "on a mountain", "in a library", "in a laboratory"
   ],
   "lighting": [
     "golden hour", "neon lights", "moonlight", "dramatic shadows", "soft ambient",
     "harsh sunlight", "bioluminescent", "candlelight", "aurora borealis",
     "sunset", "sunrise", "starlight", "fog", "volumetric lighting", "rim lighting",
-    "backlight", "firelight", "magical glow", "thunder and lightning"
+    "backlight", "firelight", "magical glow", "thunder and lightning",
+    "cinematic lighting", "natural light", "neon lights", "candlelight",
+    "studio lighting", "soft lighting", "hard shadows", "volumetric lighting"
   ],
   "moods": [
     "epic", "serene", "ominous", "whimsical", "melancholic", "triumphant",
     "mysterious", "peaceful", "chaotic", "ethereal", "dramatic", "playful",
-    "dark", "vibrant", "dreamy", "intense", "calm", "energetic"
+    "dark", "vibrant", "dreamy", "intense", "calm", "energetic",
+    "mysterious", "happy", "melancholic", "energetic", "peaceful",
+    "scary", "romantic", "epical", "dreamy", "gloomy"
   ],
   "actions": [
     "standing heroically", "casting a spell", "wielding a sword", "flying through the air",
     "meditating", "fighting", "dancing", "exploring", "resting", "charging forward",
     "leaping", "summoning magic", "defending", "attacking", "sneaking",
-    "running", "floating", "transforming", "conjuring"
+    "running", "floating", "transforming", "conjuring",
+    "fighting", "eating", "sleeping", "reading", "exploring",
+    "dancing", "flying", "running", "swimming", "meditating"
   ],
   "details": [
     "glowing eyes", "flowing hair", "intricate armor", "magical particles",
     "energy aura", "detailed clothing", "ornate jewelry", "battle scars",
     "tattoos", "wings", "tail", "horns", "crown", "cape", "weapon",
-    "staff", "shield", "mask", "hood", "robe"
+    "staff", "shield", "mask", "hood", "robe","highly detailed",
+    "minimalist", "intricate", "bokeh depth of field",
+    "wide angle", "telephoto", "macro", "4k", "8k", "masterpiece"
   ]
 }

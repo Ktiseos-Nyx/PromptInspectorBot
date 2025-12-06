@@ -18,6 +18,7 @@ log = get_logger(__name__)
 
 
 class FileScanResult(NamedTuple):
+
     """Result of scanning a directory for files.
 
     This is like your loot summary after a dungeon run! 🎁
@@ -34,6 +35,7 @@ class FileScanResult(NamedTuple):
 
 
 class FileExtensionCategories:
+
     """Manages file extension categorization.
 
     This class knows which file extensions belong to which categories,
@@ -209,6 +211,7 @@ class FileExtensionCategories:
 
 
 class DirectoryScanner:
+
     """Scans directories and categorizes files.
 
     This is your exploration class - it goes into new areas and
@@ -256,7 +259,7 @@ class DirectoryScanner:
             images, texts, models, total_files = self._categorize_files(items, folder_path)
 
             self.logger.info(
-                "Scan completed for %s: %d images, %d texts, %d models", folder_path, len(images), len(texts), len(models)
+                "Scan completed for %s: %d images, %d texts, %d models", folder_path, len(images), len(texts), len(models),
             )
 
             return FileScanResult(
@@ -270,7 +273,7 @@ class DirectoryScanner:
 
         except Exception as e:
             self.logger.error(
-                "Unexpected error scanning directory '%s': %s", folder_path, e, exc_info=True
+                "Unexpected error scanning directory '%s': %s", folder_path, e, exc_info=True,
             )
             return FileScanResult(
                 images=[],
@@ -355,6 +358,7 @@ class DirectoryScanner:
 
 
 class FileOperations:
+
     """High-level file operations interface.
 
     This is your main class that combines scanning and categorization

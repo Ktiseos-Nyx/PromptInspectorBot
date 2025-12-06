@@ -10,6 +10,7 @@ from typing import Any
 
 
 class TextExtractor:
+
     """Extracts text content from ComfyUI nodes with format-specific handling."""
 
     def extract_text_from_node(self, node: dict[str, Any], source_info: dict[str, Any]) -> str:

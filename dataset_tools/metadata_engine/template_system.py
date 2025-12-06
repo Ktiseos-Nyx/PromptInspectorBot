@@ -31,6 +31,7 @@ ContextData = dict[str, Any]
 
 
 class TemplateProcessor:
+
     """Processes templates with variable substitution.
 
     This class handles the transformation of template structures by
@@ -156,6 +157,7 @@ class TemplateProcessor:
 
 
 class TemplateValidator:
+
     """Validates template structures and variable references."""
 
     def __init__(self, logger: logging.Logger | None = None):
@@ -205,6 +207,7 @@ class TemplateValidator:
 
 
 class StandardTemplates:
+
     """Collection of standard templates for common AI tools."""
 
     @staticmethod
@@ -228,6 +231,7 @@ class StandardTemplates:
 
 
 class TemplateBuilder:
+
     """Builder class for creating template structures programmatically."""
 
     def __init__(self):
@@ -255,6 +259,7 @@ class TemplateBuilder:
 
 
 class OutputFormatter:
+
     """Formats processed templates into different output structures."""
 
     def __init__(self, logger: logging.Logger | None = None):
@@ -307,7 +312,7 @@ class OutputFormatter:
                 "processed_at": __import__("datetime").datetime.now().isoformat(),
                 "processor": "MetadataEngine",
                 "template_processed": True,
-            }
+            },
         )
         return output
 

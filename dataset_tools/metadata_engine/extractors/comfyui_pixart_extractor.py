@@ -12,6 +12,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIPixArtExtractor:
+
     """Extracts data from ComfyUI workflows using PixArt nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -92,7 +93,7 @@ class ComfyUIPixArtExtractor:
 
         origin_node_type = origin_node.get("type")
         self.logger.debug(
-            "[PixArt] Tracing back from '%s' on node %s to node %s (type: %s)", input_name, node_id, origin_id, origin_node_type
+            "[PixArt] Tracing back from '%s' on node %s to node %s (type: %s)", input_name, node_id, origin_id, origin_node_type,
         )
 
         if "PixArtT5TextEncode" in origin_node_type:
@@ -107,7 +108,7 @@ class ComfyUIPixArtExtractor:
             output_name = origin_node["outputs"][origin_slot_idx]["name"]
         except (IndexError, KeyError):
             self.logger.error(
-                "[PixArt] Could not determine output name for slot %s on node %s", origin_slot_idx, origin_id
+                "[PixArt] Could not determine output name for slot %s on node %s", origin_slot_idx, origin_id,
             )
             return None
 

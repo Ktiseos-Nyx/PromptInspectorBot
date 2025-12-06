@@ -15,6 +15,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUINodeChecker:
+
     """Handles ComfyUI node validation and checking."""
 
     # --- SUGGESTION 2: Use class constants for indicators for better readability and maintenance.

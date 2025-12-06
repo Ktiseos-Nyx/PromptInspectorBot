@@ -39,6 +39,7 @@ from ..logger import info_monitor as nfo
 
 
 class SchemaFileReader:
+
     """Specialized reader for structured data files.
 
     This class handles reading JSON, TOML, YAML, XML and other structured
@@ -264,7 +265,7 @@ class SchemaFileReader:
                         "key_count": len(data),
                         "top_level_keys": list(data.keys())[:10],  # First 10 keys
                         "nested_levels": self._count_nested_levels(data),
-                    }
+                    },
                 )
 
                 # Check for common patterns
@@ -276,7 +277,7 @@ class SchemaFileReader:
                         "data_type": "array",
                         "item_count": len(data),
                         "item_types": self._analyze_list_types(data),
-                    }
+                    },
                 )
 
             else:
@@ -284,7 +285,7 @@ class SchemaFileReader:
                     {
                         "data_type": "primitive",
                         "value_type": type(data).__name__,
-                    }
+                    },
                 )
 
         except Exception as e:
@@ -359,6 +360,7 @@ class SchemaFileReader:
 
 
 class StructuredDataAnalyzer:
+
     """Advanced analyzer for structured data content.
 
     This class provides detailed analysis of parsed structured data,

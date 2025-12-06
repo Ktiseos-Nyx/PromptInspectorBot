@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIImpactExtractor:
+
     """Handles Impact Pack ecosystem nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -334,7 +335,7 @@ class ComfyUIImpactExtractor:
             class_type = node_data.get("class_type", "")
             if "LoraTagLoader" in class_type:
                 extracted_values = self._extract_widgets_values(
-                    node_data, ["lora_name", "strength_model", "strength_clip"]
+                    node_data, ["lora_name", "strength_model", "strength_clip"],
                 )
                 lora_loaders[node_id] = extracted_values
         return lora_loaders

@@ -9,51 +9,46 @@ Enhanced with Dataset-Tools metadata engine for comprehensive ComfyUI support!
 ARCHITECTURE NOTE: Uses subprocess to call dataset-tools-parse CLI
 This keeps the bot lightweight (<100MB RAM) instead of loading PyQt6 and heavy GUI deps
 """
-import os
+import asyncio
 import io
 import json
-import asyncio
 import logging
-import subprocess
+import os
 import warnings
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
-import discord
-from discord.ext import commands
-from discord import app_commands
-from dotenv import load_dotenv
-import toml
-from PIL import Image
 import aiohttp
 import boto3
 import botocore
-import uuid
-import urllib.parse
+import discord
+import toml
+from discord import app_commands
+from discord.ext import commands
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from PIL import Image
 
 # Suppress aiohttp unclosed client session warnings on shutdown
 warnings.filterwarnings("ignore", message="Unclosed client session", category=ResourceWarning)
 
-import google.genai as genai
-from google.genai import types
-
-# Local utilities
-from utils.security import RateLimiter, sanitize_text
-from utils.discord_formatter import format_metadata_embed, create_full_metadata_text
 from dataset_tools.metadata_parser import parse_metadata
 
+# Local utilities
+from utils.discord_formatter import create_full_metadata_text, format_metadata_embed
 
 # Load environment variables
 load_dotenv()
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # Initialize Gemini client (new SDK)
 gemini_client = None
 if GEMINI_API_KEY:
     gemini_client = genai.Client(
-        api_key=GEMINI_API_KEY
+        api_key=GEMINI_API_KEY,
     )
 
 # Initialize Claude client (Anthropic SDK)
@@ -61,13 +56,12 @@ claude_client = None
 if ANTHROPIC_API_KEY:
     from anthropic import AsyncAnthropic
     claude_client = AsyncAnthropic(
-        api_key=ANTHROPIC_API_KEY
+        api_key=ANTHROPIC_API_KEY,
     )
 
 
-
 # Load config from toml file
-config = toml.load('config.toml') if Path('config.toml').exists() else {}
+config = toml.load("config.toml") if Path("config.toml").exists() else {}
 
 # Check environment variables first, fall back to config.toml
 # This allows Railway/production to override settings without changing the repo
@@ -79,7 +73,7 @@ def parse_id_list(env_var_name: str, config_key: str) -> set:
         env_value = env_value.strip()
         if env_value == "[]" or env_value == "":
             return set()
-        return set(int(x.strip()) for x in env_value.split(',') if x.strip())
+        return set(int(x.strip()) for x in env_value.split(",") if x.strip())
     # Fall back to config.toml
     return set(config.get(config_key, []))
 
@@ -89,71 +83,71 @@ def parse_channel_features(env_var_name: str, config_key: str) -> Dict[int, set]
     env_value = os.getenv(env_var_name)
     if env_value is not None:
         # Parse env var: "channel_id:feature1,feature2;channel_id:feature1..."
-        for item in env_value.split(';'):
-            if ':' in item:
-                channel_id_str, features_str = item.split(':', 1)
+        for item in env_value.split(";"):
+            if ":" in item:
+                channel_id_str, features_str = item.split(":", 1)
                 if channel_id_str.isdigit():
                     channel_id = int(channel_id_str)
-                    features[channel_id] = {f.strip() for f in features_str.split(',')}
-    else:
-        # Fall back to config.toml
-        if config and config_key in config:
-            config_features = config[config_key]
-            for channel_id, feature_list in config_features.items():
-                if isinstance(feature_list, list):
-                    features[int(channel_id)] = set(feature_list)
+                    features[channel_id] = {f.strip() for f in features_str.split(",")}
+    # Fall back to config.toml
+    elif config and config_key in config:
+        config_features = config[config_key]
+        for channel_id, feature_list in config_features.items():
+            if isinstance(feature_list, list):
+                features[int(channel_id)] = set(feature_list)
     return features
 
-ALLOWED_GUILD_IDS = parse_id_list('ALLOWED_GUILD_IDS', 'ALLOWED_GUILD_IDS')
-MONITORED_CHANNEL_IDS = parse_id_list('MONITORED_CHANNEL_IDS', 'MONITORED_CHANNEL_IDS')
-CHANNEL_FEATURES = parse_channel_features('CHANNEL_FEATURES', 'channel_features')
-EMOJI_FOUND = config.get('EMOJI_METADATA_FOUND', '🔎')
-EMOJI_NOT_FOUND = config.get('EMOJI_NO_METADATA', '⛔')
-REACT_ON_NO_METADATA = config.get('REACT_ON_NO_METADATA', False)
-SCAN_LIMIT_BYTES = config.get('SCAN_LIMIT_BYTES', 10 * 1024 * 1024)  # 10MB
+
+ALLOWED_GUILD_IDS = parse_id_list("ALLOWED_GUILD_IDS", "ALLOWED_GUILD_IDS")
+MONITORED_CHANNEL_IDS = parse_id_list("MONITORED_CHANNEL_IDS", "MONITORED_CHANNEL_IDS")
+CHANNEL_FEATURES = parse_channel_features("CHANNEL_FEATURES", "channel_features")
+EMOJI_FOUND = config.get("EMOJI_METADATA_FOUND", "🔎")
+EMOJI_NOT_FOUND = config.get("EMOJI_NO_METADATA", "⛔")
+REACT_ON_NO_METADATA = config.get("REACT_ON_NO_METADATA", False)
+SCAN_LIMIT_BYTES = config.get("SCAN_LIMIT_BYTES", 10 * 1024 * 1024)  # 10MB
 
 # Gemini AI configuration
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL') or config.get('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash')
+GEMINI_PRIMARY_MODEL = os.getenv("GEMINI_PRIMARY_MODEL") or config.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
 
 # Fallback models - support both env var (comma-separated) and config.toml (list)
-fallback_env = os.getenv('GEMINI_FALLBACK_MODELS')
+fallback_env = os.getenv("GEMINI_FALLBACK_MODELS")
 if fallback_env:
     # Parse comma-separated env var: "model1,model2,model3"
-    GEMINI_FALLBACK_MODELS = [m.strip() for m in fallback_env.split(',')]
+    GEMINI_FALLBACK_MODELS = [m.strip() for m in fallback_env.split(",")]
 else:
-    GEMINI_FALLBACK_MODELS = config.get('GEMINI_FALLBACK_MODELS', [
-        'gemini-2.5-flash',
-        'gemini-2.5-flash-lite',
-        'gemini-flash-latest',
-        'gemini-2.5-pro'
+    GEMINI_FALLBACK_MODELS = config.get("GEMINI_FALLBACK_MODELS", [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-flash-latest",
+        "gemini-2.5-pro",
     ])
 
-GEMINI_MAX_RETRIES = int(os.getenv('GEMINI_MAX_RETRIES', config.get('GEMINI_MAX_RETRIES', 3)))
-GEMINI_RETRY_DELAY = float(os.getenv('GEMINI_RETRY_DELAY', config.get('GEMINI_RETRY_DELAY', 1.0)))
+GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", config.get("GEMINI_MAX_RETRIES", 3)))
+GEMINI_RETRY_DELAY = float(os.getenv("GEMINI_RETRY_DELAY", config.get("GEMINI_RETRY_DELAY", 1.0)))
 
 # Claude AI configuration
 # Default to Haiku for cost-efficiency (works great for image descriptions, 10x cheaper than Sonnet)
-CLAUDE_PRIMARY_MODEL = os.getenv('CLAUDE_PRIMARY_MODEL') or config.get('CLAUDE_PRIMARY_MODEL', 'claude-3-5-haiku-20241022')
-CLAUDE_FALLBACK_MODELS = config.get('CLAUDE_FALLBACK_MODELS', [
-    'claude-3-5-haiku-20241022',
-    'claude-3-5-sonnet-20241022',
-    'claude-3-haiku-20240307'
+CLAUDE_PRIMARY_MODEL = os.getenv("CLAUDE_PRIMARY_MODEL") or config.get("CLAUDE_PRIMARY_MODEL", "claude-3-5-haiku-20241022")
+CLAUDE_FALLBACK_MODELS = config.get("CLAUDE_FALLBACK_MODELS", [
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-haiku-20240307",
 ])
 
 # LLM Provider Selection
 # Auto-detect available providers based on API keys
 AVAILABLE_PROVIDERS = []
 if gemini_client:
-    AVAILABLE_PROVIDERS.append('gemini')
+    AVAILABLE_PROVIDERS.append("gemini")
 if claude_client:
-    AVAILABLE_PROVIDERS.append('claude')
+    AVAILABLE_PROVIDERS.append("claude")
 
 # Provider priority (which to try first)
-provider_priority_env = os.getenv('LLM_PROVIDER_PRIORITY')
+provider_priority_env = os.getenv("LLM_PROVIDER_PRIORITY")
 if provider_priority_env:
-    LLM_PROVIDER_PRIORITY = [p.strip() for p in provider_priority_env.split(',')]
+    LLM_PROVIDER_PRIORITY = [p.strip() for p in provider_priority_env.split(",")]
 else:
-    LLM_PROVIDER_PRIORITY = config.get('LLM_PROVIDER_PRIORITY', ['gemini', 'claude'])
+    LLM_PROVIDER_PRIORITY = config.get("LLM_PROVIDER_PRIORITY", ["gemini", "claude"])
 
 # Filter to only available providers
 LLM_PROVIDER_PRIORITY = [p for p in LLM_PROVIDER_PRIORITY if p in AVAILABLE_PROVIDERS]
@@ -161,40 +155,40 @@ LLM_PROVIDER_PRIORITY = [p for p in LLM_PROVIDER_PRIORITY if p in AVAILABLE_PROV
 # NSFW Mode: Skip Gemini's strict filters for artistic/suggestive content
 # Set to "claude" to use only Claude for /describe (bypasses Gemini's overly strict safety filters)
 # Useful for artistic nudity, suggestive content, or PG-13/R-rated images that Gemini blocks
-NSFW_PROVIDER_OVERRIDE = os.getenv('NSFW_PROVIDER_OVERRIDE', config.get('NSFW_PROVIDER_OVERRIDE', None))
+NSFW_PROVIDER_OVERRIDE = os.getenv("NSFW_PROVIDER_OVERRIDE", config.get("NSFW_PROVIDER_OVERRIDE", None))
 
 # R2 Configuration (Optional)
-R2_ACCOUNT_ID = os.getenv('R2_ACCOUNT_ID')
-R2_ACCESS_KEY_ID = os.getenv('R2_ACCESS_KEY_ID')
-R2_SECRET_ACCESS_KEY = os.getenv('R2_SECRET_ACCESS_KEY')
-R2_BUCKET_NAME = os.getenv('R2_BUCKET_NAME')
-UPLOADER_URL = os.getenv('UPLOADER_URL')
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+UPLOADER_URL = os.getenv("UPLOADER_URL")
 
 R2_ENABLED = all([
     R2_ACCOUNT_ID,
     R2_ACCESS_KEY_ID,
     R2_SECRET_ACCESS_KEY,
     R2_BUCKET_NAME,
-    UPLOADER_URL
+    UPLOADER_URL,
 ])
-R2_UPLOAD_EXPIRATION = config.get('R2_UPLOAD_EXPIRATION', 3600) # Pre-signed URL expiry in seconds
+R2_UPLOAD_EXPIRATION = config.get("R2_UPLOAD_EXPIRATION", 3600) # Pre-signed URL expiry in seconds
 
 # Setup logging (MUST be before R2 setup so logger exists!)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger('PromptInspector')
+logger = logging.getLogger("PromptInspector")
 
 r2_client = None
 if R2_ENABLED:
     try:
         r2_client = boto3.client(
-            's3',
+            "s3",
             endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
             aws_access_key_id=R2_ACCESS_KEY_ID,
             aws_secret_access_key=R2_SECRET_ACCESS_KEY,
-            config=botocore.client.Config(signature_version='s3v4')
+            config=botocore.client.Config(signature_version="s3v4"),
         )
         logger.info("✅ R2 client initialized. /upload_image command will be enabled.")
     except Exception as e:
@@ -205,8 +199,8 @@ else:
 
 # Log available LLM providers
 if AVAILABLE_PROVIDERS:
-    logger.info(f"🤖 Available LLM providers: {', '.join(AVAILABLE_PROVIDERS)}")
-    logger.info(f"📋 Provider priority: {' → '.join(LLM_PROVIDER_PRIORITY)}")
+    logger.info("🤖 Available LLM providers: %s", ", ".join(AVAILABLE_PROVIDERS))
+    logger.info("📋 Provider priority: %s", " → ".join(LLM_PROVIDER_PRIORITY))
 else:
     logger.warning("⚠️ No LLM providers available! Set GEMINI_API_KEY or ANTHROPIC_API_KEY.")
 
@@ -216,11 +210,11 @@ intents.message_content = True
 intents.members = True
 intents.guilds = True  # Needed for thread events
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Separate rate limiters for different features
 rate_limiter = RateLimiter(max_requests=5, window_seconds=30)        # Metadata (local parsing - keep lenient)
-gemini_rate_limiter = RateLimiter(max_requests=1, window_seconds=10) # Gemini API - STRICT (1 per 10s to prevent quota abuse)
+gemini_rate_limiter = RateLimiter(max_requests=1, window_seconds=10)  # Gemini API - STRICT (1 per 10s to prevent quota abuse)
 
 # Track recently processed attachments to avoid double-processing PluralKit proxies
 # Use attachment URL instead of message ID since PluralKit creates new messages
@@ -240,7 +234,7 @@ metadata_processing_semaphore = asyncio.Semaphore(1)
 # GUILD SETTINGS SYSTEM - Per-Server Configuration
 # ============================================================================
 
-GUILD_SETTINGS_FILE = Path('guild_settings.json')
+GUILD_SETTINGS_FILE = Path("guild_settings.json")
 
 def load_guild_settings() -> dict:
     """Load guild settings from JSON file."""
@@ -253,11 +247,11 @@ def load_guild_settings() -> dict:
             "coder": False,
             "fun_commands": True,
             "qotd": False,
-            "interact": True
+            "interact": True,
         }}
 
     try:
-        with open(GUILD_SETTINGS_FILE, 'r') as f:
+        with open(GUILD_SETTINGS_FILE) as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Error loading guild settings: {e}")
@@ -266,7 +260,7 @@ def load_guild_settings() -> dict:
 def save_guild_settings(settings: dict):
     """Save guild settings to JSON file."""
     try:
-        with open(GUILD_SETTINGS_FILE, 'w') as f:
+        with open(GUILD_SETTINGS_FILE, "w") as f:
             json.dump(settings, f, indent=2)
     except Exception as e:
         logger.error(f"Error saving guild settings: {e}")
@@ -281,6 +275,7 @@ def get_guild_setting(guild_id: int, setting: str, default: bool = None) -> bool
 
     Returns:
         Boolean setting value
+
     """
     settings = load_guild_settings()
     guild_id_str = str(guild_id)
@@ -303,6 +298,7 @@ def set_guild_setting(guild_id: int, setting: str, value: bool):
         guild_id: Discord guild ID
         setting: Setting name
         value: Boolean value to set
+
     """
     settings = load_guild_settings()
     guild_id_str = str(guild_id)
@@ -320,6 +316,7 @@ def get_all_guild_settings(guild_id: int) -> dict:
 
     Returns:
         Dictionary of all settings for the guild
+
     """
     settings = load_guild_settings()
     guild_id_str = str(guild_id)
@@ -334,7 +331,7 @@ def get_all_guild_settings(guild_id: int) -> dict:
 # QOTD SYSTEM - Question of the Day Management
 # ============================================================================
 
-QOTD_FILE = Path('qotd.json')
+QOTD_FILE = Path("qotd.json")
 
 def load_qotd_data() -> dict:
     """Load QOTD data from JSON file."""
@@ -342,11 +339,11 @@ def load_qotd_data() -> dict:
         return {
             "questions": [],
             "used_questions": [],
-            "last_posted": None
+            "last_posted": None,
         }
 
     try:
-        with open(QOTD_FILE, 'r') as f:
+        with open(QOTD_FILE) as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Error loading QOTD data: {e}")
@@ -355,7 +352,7 @@ def load_qotd_data() -> dict:
 def save_qotd_data(data: dict):
     """Save QOTD data to JSON file."""
     try:
-        with open(QOTD_FILE, 'w') as f:
+        with open(QOTD_FILE, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
         logger.error(f"Error saving QOTD data: {e}")
@@ -365,6 +362,7 @@ def get_random_qotd() -> tuple[str, int]:
 
     Returns:
         Tuple of (question_text, question_index) or (None, -1) if no questions available
+
     """
     data = load_qotd_data()
 
@@ -408,6 +406,7 @@ def add_qotd_question(question: str) -> bool:
 
     Returns:
         True if added successfully, False if duplicate
+
     """
     data = load_qotd_data()
 
@@ -425,6 +424,7 @@ def get_qotd_stats() -> dict:
 
     Returns:
         Dictionary with total, used, and remaining counts
+
     """
     data = load_qotd_data()
     total = len(data.get("questions", []))
@@ -435,7 +435,7 @@ def get_qotd_stats() -> dict:
         "total": total,
         "used": used,
         "remaining": remaining,
-        "last_posted": data.get("last_posted")
+        "last_posted": data.get("last_posted"),
     }
 
 
@@ -447,22 +447,22 @@ def get_qotd_stats() -> dict:
 # 2. Screenshot Spammers: 4+ crypto screenshots, cross-posting, gibberish text
 
 # Security configuration
-CATCHER_ROLE_ID = int(os.getenv('CATCHER_ROLE_ID', config.get('CATCHER_ROLE_ID', 0)))
-TRUSTED_USER_IDS = parse_id_list('TRUSTED_USER_IDS', 'TRUSTED_USER_IDS')
+CATCHER_ROLE_ID = int(os.getenv("CATCHER_ROLE_ID", config.get("CATCHER_ROLE_ID", 0)))
+TRUSTED_USER_IDS = parse_id_list("TRUSTED_USER_IDS", "TRUSTED_USER_IDS")
 # DM whitelist - users allowed to interact with bot via DMs
 # Can be comma-separated in env: DM_ALLOWED_USER_IDS=123,456,789
-DM_ALLOWED_USER_IDS = parse_id_list('DM_ALLOWED_USER_IDS', 'DM_ALLOWED_USER_IDS')
+DM_ALLOWED_USER_IDS = parse_id_list("DM_ALLOWED_USER_IDS", "DM_ALLOWED_USER_IDS")
 # Admin channel IDs for security alerts (supports multiple channels/servers)
 # Can be comma-separated in env: ADMIN_CHANNEL_IDS=123,456,789
-ADMIN_CHANNEL_IDS = parse_id_list('ADMIN_CHANNEL_IDS', 'ADMIN_CHANNEL_IDS')
+ADMIN_CHANNEL_IDS = parse_id_list("ADMIN_CHANNEL_IDS", "ADMIN_CHANNEL_IDS")
 # Backward compatibility: also check old ADMIN_CHANNEL_ID config
-if not ADMIN_CHANNEL_IDS and 'ADMIN_CHANNEL_ID' in config:
-    admin_channel = config.get('ADMIN_CHANNEL_ID', 0)
+if not ADMIN_CHANNEL_IDS and "ADMIN_CHANNEL_ID" in config:
+    admin_channel = config.get("ADMIN_CHANNEL_ID", 0)
     if admin_channel:
         ADMIN_CHANNEL_IDS = {admin_channel}
 # Also check env for single ID
 if not ADMIN_CHANNEL_IDS:
-    env_admin = os.getenv('ADMIN_CHANNEL_ID')
+    env_admin = os.getenv("ADMIN_CHANNEL_ID")
     if env_admin and env_admin.isdigit():
         ADMIN_CHANNEL_IDS = {int(env_admin)}
 
@@ -498,16 +498,17 @@ CROSS_POST_WINDOW_SECONDS = 300  # 5 minutes
 
 # Crypto scam keyword patterns (case-insensitive, with point values)
 import re
+
 CRYPTO_SCAM_PATTERNS = {
-    r'\bWALL?LET\b': 50,
-    r'\b\d+\s*SOL\b': 50,
-    r'\bDEAD\s+TOKENS?\b': 50,
-    r'\bPAY\s+HIM\b': 50,
-    r'\bPLENTY\s+TRANSACTIONS?\b': 40,
-    r'\bEMPTY\s+WALLET\b': 40,
-    r'\bCRYPTO\b': 20,
-    r'\bDM\s+ME\b': 30,
-    r'\bBUY\b.*\bWALLET\b': 40,
+    r"\bWALL?LET\b": 50,
+    r"\b\d+\s*SOL\b": 50,
+    r"\bDEAD\s+TOKENS?\b": 50,
+    r"\bPAY\s+HIM\b": 50,
+    r"\bPLENTY\s+TRANSACTIONS?\b": 40,
+    r"\bEMPTY\s+WALLET\b": 40,
+    r"\bCRYPTO\b": 20,
+    r"\bDM\s+ME\b": 30,
+    r"\bBUY\b.*\bWALLET\b": 40,
 }
 
 
@@ -530,17 +531,17 @@ async def track_message(message: discord.Message):
         user_recent_messages[user_id] = []
 
     user_recent_messages[user_id].append({
-        'fingerprint': fingerprint,
-        'channel_id': message.channel.id,
-        'timestamp': timestamp,
-        'message_id': message.id
+        "fingerprint": fingerprint,
+        "channel_id": message.channel.id,
+        "timestamp": timestamp,
+        "message_id": message.id,
     })
 
     # Clean old messages (older than window)
     current_time = timestamp
     user_recent_messages[user_id] = [
         m for m in user_recent_messages[user_id]
-        if current_time - m['timestamp'] < CROSS_POST_WINDOW_SECONDS
+        if current_time - m["timestamp"] < CROSS_POST_WINDOW_SECONDS
     ]
 
     # Limit tracking per user
@@ -553,6 +554,7 @@ async def check_cross_posting(message: discord.Message) -> int:
 
     Returns:
         Number of different channels where same message was posted
+
     """
     user_id = message.author.id
     if user_id not in user_recent_messages:
@@ -562,10 +564,10 @@ async def check_cross_posting(message: discord.Message) -> int:
     recent = user_recent_messages[user_id]
 
     # Find all messages with same fingerprint
-    same_message_posts = [m for m in recent if m['fingerprint'] == fingerprint]
+    same_message_posts = [m for m in recent if m["fingerprint"] == fingerprint]
 
     # Count unique channels
-    unique_channels = set(m['channel_id'] for m in same_message_posts)
+    unique_channels = set(m["channel_id"] for m in same_message_posts)
     return len(unique_channels)
 
 
@@ -579,6 +581,7 @@ def is_gibberish_or_spam(text: str, user_has_roles: bool = True, has_images: boo
 
     Returns:
         True if text appears to be gibberish/spam
+
     """
     text = text.strip()
 
@@ -590,21 +593,21 @@ def is_gibberish_or_spam(text: str, user_has_roles: bool = True, has_images: boo
     if user_has_roles:
         # "AAAA", "lmao", "omg", etc. are fine if user has roles
         # Pure repeated letter spam (like "AAAAAAaaaaaaaaAAAAA")
-        unique_chars = set(text.replace(' ', '').lower())
+        unique_chars = set(text.replace(" ", "").lower())
         if len(unique_chars) <= 2:  # Only 1-2 unique letters
             return False  # Allow emotional spam for users with roles
 
     # === STRICT CHECKS FOR NO-ROLE USERS ===
 
     # Random letter string (like "tdnfaagoie")
-    if text.isalpha() and ' ' not in text:
+    if text.isalpha() and " " not in text:
         if 5 <= len(text) <= 20:
             # Common okay words
             common_ok = [
-                'hello', 'hi', 'thanks', 'thank', 'please', 'welcome',
-                'yes', 'no', 'okay', 'ok', 'sure', 'nice', 'good',
-                'great', 'awesome', 'cool', 'wow', 'lol', 'lmao',
-                'rofl', 'omg', 'wtf', 'brb', 'afk', 'gg', 'gn',
+                "hello", "hi", "thanks", "thank", "please", "welcome",
+                "yes", "no", "okay", "ok", "sure", "nice", "good",
+                "great", "awesome", "cool", "wow", "lol", "lmao",
+                "rofl", "omg", "wtf", "brb", "afk", "gg", "gn",
             ]
 
             if text.lower() in common_ok:
@@ -628,8 +631,8 @@ def calculate_wallet_scam_score(message: discord.Message) -> tuple[int, list[str
         100+ = instant ban
         75-99 = delete + alert admins
         50-74 = watchlist
+
     """
-    import datetime
     score = 0
     reasons = []
 
@@ -637,17 +640,17 @@ def calculate_wallet_scam_score(message: discord.Message) -> tuple[int, list[str
     name = message.author.display_name
 
     # Currency symbols in username (hoisting technique)
-    if any(c in name for c in ['£', '€', '¥', '₿', '$', '₹', '₽']):
+    if any(c in name for c in ["£", "€", "¥", "₿", "$", "₹", "₽"]):
         score += 20
         reasons.append("Currency symbols in username")
 
     # Hoisting characters (to appear at top of member list)
-    if name and name[0] in ['!', '=', '#', '@', '.', '_', '-', '~']:
+    if name and name[0] in ["!", "=", "#", "@", ".", "_", "-", "~"]:
         score += 20
         reasons.append("Hoisting character in username")
 
     # Check for auto-generated username patterns (e.g., word.word####_#####)
-    if re.search(r'[a-z]+\.[a-z]+\d{2,4}_\d{4,}', name.lower()):
+    if re.search(r"[a-z]+\.[a-z]+\d{2,4}_\d{4,}", name.lower()):
         score += 15
         reasons.append("Suspicious username pattern")
 
@@ -666,17 +669,23 @@ def calculate_wallet_scam_score(message: discord.Message) -> tuple[int, list[str
             score += points
             reasons.append(f"Keyword: {pattern}")
 
-    # Only has CATCHER role (scammers exploit this to look legit)
-    if CATCHER_ROLE_ID and len(message.author.roles) == 2:  # @everyone + CATCHER
-        catcher_role = discord.utils.get(message.author.roles, id=CATCHER_ROLE_ID)
-        if catcher_role:
-            score += 30
-            reasons.append("Only has CATCHER role")
+    # === ROLE CHECKS (FIXED) ===
+    # Check if author is a real Member (with roles) before checking roles!
+    if isinstance(message.author, discord.Member):
 
-    # No roles at all (even worse than just CATCHER)
-    elif len(message.author.roles) == 1:  # Only @everyone
-        score += 20
-        reasons.append("No roles (only @everyone)")
+        # Only has CATCHER role (scammers exploit this to look legit)
+        if CATCHER_ROLE_ID and len(message.author.roles) == 2:  # @everyone + CATCHER
+            catcher_role = discord.utils.get(message.author.roles, id=CATCHER_ROLE_ID)
+            if catcher_role:
+                score += 30
+                reasons.append("Only has CATCHER role")
+
+        # No roles at all (even worse than just CATCHER)
+        elif len(message.author.roles) == 1:  # Only @everyone
+            score += 20
+            reasons.append("No roles (only @everyone)")
+
+    # If it is NOT a Member (e.g. Webhook/PluralKit/DM), we skip role checks entirely.
 
     # No profile picture (red flag, but not damning on its own)
     # Scammers often have Member + CATCHER + no profile pic, then post spam
@@ -694,6 +703,7 @@ def verify_image_safety(file_data: bytes, filename: str) -> tuple[bool, str]:
 
     Returns:
         (is_safe, reason) where is_safe=False triggers instant ban
+
     """
     if len(file_data) < 4:
         return (False, "File too small")
@@ -701,22 +711,22 @@ def verify_image_safety(file_data: bytes, filename: str) -> tuple[bool, str]:
     magic = file_data[:4]
 
     # Executables (INSTANT BAN)
-    if magic[:2] == b'MZ':  # Windows .exe
+    if magic[:2] == b"MZ":  # Windows .exe
         return (False, "Windows executable (.exe) disguised as image")
 
-    if magic == b'\x7fELF':  # Linux binary
+    if magic == b"\x7fELF":  # Linux binary
         return (False, "Linux binary (ELF) disguised as image")
 
     # Valid images
-    if magic[:2] == b'\xff\xd8':  # JPEG
+    if magic[:2] == b"\xff\xd8":  # JPEG
         return (True, "JPEG")
-    if magic == b'\x89PNG':  # PNG
+    if magic == b"\x89PNG":  # PNG
         return (True, "PNG")
-    if magic[:4] == b'RIFF':  # WebP
+    if magic[:4] == b"RIFF":  # WebP
         return (True, "WebP")
-    if magic[:2] == b'BM':  # BMP
+    if magic[:2] == b"BM":  # BMP
         return (True, "BMP")
-    if magic[:3] == b'GIF':  # GIF
+    if magic[:3] == b"GIF":  # GIF
         return (True, "GIF")
 
     # Unknown format
@@ -778,14 +788,14 @@ async def alert_admins(guild: discord.Guild, user: discord.User, reason: str, de
         "BANNED": discord.Color.red(),           # Red = instant ban
         "COMPROMISED": discord.Color.gold(),     # Gold = possible hacked account
         "DELETED": discord.Color.orange(),       # Orange = suspicious but not banned
-        "ALERT": discord.Color.yellow()          # Yellow = low priority alert
+        "ALERT": discord.Color.yellow(),          # Yellow = low priority alert
     }
     embed_color = color_map.get(action, discord.Color.orange())
 
     embed = discord.Embed(
         title=f"🚨 Security {action}",
         description=f"**User:** {user.mention} (`{user.id}`)\n**Server:** {guild.name}\n**Reason:** {reason}",
-        color=embed_color
+        color=embed_color,
     )
 
     if details:
@@ -799,7 +809,7 @@ async def alert_admins(guild: discord.Guild, user: discord.User, reason: str, de
                   "• DM the user to verify their account security\n"
                   "• Temporarily mute them until they respond\n"
                   "• Do NOT ban unless confirmed malicious",
-            inline=False
+            inline=False,
         )
 
     embed.set_footer(text=f"User: {user}")
@@ -832,6 +842,7 @@ def reformat_json(string: str, indent: int = 2) -> Optional[str]:
 
     Returns:
         Reformatted JSON or None if invalid
+
     """
     try:
         data = json.loads(string)
@@ -864,20 +875,20 @@ def transform_ui_dict_to_simple_format(ui_dict: Dict[str, Any]) -> Dict[str, Any
     simple = {}
 
     # Extract tool name
-    metadata_section = ui_dict.get('metadata_info_section', {})
-    simple['tool'] = metadata_section.get('Detected Tool', 'Unknown')
-    simple['format'] = metadata_section.get('format', '')
+    metadata_section = ui_dict.get("metadata_info_section", {})
+    simple["tool"] = metadata_section.get("Detected Tool", "Unknown")
+    simple["format"] = metadata_section.get("format", "")
 
     # Extract prompts
-    prompt_section = ui_dict.get('prompt_data_section', {})
-    simple['prompt'] = prompt_section.get('Positive', '')
-    simple['negative_prompt'] = prompt_section.get('Negative', '')
+    prompt_section = ui_dict.get("prompt_data_section", {})
+    simple["prompt"] = prompt_section.get("Positive", "")
+    simple["negative_prompt"] = prompt_section.get("Negative", "")
 
     # Extract parameters
-    simple['parameters'] = ui_dict.get('generation_parameters_section', {})
+    simple["parameters"] = ui_dict.get("generation_parameters_section", {})
 
     # Include raw metadata for JSON button
-    simple['raw_metadata'] = ui_dict.get('raw_tool_specific_data_section', {})
+    simple["raw_metadata"] = ui_dict.get("raw_tool_specific_data_section", {})
 
     return simple
 
@@ -893,6 +904,7 @@ async def get_real_author(message: discord.Message) -> discord.User:
 
     Returns:
         Real author (either original author or PluralKit sender)
+
     """
     # If not a webhook, just return the author
     if not message.webhook_id:
@@ -934,20 +946,21 @@ def format_public_metadata_message(metadata: Dict[str, Any], author: discord.Use
 
     Returns:
         Formatted message string with spoilers
+
     """
     lines = [f"🔎 **Metadata Found!** (Posted by {author.mention})"]
 
     # Tool info
-    tool = metadata.get('tool', 'Unknown')
-    format_name = metadata.get('format', '')
+    tool = metadata.get("tool", "Unknown")
+    format_name = metadata.get("format", "")
     if format_name and format_name != tool:
         lines.append(f"*{tool} - {format_name}*\n")
     else:
         lines.append(f"*{tool}*\n")
 
     # Prompts section (collapsible)
-    prompt = metadata.get('prompt')
-    negative_prompt = metadata.get('negative_prompt')
+    prompt = metadata.get("prompt")
+    negative_prompt = metadata.get("negative_prompt")
 
     if prompt or negative_prompt:
         prompt_lines = ["**📝 Prompts:**"]
@@ -967,30 +980,29 @@ def format_public_metadata_message(metadata: Dict[str, Any], author: discord.Use
         lines.append("\n".join(prompt_lines))
 
     # Settings section (collapsible)
-    parameters = metadata.get('parameters', {})
+    parameters = metadata.get("parameters", {})
     if parameters:
         settings_lines = ["\n**⚙️ Settings:**"]
         settings_text = []
 
         # Check for manual user_settings field (from manual entry)
-        user_settings = parameters.get('user_settings')
+        user_settings = parameters.get("user_settings")
         if user_settings:
             # User-provided freeform settings
             settings_lines.append(f"||{user_settings}||")
         else:
             # Priority settings (auto-extracted metadata)
-            priority_keys = ['model', 'steps', 'sampler_name', 'cfg_scale', 'seed', 'width', 'height']
+            priority_keys = ["model", "steps", "sampler_name", "cfg_scale", "seed", "width", "height"]
             for key in priority_keys:
                 value = parameters.get(key)
                 if value is not None:
-                    if key == 'width' and 'height' in parameters:
+                    if key == "width" and "height" in parameters:
                         settings_text.append(f"Resolution: {parameters['width']}x{parameters['height']}")
                         break  # Skip height, we showed both
-                    elif key == 'height':
+                    if key == "height":
                         continue  # Already showed with width
-                    else:
-                        display_key = key.replace('_', ' ').title()
-                        settings_text.append(f"{display_key}: {value}")
+                    display_key = key.replace("_", " ").title()
+                    settings_text.append(f"{display_key}: {value}")
 
             if settings_text:
                 settings_lines.append(f"||{' • '.join(settings_text)}||")
@@ -1015,25 +1027,26 @@ async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optio
 
     Returns:
         Metadata dict or None if no metadata found
+
     """
     if not is_valid_image(image_data):
         return None
 
     # Save to temp file for Dataset-Tools parser
     # Preserve the file extension for proper format detection
-    if filename and '.' in filename:
+    if filename and "." in filename:
         ext = Path(filename).suffix  # .png, .jpg, etc.
     else:
-        ext = '.png'  # Default to PNG
+        ext = ".png"  # Default to PNG
     temp_path = Path(f"/tmp/discord_image_{id(image_data)}{ext}")
     try:
-        with open(temp_path, 'wb') as f:
+        with open(temp_path, "wb") as f:
             f.write(image_data)
 
         # Call parse_metadata in a thread to avoid blocking
         ui_dict = await asyncio.to_thread(
             parse_metadata,
-            str(temp_path)
+            str(temp_path),
         )
 
         if not ui_dict or not isinstance(ui_dict, dict):
@@ -1043,7 +1056,7 @@ async def parse_image_metadata(image_data: bytes, filename: str = None) -> Optio
         # Transform UI dict to simple format for Discord
         metadata_dict = transform_ui_dict_to_simple_format(ui_dict)
 
-        logger.debug("Successfully parsed metadata for %s - found %s", temp_path.name, metadata_dict.get('tool', 'Unknown'))
+        logger.debug("Successfully parsed metadata for %s - found %s", temp_path.name, metadata_dict.get("tool", "Unknown"))
         return metadata_dict
 
     except Exception as e:
@@ -1064,31 +1077,36 @@ async def on_message(message: discord.Message):
     """Auto-detect metadata in monitored channels and post public reply."""
     global processed_attachment_urls
 
-    # Check if metadata feature is enabled for this channel
-    # For threads/forums, check the parent channel ID
-    channel_id_for_features = message.channel.parent_id if hasattr(message.channel, 'parent_id') and message.channel.parent_id else message.channel.id
-    if CHANNEL_FEATURES and channel_id_for_features in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[channel_id_for_features]:
-        return
-
-    # Ignore bot messages UNLESS it's a webhook (could be PluralKit!)
+    # 1. IGNORE BOTS (Unless it's a webhook which might be PluralKit)
     if message.author.bot and not message.webhook_id:
         return
 
-    # DM Handling - Only allow whitelisted users
+    # 2. DM Handling
     if not message.guild:
-        # Check if user is whitelisted for DM access
         if message.author.id not in DM_ALLOWED_USER_IDS:
-            # Send auto-response to non-whitelisted users
             try:
                 await message.channel.send(DM_RESPONSE_MESSAGE)
-                logger.info(f"📩 Sent DM auto-response to non-whitelisted user: {message.author} ({message.author.id})")
             except discord.Forbidden:
-                logger.warning(f"⚠️ Cannot send DM to {message.author} - they may have DMs disabled")
+                pass
             return
-        else:
-            # User is whitelisted, allow DM processing
-            logger.info(f"✅ Processing DM from whitelisted user: {message.author} ({message.author.id})")
-            # Continue to process the DM normally
+        # Allow whitelisted DMs to proceed
+
+    # 3. CHANNEL/FEATURE CHECKS (Move this UP!)
+    # Determine which feature flags to check.
+    # If it's a DM, we generally allow basic features if whitelisted.
+    if message.guild:
+        # Check if this channel or category is monitored
+        # For threads/forums, check parent
+        channel_id = message.channel.parent_id if hasattr(message.channel, "parent_id") and message.channel.parent_id else message.channel.id
+
+        # If MONITORED_CHANNEL_IDS is set, and this channel isn't in it, STOP HERE.
+        if MONITORED_CHANNEL_IDS and channel_id not in MONITORED_CHANNEL_IDS:
+            return
+
+        # Check if metadata/security is enabled for this server
+        # You can add a specific "security" flag in settings later if you want
+        if not get_guild_setting(message.guild.id, "metadata", default=True):
+            return
 
     # ============================================================================
     # SECURITY CHECKS - Run BEFORE processing to catch scammers early
@@ -1116,25 +1134,25 @@ async def on_message(message: discord.Message):
 
         # --- UNIFIED IMAGE GATHERING (Attachments & Embeds) ---
         images_to_check = []
-        
+
         # 1. Gather from attachments
         for attachment in message.attachments:
-            if attachment.content_type and attachment.content_type.startswith('image/'):
+            if attachment.content_type and attachment.content_type.startswith("image/"):
                 images_to_check.append({
                     "source": "attachment",
                     "object": attachment,
-                    "filename": attachment.filename
+                    "filename": attachment.filename,
                 })
-        
+
         # 2. Gather from embeds
         for embed in message.embeds:
             if embed.image and embed.image.url:
                 # To get a filename, we'll parse it from the URL
-                filename = Path(embed.image.url).name.split('?')[0]
+                filename = Path(embed.image.url).name.split("?")[0]
                 images_to_check.append({
                     "source": "embed",
                     "object": embed.image,
-                    "filename": filename
+                    "filename": filename,
                 })
 
         image_count = len(images_to_check)
@@ -1158,7 +1176,7 @@ async def on_message(message: discord.Message):
                                 else:
                                     logger.warning(f"Failed to download embed image: {image_info['object'].url} (Status: {response.status})")
                                     continue
-                        
+
                         if file_data:
                             is_safe, reason = verify_image_safety(file_data, image_info["filename"])
                             if not is_safe:
@@ -1178,7 +1196,7 @@ async def on_message(message: discord.Message):
                 await instant_ban(
                     message,
                     f"Screenshot spam ({image_count} images, {cross_post_count} channels)",
-                    [f"{image_count} images", f"{cross_post_count} channels", "Cross-posting"]
+                    [f"{image_count} images", f"{cross_post_count} channels", "Cross-posting"],
                 )
                 return
 
@@ -1189,7 +1207,7 @@ async def on_message(message: discord.Message):
                     await instant_ban(
                         message,
                         f"Screenshot spam ({image_count} images + gibberish)",
-                        [f"{image_count} images", "No roles", "Gibberish text"]
+                        [f"{image_count} images", "No roles", "Gibberish text"],
                     )
                     return
 
@@ -1201,7 +1219,7 @@ async def on_message(message: discord.Message):
             await instant_ban(message, f"Wallet scam (Score: {scam_score})", reasons)
             return
 
-        elif scam_score >= 75:
+        if scam_score >= 75:
             # Medium confidence - Delete message and alert admins
             logger.warning(f"⚠️ Suspicious message from {message.author} (Score: {scam_score})")
             try:
@@ -1211,7 +1229,7 @@ async def on_message(message: discord.Message):
                 logger.warning("Missing permissions to delete suspicious message")
             return
 
-        elif scam_score >= 50:
+        if scam_score >= 50:
             # Low confidence - Just log for monitoring
             logger.info(f"📊 Watchlist: {message.author} (Score: {scam_score}) - {', '.join(reasons[:3])}")
 
@@ -1221,7 +1239,7 @@ async def on_message(message: discord.Message):
 
     # Only process in monitored channels (empty set = monitor all channels)
     # For threads/forums, check the parent channel ID
-    channel_to_check = message.channel.parent_id if hasattr(message.channel, 'parent_id') and message.channel.parent_id else message.channel.id
+    channel_to_check = message.channel.parent_id if hasattr(message.channel, "parent_id") and message.channel.parent_id else message.channel.id
     if MONITORED_CHANNEL_IDS and channel_to_check not in MONITORED_CHANNEL_IDS:
         return
 
@@ -1247,7 +1265,7 @@ async def on_message(message: discord.Message):
     # Only process messages with PNG/JPEG/WebP attachments
     attachments = [
         a for a in message.attachments
-        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and a.size < SCAN_LIMIT_BYTES
+        if a.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and a.size < SCAN_LIMIT_BYTES
     ]
 
     if not attachments:
@@ -1273,7 +1291,7 @@ async def on_message(message: discord.Message):
         # If we scan too fast, we'll see metadata that gets deleted moments later.
         # Wait for Discord to finish processing before scanning.
         has_jpeg_or_webp = any(
-            a.filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
+            a.filename.lower().endswith((".jpg", ".jpeg", ".webp"))
             for a in attachments
         )
         if has_jpeg_or_webp:
@@ -1291,11 +1309,11 @@ async def on_message(message: discord.Message):
                 metadata = await parse_image_metadata(image_data, attachment.filename)
                 if metadata:
                     # Log what type of metadata was found
-                    metadata_type = metadata.get('tool', 'Unknown')
+                    metadata_type = metadata.get("tool", "Unknown")
                     logger.info("✅ Found metadata in %s - Type: %s", attachment.filename, metadata_type)
                     images_with_metadata.append({
-                        'attachment': attachment,
-                        'metadata': metadata
+                        "attachment": attachment,
+                        "metadata": metadata,
                     })
                 else:
                     logger.info("❌ No metadata found in %s", attachment.filename)
@@ -1304,7 +1322,7 @@ async def on_message(message: discord.Message):
             # No metadata in any image
             # Check if images are JPG/WebP (Discord strips metadata from these)
             first_image = attachments[0]
-            is_jpg_or_webp = first_image.filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
+            is_jpg_or_webp = first_image.filename.lower().endswith((".jpg", ".jpeg", ".webp"))
 
             # Only react with ⛔ for PNG files with no metadata
             # JPEG/WebP never have metadata anyway, so don't spam reactions
@@ -1331,13 +1349,13 @@ async def on_message(message: discord.Message):
                 await message.reply(
                     no_metadata_msg,
                     view=view,
-                    mention_author=False
+                    mention_author=False,
                 )
             except discord.NotFound:
                 logger.debug("Original message deleted, posting to channel instead")
                 await message.channel.send(
                     no_metadata_msg,
-                    view=view
+                    view=view,
                 )
             return
 
@@ -1354,7 +1372,7 @@ async def on_message(message: discord.Message):
 
         # Check if all images are JPEG/WebP (likely false positives due to Discord race condition)
         all_stripped_formats = all(
-            img['attachment'].filename.lower().endswith(('.jpg', '.jpeg', '.webp'))
+            img["attachment"].filename.lower().endswith((".jpg", ".jpeg", ".webp"))
             for img in images_with_metadata
         )
 
@@ -1367,7 +1385,7 @@ async def on_message(message: discord.Message):
                 "📸 **JPEG/WebP detected!**\n"
                 "These formats lose metadata on Discord.\n\n"
                 "💡 Use `/describe` to generate AI tags for these images!",
-                mention_author=False
+                mention_author=False,
             )
             return
 
@@ -1376,13 +1394,13 @@ async def on_message(message: discord.Message):
 
         if num_images <= 5:
             # 1-5 images: Add numbered reactions
-            number_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+            number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
             for i in range(num_images):
                 await message.add_reaction(number_emojis[i])
             logger.info("✅ Added %d numbered reactions for individual inspection", num_images)
         else:
             # 6+ images: Add single reaction for batch download
-            await message.add_reaction('📦')
+            await message.add_reaction("📦")
             logger.info("✅ Added batch reaction for %d images", num_images)
 
     except discord.HTTPException as e:
@@ -1399,7 +1417,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle emoji reactions for metadata display (numbered or batch)."""
     # For threads/forums, check parent channel ID
     channel = bot.get_channel(payload.channel_id)
-    channel_id_to_check = channel.parent_id if hasattr(channel, 'parent_id') and channel.parent_id else payload.channel_id
+    channel_id_to_check = channel.parent_id if hasattr(channel, "parent_id") and channel.parent_id else payload.channel_id
 
     # Check if metadata feature is enabled for this channel
     if CHANNEL_FEATURES and channel_id_to_check in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[channel_id_to_check]:
@@ -1420,10 +1438,10 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
     # Check which emoji was clicked
     emoji_name = payload.emoji.name
-    number_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+    number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
 
     # Only respond to our special emojis
-    if emoji_name not in number_emojis and emoji_name != '📦':
+    if emoji_name not in number_emojis and emoji_name != "📦":
         return
 
     try:
@@ -1439,25 +1457,25 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         images_with_metadata = message_metadata_cache[payload.message_id]
         real_author = await get_real_author(message)
 
-        if emoji_name == '📦':
+        if emoji_name == "📦":
             # Batch download - create JSON with all metadata
             batch_data = {
                 "batch_size": len(images_with_metadata),
-                "images": []
+                "images": [],
             }
 
             for item in images_with_metadata:
                 batch_data["images"].append({
-                    "filename": item['attachment'].filename,
-                    "url": item['attachment'].url,
-                    "metadata": item['metadata']
+                    "filename": item["attachment"].filename,
+                    "url": item["attachment"].url,
+                    "metadata": item["metadata"],
                 })
 
             # Create JSON file
             json_str = json.dumps(batch_data, indent=2)
             file_obj = discord.File(
                 io.StringIO(json_str),
-                filename=f"batch_metadata_{len(images_with_metadata)}_images.json"
+                filename=f"batch_metadata_{len(images_with_metadata)}_images.json",
             )
 
             # Send to user
@@ -1465,7 +1483,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
                 f"📦 **Batch Metadata** ({len(images_with_metadata)} images with metadata)\n"
                 f"Downloaded by {payload.member.mention}",
                 file=file_obj,
-                mention_author=False
+                mention_author=False,
             )
             logger.info("✅ Sent batch metadata for %d images (clicked by %s)",
                        len(images_with_metadata), payload.member.name)
@@ -1480,7 +1498,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
             # Get the specific image's metadata
             item = images_with_metadata[image_index]
-            metadata = item['metadata']
+            metadata = item["metadata"]
 
             # Format public message
             public_message = format_public_metadata_message(metadata, real_author)
@@ -1493,7 +1511,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
             await message.reply(public_message, view=view, mention_author=False)
 
             logger.info("✅ Posted metadata for image %d/%d (clicked by %s)",
-                       image_index + 1, len(images_with_metadata), payload.member.name)
+                        image_index + 1, len(images_with_metadata), payload.member.name)
 
     except Exception as e:
         logger.error("Error in on_raw_reaction_add: %s", e)
@@ -1510,6 +1528,7 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
     Args:
         interaction: Discord interaction
         image: Image attachment
+
     """
     # Check if metadata feature is enabled for this channel
     if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
@@ -1521,14 +1540,14 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
     # Rate limit check
     if rate_limiter.is_rate_limited(interaction.user.id):
         await interaction.followup.send(
-            "⏰ You're making requests too quickly. Please wait a minute."
+            "⏰ You're making requests too quickly. Please wait a minute.",
         )
         return
 
     # Validate file type
-    if not image.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+    if not image.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
         await interaction.followup.send(
-            "❌ Only PNG, JPEG, and WebP images are supported."
+            "❌ Only PNG, JPEG, and WebP images are supported.",
         )
         return
 
@@ -1537,7 +1556,7 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         size_mb = image.size / (1024 * 1024)
         limit_mb = SCAN_LIMIT_BYTES / (1024 * 1024)
         await interaction.followup.send(
-            f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB."
+            f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB.",
         )
         return
 
@@ -1551,7 +1570,7 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
             embed = format_metadata_embed(
                 metadata,
                 interaction.user,
-                image
+                image,
             )
 
             # Create view with "Full Parameters" button
@@ -1559,17 +1578,17 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
 
             await interaction.followup.send(
                 embed=embed,
-                view=view
+                view=view,
             )
             logger.info("✅ /metadata command success for %s", interaction.user.name)
         else:
             await interaction.followup.send(
-                "❌ No metadata found in this image."
+                "❌ No metadata found in this image.",
             )
     except Exception as e:
         logger.error("Error in metadata_command: %s", e)
         await interaction.followup.send(
-            f"❌ Error parsing metadata: {str(e)}"
+            f"❌ Error parsing metadata: {e!s}",
         )
 
 
@@ -1581,7 +1600,7 @@ async def ask_command(interaction: discord.Interaction, question: str):
         await interaction.response.send_message(
             "❌ The `/ask` command is not enabled in this server.\n"
             "_Administrators can enable it with `/settings`_",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -1600,7 +1619,7 @@ async def ask_command(interaction: discord.Interaction, question: str):
 
     # If response is too long for Discord, send as text file
     if len(response) > 2000:
-        file_content = io.BytesIO(response.encode('utf-8'))
+        file_content = io.BytesIO(response.encode("utf-8"))
         file = discord.File(file_content, filename="response.txt")
         await interaction.followup.send("Response was too long, sent as file:", file=file)
     else:
@@ -1613,6 +1632,7 @@ async def techsupport_command(interaction: discord.Interaction, issue: str):
 
     Args:
         issue: Describe your tech problem
+
     """
     # Check if techsupport feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "techsupport", default=False):
@@ -1696,8 +1716,8 @@ you're funny AND you fix the problem."""
                     contents=issue,
                     config=types.GenerateContentConfig(
                         system_instruction=tech_support_instruction,
-                        temperature=0.8  # Slightly higher for personality
-                    )
+                        temperature=0.8,  # Slightly higher for personality
+                    ),
                 )
             return make_call
 
@@ -1707,7 +1727,7 @@ you're funny AND you fix the problem."""
 
         # If response is too long for Discord, send as text file
         if len(message_content) > 2000:
-            file_content = io.BytesIO(message_content.encode('utf-8'))
+            file_content = io.BytesIO(message_content.encode("utf-8"))
             file = discord.File(file_content, filename="techsupport_response.txt")
             await interaction.followup.send("Tech support response was too long, sent as file:", file=file)
         else:
@@ -1726,6 +1746,7 @@ async def coder_command(interaction: discord.Interaction, question: str):
 
     Args:
         question: Describe your coding problem or question
+
     """
     # Check if coder feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "coder", default=False):
@@ -1800,8 +1821,8 @@ RULES:
                     contents=question,
                     config=types.GenerateContentConfig(
                         system_instruction=coder_instruction,
-                        temperature=0.7  # Balanced for code accuracy and creativity
-                    )
+                        temperature=0.7,  # Balanced for code accuracy and creativity
+                    ),
                 )
             return make_call
 
@@ -1811,7 +1832,7 @@ RULES:
 
         # If response is too long for Discord, send as text file
         if len(message_content) > 2000:
-            file_content = io.BytesIO(message_content.encode('utf-8'))
+            file_content = io.BytesIO(message_content.encode("utf-8"))
             file = discord.File(file_content, filename="coder_response.txt")
             await interaction.followup.send("Coding help response was too long, sent as file:", file=file)
         else:
@@ -1837,13 +1858,14 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
         style: Description style (danbooru tags or natural language)
         image: Image attachment to describe (optional if replying to a message with an image)
         private: If True, response is only visible to you (ephemeral)
+
     """
     # Check if describe feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "describe", default=True):
         await interaction.response.send_message(
             "❌ The `/describe` command is not enabled in this server.\n"
             "_Administrators can enable it with `/settings`_",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -1855,7 +1877,7 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
     # If no image provided, check if this is a reply to a message with an image
     if not image:
         # Check if command was used as a reply
-        if hasattr(interaction, 'message') and interaction.message and interaction.message.reference:
+        if hasattr(interaction, "message") and interaction.message and interaction.message.reference:
             # Fetch the replied-to message
             try:
                 replied_msg = await interaction.channel.fetch_message(interaction.message.reference.message_id)
@@ -1873,7 +1895,7 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
                 "❌ No image found! Either:\n"
                 "• Upload an image with the command\n"
                 "• Reply to a message containing an image",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -1914,22 +1936,22 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
 
         for provider in providers_to_try:
             try:
-                if provider == 'claude' and claude_client:
-                    logger.info(f"Trying Claude for /describe")
+                if provider == "claude" and claude_client:
+                    logger.info("Trying Claude for /describe")
                     description_text = await describe_image_with_claude(
                         image_data=image_data,
                         mime_type=image.content_type,
-                        prompt=prompt_text
+                        prompt=prompt_text,
                     )
-                    provider_used = 'Claude'
+                    provider_used = "Claude"
                     break
 
-                elif provider == 'gemini' and gemini_client:
-                    logger.info(f"Trying Gemini for /describe")
+                if provider == "gemini" and gemini_client:
+                    logger.info("Trying Gemini for /describe")
                     # Create image part for Gemini
                     image_part = types.Part.from_bytes(
                         data=image_data,
-                        mime_type=image.content_type
+                        mime_type=image.content_type,
                     )
 
                     # Use Gemini with retry logic
@@ -1941,30 +1963,30 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
                                 config=types.GenerateContentConfig(
                                     safety_settings=[
                                         types.SafetySetting(
-                                            category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                                            threshold='BLOCK_ONLY_HIGH'
+                                            category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                            threshold="BLOCK_ONLY_HIGH",
                                         ),
                                         types.SafetySetting(
-                                            category='HARM_CATEGORY_HATE_SPEECH',
-                                            threshold='BLOCK_ONLY_HIGH'
+                                            category="HARM_CATEGORY_HATE_SPEECH",
+                                            threshold="BLOCK_ONLY_HIGH",
                                         ),
                                         types.SafetySetting(
-                                            category='HARM_CATEGORY_HARASSMENT',
-                                            threshold='BLOCK_ONLY_HIGH'
+                                            category="HARM_CATEGORY_HARASSMENT",
+                                            threshold="BLOCK_ONLY_HIGH",
                                         ),
                                         types.SafetySetting(
-                                            category='HARM_CATEGORY_DANGEROUS_CONTENT',
-                                            threshold='BLOCK_ONLY_HIGH'
+                                            category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                            threshold="BLOCK_ONLY_HIGH",
                                         ),
-                                    ]
-                                )
+                                    ],
+                                ),
                             )
                         return make_call
 
                     response = await call_gemini_with_retry(make_call_factory)
                     if response and response.text:
                         description_text = response.text
-                        provider_used = 'Gemini'
+                        provider_used = "Gemini"
                         break
 
             except Exception as e:
@@ -1981,7 +2003,7 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
                 "• API quota limits\n"
                 "• Temporary service issue\n\n"
                 f"Last error: {last_error}\n\n"
-                "Try again in a moment or try a different image."
+                "Try again in a moment or try a different image.",
             )
             return
 
@@ -1989,7 +2011,7 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
         embed = discord.Embed(
             title=f"🎨 Image Description ({style.name})",
             description=f"_via {provider_used}_\n\n{description_text}",
-            color=discord.Color.blurple()
+            color=discord.Color.blurple(),
         )
         embed.set_image(url=image.url)  # Use the original image URL for a clean embed
         embed.set_footer(text=f"Requested by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
@@ -1998,14 +2020,14 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
         if len(embed.description) > 4096:
             # Fallback for very long descriptions
             text_file_content = f"🎨 Image Description ({style.name}):\n_via {provider_used}_\n\n{description_text}"
-            text_file = discord.File(io.BytesIO(text_file_content.encode('utf-8')), filename="description.txt")
-            
+            text_file = discord.File(io.BytesIO(text_file_content.encode("utf-8")), filename="description.txt")
+
             # Since we're not using an embed, attach the image file manually
             image_file = discord.File(io.BytesIO(image_data), filename=image.filename)
-            
+
             await interaction.followup.send(
                 "📝 The generated description was too long, so I've sent it as a file.",
-                files=[image_file, text_file]
+                files=[image_file, text_file],
             )
         else:
             # Send the response with the embed
@@ -2015,7 +2037,7 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
 
     except Exception as e:
         logger.error("Error in describe_command: %s", e)
-        await interaction.followup.send(f"❌ Error generating description: {str(e)}")
+        await interaction.followup.send(f"❌ Error generating description: {e!s}")
 
 
 # =============================================================================
@@ -2028,6 +2050,7 @@ async def decide_command(interaction: discord.Interaction, choices: str):
 
     Args:
         choices: Comma-separated list of options (e.g. "pizza, tacos, sushi")
+
     """
     # Check if fun_commands feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "fun_commands", default=True):
@@ -2035,20 +2058,20 @@ async def decide_command(interaction: discord.Interaction, choices: str):
         return
 
     # Split by comma and clean up whitespace
-    options = [opt.strip() for opt in choices.split(',') if opt.strip()]
+    options = [opt.strip() for opt in choices.split(",") if opt.strip()]
 
     if len(options) < 2:
         await interaction.response.send_message(
             "❌ Please provide at least 2 choices separated by commas!\n"
             "Example: `/decide choices:pizza, tacos, sushi`",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
     if len(options) > 20:
         await interaction.response.send_message(
             "❌ Too many choices! Maximum is 20.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -2058,13 +2081,13 @@ async def decide_command(interaction: discord.Interaction, choices: str):
     embed = discord.Embed(
         title="🎲 Decision Made!",
         description=f"I choose: **{chosen}**",
-        color=discord.Color.green()
+        color=discord.Color.green(),
     )
 
     embed.add_field(
         name="Options",
         value=", ".join(f"`{opt}`" for opt in options),
-        inline=False
+        inline=False,
     )
 
     embed.set_footer(text=f"Requested by {interaction.user.display_name}")
@@ -2085,6 +2108,7 @@ async def poll_command(interaction: discord.Interaction, question: str, poll_typ
         poll_type: Type of poll (Yes/No or A/B)
         option_a: Option A text (required for A/B polls)
         option_b: Option B text (required for A/B polls)
+
     """
     # Check if fun_commands feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "fun_commands", default=True):
@@ -2095,14 +2119,14 @@ async def poll_command(interaction: discord.Interaction, question: str, poll_typ
         if not option_a or not option_b:
             await interaction.response.send_message(
                 "❌ For A/B polls, you must provide both option_a and option_b!",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
     embed = discord.Embed(
         title="📊 Poll",
         description=f"**{question}**",
-        color=discord.Color.blue()
+        color=discord.Color.blue(),
     )
 
     if poll_type.value == "yesno":
@@ -2135,25 +2159,25 @@ async def wildcard_command(interaction: discord.Interaction):
 
     try:
         # Load wildcards from JSON
-        wildcard_path = Path('wildcards.json')
+        wildcard_path = Path("wildcards.json")
         if not wildcard_path.exists():
             await interaction.response.send_message(
                 "❌ Wildcards file not found! Please contact the bot admin.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
-        with open(wildcard_path, 'r') as f:
+        with open(wildcard_path) as f:
             wildcards = json.load(f)
 
         # Generate random prompt
-        subject = random.choice(wildcards['subjects'])
-        style = random.choice(wildcards['styles'])
-        setting = random.choice(wildcards['settings'])
-        lighting = random.choice(wildcards['lighting'])
-        mood = random.choice(wildcards['moods'])
-        action = random.choice(wildcards['actions'])
-        detail = random.choice(wildcards['details'])
+        subject = random.choice(wildcards["subjects"])
+        style = random.choice(wildcards["styles"])
+        setting = random.choice(wildcards["settings"])
+        lighting = random.choice(wildcards["lighting"])
+        mood = random.choice(wildcards["moods"])
+        action = random.choice(wildcards["actions"])
+        detail = random.choice(wildcards["details"])
 
         # Construct the prompt
         prompt = f"{subject} {action}, {detail}, {style} style, {setting}, {lighting}, {mood} mood"
@@ -2161,7 +2185,7 @@ async def wildcard_command(interaction: discord.Interaction):
         embed = discord.Embed(
             title="🎨 Random Art Prompt",
             description=f"```{prompt}```",
-            color=discord.Color.purple()
+            color=discord.Color.purple(),
         )
 
         embed.add_field(name="Subject", value=subject, inline=True)
@@ -2179,7 +2203,7 @@ async def wildcard_command(interaction: discord.Interaction):
         logger.error(f"Error in wildcard_command: {e}")
         await interaction.response.send_message(
             "❌ Error generating prompt. Please try again.",
-            ephemeral=True
+            ephemeral=True,
         )
 
 
@@ -2201,7 +2225,7 @@ async def settings_command(interaction: discord.Interaction):
     embed = discord.Embed(
         title=f"⚙️ Bot Settings for {interaction.guild.name}",
         description="Configure which features are enabled in this server:",
-        color=discord.Color.blue()
+        color=discord.Color.blue(),
     )
 
     # Feature descriptions
@@ -2213,7 +2237,7 @@ async def settings_command(interaction: discord.Interaction):
         "coder": ("💻 /coder", "Coding help and solutions"),
         "fun_commands": ("🎲 Fun Commands", "/decide, /poll, /wildcard"),
         "qotd": ("❓ QOTD", "Question of the Day system"),
-        "interact": ("🤗 /interact", "Hug/Poke/Taunt interactions")
+        "interact": ("🤗 /interact", "Hug/Poke/Taunt interactions"),
     }
 
     # Add fields for each feature
@@ -2223,7 +2247,7 @@ async def settings_command(interaction: discord.Interaction):
         embed.add_field(
             name=f"{name}",
             value=f"{desc}\n**Status:** {status}",
-            inline=False
+            inline=False,
         )
 
     embed.set_footer(text="Use the buttons below to toggle features")
@@ -2233,113 +2257,77 @@ async def settings_command(interaction: discord.Interaction):
         def __init__(self):
             super().__init__(timeout=300)  # 5 minute timeout
 
-        async def create_toggle_button(self, feature: str, label: str, enabled: bool):
-            """Helper to create a toggle button."""
+    def create_updated_embed():
+        """Create updated embed with current settings."""
+        current = get_all_guild_settings(interaction.guild.id)
+        new_embed = discord.Embed(
+            title=f"⚙️ Bot Settings for {interaction.guild.name}",
+            description="Configure which features are enabled in this server:",
+            color=discord.Color.blue(),
+        )
+
+        for feature, (name, desc) in features.items():
+            enabled = current.get(feature, False)
+            status = "✅ Enabled" if enabled else "❌ Disabled"
+            new_embed.add_field(
+                name=f"{name}",
+                value=f"{desc}\n**Status:** {status}",
+                inline=False,
+            )
+
+        new_embed.set_footer(text="Use the buttons below to toggle features")
+        return new_embed
+
+    def create_updated_view():
+        """Create updated view with current button states."""
+        current = get_all_guild_settings(interaction.guild.id)
+        new_view = SettingsView()
+
+        # Add buttons in rows (max 5 per row)
+        row = 0
+        col = 0
+
+        for feature, (name, _) in features.items():
+            enabled = current.get(feature, False)
             button = discord.ui.Button(
-                label=f"{'Disable' if enabled else 'Enable'} {label}",
+                label=f"{'Disable' if enabled else 'Enable'} {name.split()[0]}",  # Shortened label
                 style=discord.ButtonStyle.red if enabled else discord.ButtonStyle.green,
-                custom_id=f"toggle_{feature}"
+                custom_id=f"toggle_{feature}",
+                row=row,
             )
 
-            async def button_callback(button_interaction: discord.Interaction):
-                # Check permissions
-                if not button_interaction.user.guild_permissions.administrator:
-                    await button_interaction.response.send_message(
-                        "❌ Only administrators can change settings.",
-                        ephemeral=True
+            async def make_callback(f=feature, n=name):
+                async def callback(bi: discord.Interaction):
+                    if not bi.user.guild_permissions.administrator:
+                        await bi.response.send_message("❌ Only administrators can change settings.", ephemeral=True)
+                        return
+
+                    current_val = get_guild_setting(interaction.guild.id, f)
+                    set_guild_setting(interaction.guild.id, f, not current_val)
+
+                    await bi.response.send_message(
+                        f"✅ {n.split()[0]} {'disabled' if current_val else 'enabled'}!",
+                        ephemeral=True,
                     )
-                    return
 
-                # Toggle the setting
-                current = get_guild_setting(interaction.guild.id, feature)
-                set_guild_setting(interaction.guild.id, feature, not current)
+                    await interaction.edit_original_response(
+                        embed=create_updated_embed(),
+                        view=create_updated_view(),
+                    )
 
-                # Update the embed and buttons
-                await button_interaction.response.send_message(
-                    f"✅ {label} {'disabled' if current else 'enabled'}!",
-                    ephemeral=True
-                )
+                return callback
 
-                # Refresh the settings display
-                await interaction.edit_original_response(
-                    embed=create_updated_embed(),
-                    view=create_updated_view()
-                )
+            button.callback = make_callback()
+            new_view.add_item(button)
 
-            button.callback = button_callback
-            return button
+            col += 1
+            if col >= 4:  # 4 buttons per row
+                col = 0
+                row += 1
 
-        def create_updated_embed():
-            """Create updated embed with current settings."""
-            current = get_all_guild_settings(interaction.guild.id)
-            new_embed = discord.Embed(
-                title=f"⚙️ Bot Settings for {interaction.guild.name}",
-                description="Configure which features are enabled in this server:",
-                color=discord.Color.blue()
-            )
+        return new_view
 
-            for feature, (name, desc) in features.items():
-                enabled = current.get(feature, False)
-                status = "✅ Enabled" if enabled else "❌ Disabled"
-                new_embed.add_field(
-                    name=f"{name}",
-                    value=f"{desc}\n**Status:** {status}",
-                    inline=False
-                )
-
-            new_embed.set_footer(text="Use the buttons below to toggle features")
-            return new_embed
-
-        def create_updated_view():
-            """Create updated view with current button states."""
-            current = get_all_guild_settings(interaction.guild.id)
-            new_view = SettingsView()
-
-            # Add buttons in rows (max 5 per row)
-            row = 0
-            col = 0
-
-            for feature, (name, _) in features.items():
-                enabled = current.get(feature, False)
-                button = discord.ui.Button(
-                    label=f"{'Disable' if enabled else 'Enable'} {name.split()[0]}",  # Shortened label
-                    style=discord.ButtonStyle.red if enabled else discord.ButtonStyle.green,
-                    custom_id=f"toggle_{feature}",
-                    row=row
-                )
-
-                async def make_callback(f=feature, n=name):
-                    async def callback(bi: discord.Interaction):
-                        if not bi.user.guild_permissions.administrator:
-                            await bi.response.send_message("❌ Only administrators can change settings.", ephemeral=True)
-                            return
-
-                        current_val = get_guild_setting(interaction.guild.id, f)
-                        set_guild_setting(interaction.guild.id, f, not current_val)
-
-                        await bi.response.send_message(
-                            f"✅ {n.split()[0]} {'disabled' if current_val else 'enabled'}!",
-                            ephemeral=True
-                        )
-
-                        await interaction.edit_original_response(
-                            embed=create_updated_embed(),
-                            view=create_updated_view()
-                        )
-
-                    return callback
-
-                button.callback = make_callback()
-                new_view.add_item(button)
-
-                col += 1
-                if col >= 4:  # 4 buttons per row
-                    col = 0
-                    row += 1
-
-            return new_view
-
-    view = SettingsView().create_updated_view()
+    view = create_updated_view()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
@@ -2351,7 +2339,7 @@ async def qotd_command(interaction: discord.Interaction):
         await interaction.response.send_message(
             "❌ The QOTD system is not enabled in this server.\n"
             "_Administrators can enable it with `/settings`_",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -2365,7 +2353,7 @@ async def qotd_command(interaction: discord.Interaction):
             await interaction.followup.send(
                 "❌ No questions available in the QOTD pool!\n"
                 "Add questions with `/qotd_add`",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -2376,11 +2364,11 @@ async def qotd_command(interaction: discord.Interaction):
         embed = discord.Embed(
             title="❓ Question of the Day",
             description=f"**{question}**",
-            color=discord.Color.purple()
+            color=discord.Color.purple(),
         )
 
         embed.set_footer(
-            text=f"Question #{idx + 1} • {stats['remaining']} questions remaining in pool"
+            text=f"Question #{idx + 1} • {stats['remaining']} questions remaining in pool",
         )
 
         # Post the question
@@ -2390,12 +2378,12 @@ async def qotd_command(interaction: discord.Interaction):
         try:
             thread = await message.create_thread(
                 name=f"QOTD: {question[:80]}{'...' if len(question) > 80 else ''}",
-                auto_archive_duration=1440  # 24 hours
+                auto_archive_duration=1440,  # 24 hours
             )
 
             # Send a starter message in the thread
             await thread.send(
-                "💬 **Discuss your answers here!** Share your thoughts and read what others have to say."
+                "💬 **Discuss your answers here!** Share your thoughts and read what others have to say.",
             )
 
             logger.info(f"QOTD posted in {interaction.guild.name}: {question[:50]}...")
@@ -2411,7 +2399,7 @@ async def qotd_command(interaction: discord.Interaction):
         logger.error(f"Error in qotd_command: {e}")
         await interaction.followup.send(
             "❌ An error occurred while posting QOTD. Please try again.",
-            ephemeral=True
+            ephemeral=True,
         )
 
 
@@ -2421,13 +2409,14 @@ async def qotd_add_command(interaction: discord.Interaction, question: str):
 
     Args:
         question: The question to add
+
     """
     # Check if QOTD feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "qotd", default=False):
         await interaction.response.send_message(
             "❌ The QOTD system is not enabled in this server.\n"
             "_Administrators can enable it with `/settings`_",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -2435,14 +2424,14 @@ async def qotd_add_command(interaction: discord.Interaction, question: str):
     if len(question) < 10:
         await interaction.response.send_message(
             "❌ Question too short! Please provide a meaningful question (at least 10 characters).",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
     if len(question) > 500:
         await interaction.response.send_message(
             "❌ Question too long! Please keep it under 500 characters.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -2452,7 +2441,7 @@ async def qotd_add_command(interaction: discord.Interaction, question: str):
     if not added:
         await interaction.response.send_message(
             "❌ This question already exists in the pool!",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -2463,11 +2452,11 @@ async def qotd_add_command(interaction: discord.Interaction, question: str):
     embed = discord.Embed(
         title="✅ Question Added!",
         description=f"Your question has been added to the QOTD pool:\n\n**{question}**",
-        color=discord.Color.green()
+        color=discord.Color.green(),
     )
 
     embed.set_footer(
-        text=f"Total questions in pool: {stats['total']} • {stats['remaining']} unused"
+        text=f"Total questions in pool: {stats['total']} • {stats['remaining']} unused",
     )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2489,27 +2478,28 @@ async def interact_command(interaction: discord.Interaction, action: app_command
         action: Type of interaction
         user: The user to interact with
         system_member: Optional - specific system member name (for PluralKit users)
+
     """
     # Check if interact feature is enabled for this guild
     if interaction.guild and not get_guild_setting(interaction.guild.id, "interact", default=True):
         await interaction.response.send_message(
             "❌ The `/interact` command is not enabled in this server.\n"
             "_Administrators can enable it with `/settings`_",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
     try:
         # Load interaction templates
-        interactions_file = Path('interactions.json')
+        interactions_file = Path("interactions.json")
         if not interactions_file.exists():
             await interaction.response.send_message(
                 "❌ Interactions configuration not found. Please contact the bot admin.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
-        with open(interactions_file, 'r') as f:
+        with open(interactions_file) as f:
             interactions_data = json.load(f)
 
         action_data = interactions_data.get(action.value, {})
@@ -2517,7 +2507,7 @@ async def interact_command(interaction: discord.Interaction, action: app_command
         if not action_data:
             await interaction.response.send_message(
                 "❌ Invalid interaction type.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
@@ -2539,7 +2529,7 @@ async def interact_command(interaction: discord.Interaction, action: app_command
                 user=interaction.user.mention,
                 target=user.mention,
                 system_member=system_member,
-                taunt_text=taunt_text
+                taunt_text=taunt_text,
             )
             target_name = f"{system_member} ({user.name})"
 
@@ -2553,9 +2543,9 @@ async def interact_command(interaction: discord.Interaction, action: app_command
                             members = await resp.json()
                             # Find matching member
                             for member in members:
-                                if member.get('name', '').lower() == system_member.lower():
-                                    if member.get('avatar_url'):
-                                        avatar_url = member['avatar_url']
+                                if member.get("name", "").lower() == system_member.lower():
+                                    if member.get("avatar_url"):
+                                        avatar_url = member["avatar_url"]
                                     break
             except Exception as e:
                 logger.debug(f"Error fetching PluralKit avatar: {e}")
@@ -2567,7 +2557,7 @@ async def interact_command(interaction: discord.Interaction, action: app_command
             message = message.format(
                 user=interaction.user.mention,
                 target=user.mention,
-                taunt_text=taunt_text
+                taunt_text=taunt_text,
             )
             target_name = user.display_name
             avatar_url = user.display_avatar.url
@@ -2575,7 +2565,7 @@ async def interact_command(interaction: discord.Interaction, action: app_command
         # Create embed
         embed = discord.Embed(
             description=message,
-            color=discord.Color.pink()
+            color=discord.Color.pink(),
         )
 
         # Add GIF if available
@@ -2596,7 +2586,7 @@ async def interact_command(interaction: discord.Interaction, action: app_command
         logger.error(f"Error in interact_command: {e}")
         await interaction.response.send_message(
             "❌ An error occurred. Please try again.",
-            ephemeral=True
+            ephemeral=True,
         )
 
 
@@ -2614,6 +2604,7 @@ async def get_pluralkit_name(message: discord.Message) -> str:
 
     Returns:
         Fronting alter's name if message is from PluralKit, otherwise the Discord username
+
     """
     # PluralKit's webhook messages have a specific pattern
     if message.webhook_id:
@@ -2624,8 +2615,8 @@ async def get_pluralkit_name(message: discord.Message) -> str:
                     if resp.status == 200:
                         data = await resp.json()
                         # Return the member's name if found
-                        if 'member' in data and 'name' in data['member']:
-                            return data['member']['name']
+                        if "member" in data and "name" in data["member"]:
+                            return data["member"]["name"]
         except Exception as e:
             logger.debug(f"Error fetching PluralKit info: {e}")
 
@@ -2642,8 +2633,10 @@ def optimize_image_for_api(image_data: bytes, mime_type: str, max_size_mb: float
 
     Returns:
         Tuple of (optimized_image_bytes, mime_type)
+
     """
     import io
+
     from PIL import Image
 
     # Check current size
@@ -2659,11 +2652,11 @@ def optimize_image_for_api(image_data: bytes, mime_type: str, max_size_mb: float
     img = Image.open(io.BytesIO(image_data))
 
     # Convert RGBA to RGB if needed (for JPEG compatibility)
-    if img.mode in ('RGBA', 'LA', 'P'):
-        background = Image.new('RGB', img.size, (255, 255, 255))
-        if img.mode == 'P':
-            img = img.convert('RGBA')
-        background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+    if img.mode in ("RGBA", "LA", "P"):
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
         img = background
 
     # Calculate resize factor to get under max_size_mb
@@ -2679,7 +2672,7 @@ def optimize_image_for_api(image_data: bytes, mime_type: str, max_size_mb: float
 
         # Save to bytes with quality optimization
         output = io.BytesIO()
-        resized_img.save(output, format='JPEG', quality=85, optimize=True)
+        resized_img.save(output, format="JPEG", quality=85, optimize=True)
         optimized_data = output.getvalue()
         current_size_mb = len(optimized_data) / (1024 * 1024)
 
@@ -2688,7 +2681,7 @@ def optimize_image_for_api(image_data: bytes, mime_type: str, max_size_mb: float
 
     logger.info(f"✅ Image optimized to {current_size_mb:.2f}MB ({new_width}x{new_height})")
 
-    return optimized_data, 'image/jpeg'
+    return optimized_data, "image/jpeg"
 
 async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: str, model: str = None) -> str:
     """Describe an image using Claude's vision API.
@@ -2701,6 +2694,7 @@ async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: 
 
     Returns:
         Description text from Claude
+
     """
     if not claude_client:
         raise Exception("Claude API not initialized - set ANTHROPIC_API_KEY")
@@ -2713,7 +2707,7 @@ async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: 
 
     # Encode image to base64 for Claude
     import base64
-    image_base64 = base64.b64encode(image_data).decode('utf-8')
+    image_base64 = base64.b64encode(image_data).decode("utf-8")
 
     # Claude vision API call
     response = await claude_client.messages.create(
@@ -2728,16 +2722,16 @@ async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: 
                         "source": {
                             "type": "base64",
                             "media_type": mime_type,
-                            "data": image_base64
-                        }
+                            "data": image_base64,
+                        },
                     },
                     {
                         "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }
-        ]
+                        "text": prompt,
+                    },
+                ],
+            },
+        ],
     )
 
     # Extract text from response
@@ -2759,6 +2753,7 @@ async def call_gemini_with_retry(api_call_factory, max_retries: int = None, base
 
     Raises:
         Exception: If all retries and fallbacks fail
+
     """
     if max_retries is None:
         max_retries = GEMINI_MAX_RETRIES
@@ -2785,7 +2780,7 @@ async def call_gemini_with_retry(api_call_factory, max_retries: int = None, base
 
                 # Check if it's a 503 error or rate limit
                 is_service_error = any(keyword in error_str for keyword in [
-                    '503', 'service unavailable', 'overloaded', 'rate limit', '429'
+                    "503", "service unavailable", "overloaded", "rate limit", "429",
                 ])
 
                 if is_service_error:
@@ -2795,13 +2790,12 @@ async def call_gemini_with_retry(api_call_factory, max_retries: int = None, base
                         logger.warning(f"Gemini error with {model_name} (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
                         await asyncio.sleep(delay)
                         continue
-                    elif model_idx < len(fallback_models) - 1:
+                    if model_idx < len(fallback_models) - 1:
                         # Try next fallback model
                         logger.warning(f"Model {model_name} failed after {max_retries} attempts, trying fallback...")
                         break
-                    else:
-                        # All models exhausted
-                        logger.error(f"All Gemini models failed after retries")
+                    # All models exhausted
+                    logger.error("All Gemini models failed after retries")
                 else:
                     # Not a service error, don't retry
                     raise
@@ -2816,6 +2810,7 @@ async def ask_gemini(user: discord.User, question: str, user_display_name: str =
         user: Discord user object
         question: Question to ask
         user_display_name: Optional display name to use (for PluralKit integration)
+
     """
     if not gemini_client:
         return "❌ Gemini API key is not configured."
@@ -2830,8 +2825,8 @@ async def ask_gemini(user: discord.User, question: str, user_display_name: str =
             conversation_sessions[user.id] = gemini_client.aio.chats.create(
                 model=GEMINI_PRIMARY_MODEL,
                 config=types.GenerateContentConfig(
-                    system_instruction=f"You are a helpful assistant talking to {display_name}. Address them by name when appropriate. Your goal is to provide accurate and concise answers."
-                )
+                    system_instruction=f"You are a helpful assistant talking to {display_name}. Address them by name when appropriate. Your goal is to provide accurate and concise answers.",
+                ),
             )
 
         chat = conversation_sessions[user.id]
@@ -2846,8 +2841,8 @@ async def ask_gemini(user: discord.User, question: str, user_display_name: str =
                     chat = gemini_client.aio.chats.create(
                         model=model_name,
                         config=types.GenerateContentConfig(
-                            system_instruction="You are a helpful assistant. Your goal is to provide accurate and concise answers."
-                        )
+                            system_instruction="You are a helpful assistant. Your goal is to provide accurate and concise answers.",
+                        ),
                     )
                     conversation_sessions[user.id] = chat
 
@@ -2862,8 +2857,6 @@ async def ask_gemini(user: discord.User, question: str, user_display_name: str =
         return f"❌ Error generating response: {e}"
 
 
-
-
 # =============================================================================
 # CONTEXT MENU (Right-click)
 # =============================================================================
@@ -2874,6 +2867,7 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
     Args:
         interaction: Discord interaction
         message: Target message
+
     """
     # Check if metadata feature is enabled for this channel
     if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
@@ -2886,20 +2880,20 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
     if rate_limiter.is_rate_limited(interaction.user.id):
         await interaction.followup.send(
             "⏰ You're making requests too quickly. Please wait a minute.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
     # Get PNG/JPEG/WebP attachments
     attachments = [
         a for a in message.attachments
-        if a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) and a.size < SCAN_LIMIT_BYTES
+        if a.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and a.size < SCAN_LIMIT_BYTES
     ]
 
     if not attachments:
         await interaction.followup.send(
             "❌ No PNG, JPEG, or WebP images found in this message.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
@@ -2915,14 +2909,14 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
             await interaction.followup.send(
                 embed=embed,
                 view=view,
-                ephemeral=True
+                ephemeral=True,
             )
             sent_count += 1
 
     if sent_count == 0:
         await interaction.followup.send(
             "❌ No metadata found in any images.",
-            ephemeral=True
+            ephemeral=True,
         )
 
 
@@ -2931,6 +2925,7 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
 # =============================================================================
 
 class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
+
     """Modal for manually entering image metadata."""
 
     prompt = discord.ui.TextInput(
@@ -2938,7 +2933,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
         style=discord.TextStyle.paragraph,
         placeholder="Enter the positive prompt (optional)",
         required=False,
-        max_length=2000
+        max_length=2000,
     )
 
     negative_prompt = discord.ui.TextInput(
@@ -2946,7 +2941,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
         style=discord.TextStyle.paragraph,
         placeholder="Enter the negative prompt (optional)",
         required=False,
-        max_length=1000
+        max_length=1000,
     )
 
     model = discord.ui.TextInput(
@@ -2954,7 +2949,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
         style=discord.TextStyle.short,
         placeholder="e.g., Pony Diffusion XL",
         required=False,
-        max_length=200
+        max_length=200,
     )
 
     settings = discord.ui.TextInput(
@@ -2962,7 +2957,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
         style=discord.TextStyle.paragraph,
         placeholder="e.g., Steps: 30, CFG: 7, Sampler: DPM++ 2M Karras",
         required=False,
-        max_length=500
+        max_length=500,
     )
 
     def __init__(self, original_message: discord.Message, attachment: discord.Attachment):
@@ -2981,7 +2976,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
             "format": "Discord Manual Entry",
             "prompt": self.prompt.value if self.prompt.value else None,
             "negative_prompt": self.negative_prompt.value if self.negative_prompt.value else None,
-            "parameters": {}
+            "parameters": {},
         }
 
         # Parse settings field
@@ -3005,6 +3000,7 @@ class ManualMetadataModal(discord.ui.Modal, title="Add Image Details"):
 
 
 class ManualEntryPromptView(discord.ui.View):
+
     """View with button to trigger manual metadata entry."""
 
     def __init__(self, message: discord.Message, attachment: discord.Attachment):
@@ -3020,6 +3016,7 @@ class ManualEntryPromptView(discord.ui.View):
 
 
 class PublicMetadataView(discord.ui.View):
+
     """View with buttons for public metadata messages (Midjourney-style!)."""
 
     def __init__(self, metadata: Dict[str, Any], original_author: discord.User, original_message: discord.Message = None):
@@ -3036,7 +3033,7 @@ class PublicMetadataView(discord.ui.View):
             embed = format_metadata_embed(
                 self.metadata,
                 self.original_author,
-                None  # No attachment in DM
+                None,  # No attachment in DM
             )
 
             # Create view with full metadata button
@@ -3049,20 +3046,20 @@ class PublicMetadataView(discord.ui.View):
             # Acknowledge the button click
             await interaction.response.send_message(
                 "✅ Sent full details to your DMs!",
-                ephemeral=True
+                ephemeral=True,
             )
             logger.info("📬 Sent full metadata DM to %s", interaction.user.name)
 
         except discord.Forbidden:
             await interaction.response.send_message(
                 "❌ Couldn't send DM! Please enable DMs from server members.",
-                ephemeral=True
+                ephemeral=True,
             )
         except Exception as e:
             logger.error("Error sending DM: %s", e)
             await interaction.response.send_message(
                 "❌ Something went wrong!",
-                ephemeral=True
+                ephemeral=True,
             )
 
     @discord.ui.button(label="💾 Save JSON", style=discord.ButtonStyle.secondary)
@@ -3075,14 +3072,14 @@ class PublicMetadataView(discord.ui.View):
             # Create file object
             file_obj = discord.File(
                 io.StringIO(json_str),
-                filename="metadata.json"
+                filename="metadata.json",
             )
 
             # Send as ephemeral message
             await interaction.response.send_message(
                 "💾 Here's your metadata JSON!",
                 file=file_obj,
-                ephemeral=True
+                ephemeral=True,
             )
             logger.info("💾 Sent JSON download to %s", interaction.user.name)
 
@@ -3090,7 +3087,7 @@ class PublicMetadataView(discord.ui.View):
             logger.error("Error creating JSON: %s", e)
             await interaction.response.send_message(
                 "❌ Couldn't create JSON file!",
-                ephemeral=True
+                ephemeral=True,
             )
 
     @discord.ui.button(label="❤️", style=discord.ButtonStyle.success)
@@ -3098,13 +3095,12 @@ class PublicMetadataView(discord.ui.View):
         """Just a fun reaction button!"""
         await interaction.response.send_message(
             "💜 Thanks for the love!",
-            ephemeral=True
+            ephemeral=True,
         )
 
 
-
-
 class FullMetadataView(discord.ui.View):
+
     """View with button to show full metadata with JSON pretty-printing."""
 
     def __init__(self, metadata: Dict[str, Any]):
@@ -3135,7 +3131,7 @@ class FullMetadataView(discord.ui.View):
 
             file_obj = discord.File(
                 io.StringIO(file_content),
-                filename=filename
+                filename=filename,
             )
             await interaction.followup.send(file=file_obj, ephemeral=True)
         else:
@@ -3146,422 +3142,3 @@ class FullMetadataView(discord.ui.View):
                 followup_text = f"```\n{full_text}\n```"
 
             await interaction.followup.send(followup_text, ephemeral=True)
-
-
-# =============================================================================
-# R2 UPLOAD WORKFLOW (for JPEG/WebP metadata)
-# =============================================================================
-
-# Rate limiting for uploads (DDoS protection + fair use)
-user_upload_timestamps = {}  # {user_id: [timestamp1, timestamp2, ...]}
-
-# Rate limit tiers
-MAX_UPLOADS_PER_MINUTE = 10  # Burst protection (DDoS prevention)
-MAX_UPLOADS_PER_DAY_FREE = 100  # Free tier (generous!)
-MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters (practically unlimited)
-
-# Time windows
-BURST_WINDOW = 60  # 1 minute in seconds
-DAILY_WINDOW = 86400  # 24 hours in seconds
-
-# Ko-fi supporter role IDs (Admins + Mods + Supporters get higher limits)
-# Get these from: Discord Server Settings → Roles → Right-click role → Copy ID
-# Can be comma-separated list in env: SUPPORTER_ROLE_IDS=123,456,789
-SUPPORTER_ROLE_IDS = parse_id_list('SUPPORTER_ROLE_IDS', 'SUPPORTER_ROLE_IDS')
-# Backward compatibility: also check old KOFI_SUPPORTER_ROLE_ID config
-if not SUPPORTER_ROLE_IDS and 'KOFI_SUPPORTER_ROLE_ID' in config:
-    kofi_role = config.get('KOFI_SUPPORTER_ROLE_ID', 0)
-    if kofi_role:
-        SUPPORTER_ROLE_IDS = {kofi_role}
-
-def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool, int, str]:
-    """
-    Check if user can upload. Returns (can_upload, remaining_uploads, limit_type).
-
-    Args:
-        user_id: Discord user ID
-        user_roles: List of role IDs the user has (optional)
-
-    Returns:
-        (can_upload, remaining, limit_type) where limit_type is 'burst', 'daily_free', or 'daily_supporter'
-    """
-    import time
-    current_time = time.time()
-
-    # Initialize user timestamps if needed
-    if user_id not in user_upload_timestamps:
-        user_upload_timestamps[user_id] = []
-
-    # Clean old timestamps (remove anything older than 24 hours)
-    user_upload_timestamps[user_id] = [
-        ts for ts in user_upload_timestamps[user_id]
-        if current_time - ts < DAILY_WINDOW
-    ]
-
-    # Check if user is a supporter (Ko-fi, Admin, or Mod)
-    is_supporter = False
-    if user_roles and SUPPORTER_ROLE_IDS:
-        # Check if any of the user's roles are in the supporter set
-        is_supporter = bool(set(user_roles) & SUPPORTER_ROLE_IDS)
-
-    # BURST PROTECTION (applies to everyone, even supporters)
-    burst_uploads = [
-        ts for ts in user_upload_timestamps[user_id]
-        if current_time - ts < BURST_WINDOW
-    ]
-    if len(burst_uploads) >= MAX_UPLOADS_PER_MINUTE:
-        return (False, 0, 'burst')
-
-    # DAILY LIMIT (varies by supporter status)
-    daily_uploads = len(user_upload_timestamps[user_id])
-    max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
-
-    if daily_uploads >= max_daily:
-        limit_type = 'daily_supporter' if is_supporter else 'daily_free'
-        return (False, 0, limit_type)
-
-    # User can upload! Track this upload
-    user_upload_timestamps[user_id].append(current_time)
-    remaining = max_daily - daily_uploads - 1
-    limit_type = 'daily_supporter' if is_supporter else 'daily_free'
-
-    return (True, remaining, limit_type)
-
-# This command is only registered if R2 is enabled
-if R2_ENABLED:
-    @bot.tree.command(name="upload_image", description="Upload up to 10 JPEG/WebP images to extract metadata.")
-    async def upload_image_command(interaction: discord.Interaction, private: bool = False):
-        """Upload images to R2 for metadata extraction.
-
-        Args:
-            private: If True, response is only visible to you (ephemeral)
-        """
-        if not R2_ENABLED or not r2_client:
-            await interaction.response.send_message("❌ R2 upload feature is not configured on the bot.", ephemeral=True)
-            return
-
-        # Check rate limit (with role-based limits)
-        user_role_ids = [role.id for role in interaction.user.roles] if hasattr(interaction.user, 'roles') else []
-        can_upload, remaining, limit_type = check_upload_rate_limit(interaction.user.id, user_role_ids)
-
-        if not can_upload:
-            # Different messages based on limit type
-            if limit_type == 'burst':
-                await interaction.response.send_message(
-                    "⏰ **Whoa there!** You're uploading too fast. Please wait a minute before trying again.\n"
-                    "_(DDoS protection: Max 10 uploads per minute)_",
-                    ephemeral=True
-                )
-            elif limit_type == 'daily_supporter':
-                await interaction.response.send_message(
-                    f"✅ **Ko-fi Supporter limit reached!** You've hit your {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day limit. Try again tomorrow!\n"
-                    "_(This is to protect R2 storage costs)_",
-                    ephemeral=True
-                )
-            else:  # daily_free
-                await interaction.response.send_message(
-                    f"📦 **Daily limit reached!** Free users get {MAX_UPLOADS_PER_DAY_FREE} uploads per day.\n\n"
-                    f"💰 **Want unlimited?** Support us on Ko-fi to get {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day!\n"
-                    f"🔗 https://ko-fi.com/OTNAngel/",
-                    ephemeral=True
-                )
-            return
-
-        await interaction.response.defer(ephemeral=private, thinking=True)
-
-        try:
-            # Generate unique keys and presigned URLs for up to 10 files
-            MAX_FILES = 10
-            file_keys = []
-            upload_urls = []
-
-            for i in range(MAX_FILES):
-                file_key = f"uploads/{uuid.uuid4()}.tmp"
-                presigned_url = r2_client.generate_presigned_url(
-                    'put_object',
-                    Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
-                    ExpiresIn=R2_UPLOAD_EXPIRATION
-                )
-                file_keys.append(file_key)
-                upload_urls.append(presigned_url)
-
-            # --- Define the View with the Button and its Callback ---
-            view = discord.ui.View(timeout=R2_UPLOAD_EXPIRATION)
-
-            async def process_button_callback(button_interaction: discord.Interaction):
-                # The callback has access to 'file_keys' from the outer scope
-                await button_interaction.response.defer(thinking=True, ephemeral=private)
-
-                try:
-                    # Try to download and process each uploaded file
-                    processed_count = 0
-                    files_to_cleanup = []
-
-                    for idx, file_key in enumerate(file_keys):
-                        try:
-                            # Check if file exists
-                            response = r2_client.get_object(Bucket=R2_BUCKET_NAME, Key=file_key)
-                            image_data = response['Body'].read()
-                            files_to_cleanup.append(file_key)
-                            logger.info(f"Downloaded {file_key} from R2 for processing by {button_interaction.user.name}")
-
-                            # Parse metadata
-                            metadata = await parse_image_metadata(image_data, file_key)
-
-                            if metadata:
-                                embed = format_metadata_embed(metadata, button_interaction.user)
-                                view = FullMetadataView(metadata)
-
-                                # Save the image to a Discord file so it displays in the embed
-                                # Convert .tmp to .png for better Discord compatibility
-                                image_file = discord.File(
-                                    io.BytesIO(image_data),
-                                    filename=f"{button_interaction.user.name}_upload_{idx+1}.png"
-                                )
-
-                                # Attach the image to the embed
-                                embed.set_image(url=f"attachment://{button_interaction.user.name}_upload_{idx+1}.png")
-
-                                # Send to channel or ephemeral based on private setting
-                                if private:
-                                    await button_interaction.followup.send(
-                                        f"✨ Metadata from image {idx+1}:",
-                                        embed=embed,
-                                        file=image_file,
-                                        view=view,
-                                        ephemeral=True
-                                    )
-                                else:
-                                    await interaction.channel.send(
-                                        f"✨ Metadata processed for {button_interaction.user.mention} (image {idx+1}):",
-                                        embed=embed,
-                                        file=image_file,
-                                        view=view
-                                    )
-                                processed_count += 1
-
-                        except botocore.exceptions.ClientError as e:
-                            if e.response['Error']['Code'] == 'NoSuchKey':
-                                # File doesn't exist, skip it (user didn't upload this slot)
-                                continue
-                            else:
-                                logger.error(f"R2 error for {file_key}: {e}")
-
-                    # Clean up all uploaded files
-                    for file_key in files_to_cleanup:
-                        try:
-                            r2_client.delete_object(Bucket=R2_BUCKET_NAME, Key=file_key)
-                            logger.info(f"Cleaned up {file_key} from R2 bucket.")
-                        except Exception as e:
-                            logger.error(f"Failed to delete {file_key} from R2: {e}")
-
-                    # Send summary
-                    if processed_count > 0:
-                        await button_interaction.followup.send(
-                            f"✅ Successfully processed {processed_count} image(s)!",
-                            ephemeral=True
-                        )
-                    else:
-                        await button_interaction.followup.send(
-                            "❌ No images found or no metadata in uploaded images.",
-                            ephemeral=True
-                        )
-
-                except Exception as e:
-                    logger.error(f"Error processing R2 uploads: {e}")
-                    await button_interaction.followup.send(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-
-                # Disable the button after it's been used
-                button.disabled = True
-                await interaction.edit_original_response(view=view)
-
-
-            process_button = discord.ui.Button(
-                label="Process Uploaded Images",
-                style=discord.ButtonStyle.green,
-            )
-            process_button.callback = process_button_callback
-            view.add_item(process_button)
-
-            # --- Create and send the initial response ---
-            uploader_base_url = UPLOADER_URL
-            # Pass multiple upload URLs as JSON array
-            params = {'upload_urls': json.dumps(upload_urls)}
-            uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
-
-            # Determine user tier for display
-            is_supporter = bool(set(user_role_ids) & SUPPORTER_ROLE_IDS) if SUPPORTER_ROLE_IDS else False
-            tier_name = "Ko-fi Supporter" if is_supporter else "Free"
-            max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
-
-            embed = discord.Embed(
-                title="📤 Upload Images for Metadata Extraction",
-                description=(
-                    "Upload up to 10 JPEG or WebP files to extract metadata:\n\n"
-                    "1. **Click the link below** to open the uploader\n"
-                    "2. **Select up to 10 images** (Max 10MB each)\n"
-                    "3. **Click Upload** for each file\n"
-                    "4. Come back and click **Process Uploaded Images** when done"
-                ),
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="🔗 Upload Link", value=f"[Click here to upload]({uploader_link})", inline=False)
-            embed.add_field(
-                name="ℹ️ Info",
-                value=(
-                    f"• **{tier_name}** - {remaining}/{max_daily} uploads remaining today\n"
-                    f"• **Auto-cleanup** - Files deleted after processing\n"
-                    f"• **JPEG/WebP only** - For ComfyUI/A1111/Forge metadata\n"
-                    f"• **Max 10MB** per file"
-                ),
-                inline=False
-            )
-            if not is_supporter:
-                embed.add_field(
-                    name="💰 Want More Uploads?",
-                    value=f"[Support on Ko-fi]({' https://ko-fi.com/OTNAngel/'}) to get {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day!",
-                    inline=False
-                )
-            embed.set_footer(text=f"Link valid for {R2_UPLOAD_EXPIRATION // 60} min • Need help? discord.gg/HhBSvM9gBY")
-
-            await interaction.followup.send(embed=embed, view=view)
-
-        except Exception as e:
-            logger.error(f"Error generating pre-signed URL: {e}")
-            await interaction.followup.send(f"❌ An error occurred while creating the upload link: {e}", ephemeral=True)
-
-
-# =============================================================================
-# BOT LIFECYCLE
-# =============================================================================
-
-@bot.event
-async def on_close():
-    """Cleanup handler for graceful shutdown."""
-    logger.info("👋 Bot shutting down gracefully...")
-    # Close all aiohttp sessions
-    try:
-        # Clear conversation sessions to prevent memory leaks
-        global conversation_sessions
-        conversation_sessions.clear()
-    except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
-    # Give aiohttp time to cleanup sessions
-    await asyncio.sleep(0.1)
-
-@bot.event
-async def on_disconnect():
-    """Handle disconnection from Discord."""
-    logger.warning("⚠️ Bot disconnected from Discord! Will attempt to reconnect...")
-
-@bot.event
-async def on_resumed():
-    """Handle reconnection to Discord."""
-    logger.info("✅ Bot reconnected to Discord successfully!")
-
-@bot.event
-async def on_guild_join(guild: discord.Guild):
-    """Handle bot being added to a new server - check whitelist."""
-    # If whitelist is empty, allow all servers (public mode)
-    if not ALLOWED_GUILD_IDS:
-        logger.info("✅ Joined server: %s (ID: %s) - Public mode, all servers allowed", guild.name, guild.id)
-        return
-
-    # Check if server is whitelisted
-    if guild.id not in ALLOWED_GUILD_IDS:
-        logger.warning("⛔ UNAUTHORIZED server join: %s (ID: %s) - Auto-leaving!", guild.name, guild.id)
-
-        # Try to notify the server owner
-        try:
-            owner = guild.owner
-            if owner:
-                await owner.send(
-                    f"👋 Hello! Thanks for trying to add **{bot.user.name}** to **{guild.name}**!\n\n"
-                    f"However, this is a **private bot instance** and only available in authorized servers.\n\n"
-                    f"If you'd like to use this bot, you can:\n"
-                    f"• Self-host your own instance: https://github.com/Ktiseos-Nyx/PromptInspectorBot\n"
-                    f"• Contact the bot owner to request access\n\n"
-                    f"The bot has automatically left your server. Sorry for the inconvenience!"
-                )
-                logger.info("📬 Sent notification to server owner: %s", owner.name)
-        except discord.Forbidden:
-            logger.warning("Couldn't DM server owner (DMs disabled)")
-        except Exception as e:
-            logger.error("Error notifying server owner: %s", e)
-
-        # Leave the server
-        await guild.leave()
-        logger.info("👋 Left unauthorized server: %s", guild.name)
-    else:
-        logger.info("✅ Joined whitelisted server: %s (ID: %s)", guild.name, guild.id)
-
-
-@bot.event
-async def on_ready():
-    """Bot startup handler."""
-    logger.info("✅ Logged in as %s!", bot.user)
-    logger.info("📡 Monitoring %s channels", len(MONITORED_CHANNEL_IDS))
-
-    # Log whitelist status
-    if ALLOWED_GUILD_IDS:
-        logger.info("🔒 Guild whitelist enabled: %s authorized servers", len(ALLOWED_GUILD_IDS))
-    else:
-        logger.info("🌐 Public mode: All servers allowed")
-
-    # Sync slash commands
-    try:
-        synced = await bot.tree.sync()
-        logger.info("⚡ Synced %s slash commands", len(synced))
-    except Exception as e:
-        logger.error("Failed to sync commands: %s", e)
-
-
-def main():
-    """Main entry point."""
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN not found in .env file!")
-        return
-
-    logger.info("🚀 Starting PromptInspectorBot-Enhanced...")
-
-    # Add retry logic with EXPONENTIAL BACKOFF to prevent Cloudflare rate limiting
-    max_retries = 5
-    retry_count = 0
-
-    while retry_count < max_retries:
-        try:
-            bot.run(BOT_TOKEN, reconnect=True)
-            break  # Exit loop if bot stops gracefully
-        except discord.LoginFailure:
-            logger.error("❌ INVALID TOKEN - Bot token may be banned or revoked!")
-            break  # Don't retry on auth failures
-        except discord.HTTPException as e:
-            # Check if it's a rate limit error (429 or Cloudflare block)
-            if '429' in str(e) or 'rate limit' in str(e).lower() or '1015' in str(e):
-                retry_count += 1
-                # Exponential backoff: 10s, 20s, 40s, 80s, 160s
-                wait_time = min(10 * (2 ** retry_count), 300)  # Cap at 5 minutes
-                logger.error(f"⚠️ RATE LIMITED by Discord/Cloudflare (attempt {retry_count}/{max_retries})")
-                logger.info(f"🕐 Waiting {wait_time}s before retry to avoid IP ban...")
-                import time
-                time.sleep(wait_time)
-            else:
-                # Other Discord HTTP errors
-                logger.error(f"❌ Discord HTTP error: {e}")
-                raise
-        except Exception as e:
-            retry_count += 1
-            logger.error(f"❌ Bot crashed (attempt {retry_count}/{max_retries}): {e}")
-            if retry_count < max_retries:
-                # Shorter delay for non-rate-limit errors
-                wait_time = 5 * retry_count
-                logger.info(f"🔄 Restarting in {wait_time} seconds...")
-                import time
-                time.sleep(wait_time)
-            else:
-                logger.error("❌ Max retries reached. Bot shutting down.")
-                raise
-
-
-if __name__ == '__main__':
-    main()

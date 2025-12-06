@@ -14,6 +14,7 @@ logger = get_logger(__name__)
 
 
 class NegativeIndicatorsManager:
+
     """Manages loading and using negative indicators from JSON config."""
 
     def __init__(self, config_path: str | None = None):
@@ -36,7 +37,7 @@ class NegativeIndicatorsManager:
             # Fallback to minimal hardcoded config
             self.config = {
                 "categories": {"basic": {"indicators": ["bad quality", "watermark", "nsfw"]}},
-                "detection_rules": {"minimum_matches_for_negative": 2, "strong_negative_single_match": ["watermark"]}
+                "detection_rules": {"minimum_matches_for_negative": 2, "strong_negative_single_match": ["watermark"]},
             }
 
     def get_all_indicators(self) -> list[str]:

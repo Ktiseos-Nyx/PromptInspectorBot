@@ -17,6 +17,7 @@ MethodDefinition = dict[str, Any]
 
 
 class DirectValueExtractor:
+
     """Handles direct value extraction methods."""
 
     def __init__(self, logger: logging.Logger):
@@ -172,7 +173,7 @@ class DirectValueExtractor:
             self.logger.debug(
                 "Workflow contains '%s': %s",
                 search_string[:50] + "..." if len(search_string) > 50 else search_string,
-                contains
+                contains,
             )
             return contains
 

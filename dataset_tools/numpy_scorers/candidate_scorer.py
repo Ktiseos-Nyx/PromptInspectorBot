@@ -50,6 +50,7 @@ ADVANCED_NODE_TYPE_SCORES = {
 
 
 class CandidateScorer:
+
     """Scores and ranks text candidates from ComfyUI workflows."""
 
     def __init__(self):
@@ -84,7 +85,7 @@ class CandidateScorer:
         self.technical_terms = [
             "lanczos", "bilinear", "ddim", "euler", "dpmpp", "cfg", "randomize",
             "steps", "sampler", "scheduler", "denoise", "seed", "checkpoint",
-            "lora", "embedding", "hypernetwork", "vae", "controlnet"
+            "lora", "embedding", "hypernetwork", "vae", "controlnet",
         ]
 
     def score_text_candidate(self, candidate: dict[str, Any], workflow_type: str = "standard") -> dict[str, Any]:
@@ -188,7 +189,7 @@ class CandidateScorer:
             "reasons": reasons,
             "confidence_modifier": confidence_modifier,
             "node_bonus": node_bonus,
-            "text_length": text_length
+            "text_length": text_length,
         }
 
     def is_complex_scene_vs_simple_style(self, complex_text: str, simple_text: str) -> bool:

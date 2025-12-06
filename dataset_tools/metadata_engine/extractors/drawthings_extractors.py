@@ -26,6 +26,7 @@ DRAWTHINGS_PARAM_MAP: dict[str, str] = {
 
 
 class DrawThingsExtractor:
+
     """Handles Draw Things-specific extraction methods."""
 
     def __init__(self, logger: logging.Logger) -> None:

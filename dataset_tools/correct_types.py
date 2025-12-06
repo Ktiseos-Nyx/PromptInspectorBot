@@ -37,6 +37,7 @@ MAX_RAW_METADATA_DISPLAY_LEN = 500
 
 
 class EmptyField(Enum):
+
     """Represent placeholder or empty field states.
 
     Used as keys in metadata dictionaries or as UI placeholder text sources.
@@ -52,6 +53,7 @@ class EmptyField(Enum):
 
 
 class UpField(Enum):
+
     """Define sections for the upper display area in the UI.
 
     The string values are used as keys in the metadata dictionary.
@@ -79,6 +81,7 @@ class UpField(Enum):
 
 
 class DownField(Enum):
+
     """Define sections for the lower display area in the UI.
 
     The string values are used as keys in the metadata dictionary.
@@ -106,6 +109,7 @@ class DownField(Enum):
 
 
 class ExtensionType:
+
     """Contain valid file extensions, categorized for processing."""
 
     # Individual file types
@@ -141,6 +145,7 @@ class ExtensionType:
 
 
 class NodeNames:
+
     """Hold constants related to ComfyUI node names and data parsing."""
 
     ENCODERS: ClassVar[set[str]] = {
@@ -254,12 +259,14 @@ class NodeWorkflow(TypedDict):
 
 
 class BracketedDict(BaseModel):  # pylint: disable=unnecessary-pass
+
     """Placeholder for a Pydantic model that might use bracket_check."""
 
-    pass  # Or use ... if it's truly empty and a placeholder
+    # Or use ... if it's truly empty and a placeholder
 
 
 class IsThisNode:
+
     """Hold TypeAdapters for validating parts of ComfyUI JSON data."""
 
     data: TypeAdapter[NodeDataMap] = TypeAdapter(NodeDataMap)

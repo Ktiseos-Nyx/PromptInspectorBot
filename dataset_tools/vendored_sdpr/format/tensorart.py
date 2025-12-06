@@ -12,6 +12,7 @@ from .base_format import BaseFormat
 
 @dataclass
 class TensorArtConfig:
+
     """Configuration for TensorArt format parsing - systematically organized"""
 
     # TensorArt-specific identification patterns
@@ -21,7 +22,7 @@ class TensorArtConfig:
             "ems_lora": re.compile(r"<lora:(EMS-\d+-EMS(?:\.safetensors)?)", re.IGNORECASE),
             "tensorart_job_id": re.compile(r"^\d{10,}$"),  # Long numeric strings typical of TensorArt
             "tensorart_prefix": re.compile(r"tensorart|tensor[_-]?art", re.IGNORECASE),
-        }
+        },
     )
 
     # ComfyUI node types for parameter extraction
@@ -62,7 +63,7 @@ class TensorArtConfig:
                 "JWImageSave",
             },
             "empty_latent": {"EmptyLatentImage", "LatentFromBatch"},
-        }
+        },
     )
 
     # Parameter mapping for ComfyUI node inputs to standard names
@@ -78,7 +79,7 @@ class TensorArtConfig:
             "height": "height",
             "batch_size": "batch_size",
             "ckpt_name": "model",
-        }
+        },
     )
 
     # TensorArt-specific features to detect
@@ -88,11 +89,12 @@ class TensorArtConfig:
             "tensorart_workflow",
             "community_model",
             "shared_workflow",
-        }
+        },
     )
 
 
 class TensorArtSignatureDetector:
+
     """Advanced signature detection for TensorArt identification"""
 
     def __init__(self, config: TensorArtConfig, logger: logging.Logger):
@@ -130,7 +132,7 @@ class TensorArtSignatureDetector:
 
         self.logger.debug(
             f"TensorArt detection: confidence={detection_result['confidence_score']:.2f}, "
-            f"signatures={len(detection_result['signatures_found'])}"
+            f"signatures={len(detection_result['signatures_found'])}",
         )
 
         return detection_result
@@ -156,7 +158,7 @@ class TensorArtSignatureDetector:
                         "node_id": node_id,
                         "model_name": ckpt_name,
                         "node_type": class_type,
-                    }
+                    },
                 )
                 result["signatures_found"].append("ems_checkpoint")
                 self.logger.debug(f"TensorArt: Found EMS model in {node_id}: {ckpt_name}")
@@ -180,7 +182,7 @@ class TensorArtSignatureDetector:
                             "lora_name": lora_name,
                             "strength": inputs.get("strength_model", inputs.get("strength", 1.0)),
                             "node_type": class_type,
-                        }
+                        },
                     )
                     result["signatures_found"].append("ems_lora")
 
@@ -195,7 +197,7 @@ class TensorArtSignatureDetector:
                             "lora_name": lora_match,
                             "source": "text_embedding",
                             "node_type": class_type,
-                        }
+                        },
                     )
                     result["signatures_found"].append("ems_lora_embedded")
 
@@ -218,7 +220,7 @@ class TensorArtSignatureDetector:
                         "node_id": node_id,
                         "job_id": filename_prefix,
                         "node_type": class_type,
-                    }
+                    },
                 )
                 result["signatures_found"].append("job_id_pattern")
                 self.logger.debug(f"TensorArt: Found potential job ID in {node_id}: {filename_prefix}")
@@ -285,6 +287,7 @@ class TensorArtSignatureDetector:
 
 
 class TensorArtWorkflowParser:
+
     """Handles parsing of TensorArt ComfyUI workflows"""
 
     def __init__(self, config: TensorArtConfig, logger: logging.Logger):
@@ -432,7 +435,7 @@ class TensorArtWorkflowParser:
         return parameters
 
     def _extract_lora_information(
-        self, workflow_data: dict[str, Any], analysis: dict[str, Any]
+        self, workflow_data: dict[str, Any], analysis: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Extract LoRA information from LoRA loader nodes"""
         loras = []
@@ -470,6 +473,7 @@ class TensorArtWorkflowParser:
 
 
 class TensorArtFormat(BaseFormat):
+
     """Enhanced TensorArt format parser with ComfyUI workflow intelligence.
 
     TensorArt uses ComfyUI workflows with specific identifiers:
@@ -539,7 +543,7 @@ class TensorArtFormat(BaseFormat):
             confidence = self._detection_result["confidence_score"]
             signatures = len(self._detection_result["signatures_found"])
             self._logger.debug(
-                f"{self.tool}: Not identified as TensorArt (confidence: {confidence:.2f}, signatures: {signatures})"
+                f"{self.tool}: Not identified as TensorArt (confidence: {confidence:.2f}, signatures: {signatures})",
             )
             self.status = self.Status.FORMAT_DETECTION_ERROR
             self._error = "ComfyUI JSON does not have TensorArt-specific markers"
@@ -567,7 +571,7 @@ class TensorArtFormat(BaseFormat):
             return
 
         self._logger.info(
-            f"{self.tool}: Successfully parsed with {self._detection_result['confidence_score']:.2f} confidence"
+            f"{self.tool}: Successfully parsed with {self._detection_result['confidence_score']:.2f} confidence",
         )
 
     def _apply_parse_results(self) -> None:
@@ -661,7 +665,7 @@ class TensorArtFormat(BaseFormat):
             "has_positive_prompt": bool(self._positive),
             "has_negative_prompt": bool(self._negative),
             "parameter_count": len(
-                [v for v in self._parameter.values() if v and v != self.DEFAULT_PARAMETER_PLACEHOLDER]
+                [v for v in self._parameter.values() if v and v != self.DEFAULT_PARAMETER_PLACEHOLDER],
             ),
             "has_dimensions": self._width != "0" or self._height != "0",
             "dimensions": (f"{self._width}x{self._height}" if self._width != "0" and self._height != "0" else None),

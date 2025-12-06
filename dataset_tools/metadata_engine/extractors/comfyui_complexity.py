@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIComplexityExtractor:
+
     """Handles complex ComfyUI workflows and advanced extraction patterns."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -319,7 +320,7 @@ class ComfyUIComplexityExtractor:
                         "step_type": step_type,
                         "class_type": class_type,
                         "order": len(steps),
-                    }
+                    },
                 )
 
         return {

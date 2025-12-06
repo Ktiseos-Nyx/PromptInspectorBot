@@ -26,6 +26,7 @@ Link = list[Any]
 
 
 class ComfyUIWorkflowAnalyzer:
+
     """Analyzes ComfyUI workflows using a robust tracing methodology."""
 
     def __init__(self, logger: logging.Logger, dictionary_path: str | None = None):

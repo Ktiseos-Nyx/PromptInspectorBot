@@ -9,7 +9,11 @@ import time
 from typing import Any
 
 from dataset_tools.logger import get_logger
-from dataset_tools.numpy_scorers.base_numpy_scorer import RUNTIME_ANALYTICS, WORKFLOW_CACHE, BaseNumpyScorer
+from dataset_tools.numpy_scorers.base_numpy_scorer import (
+    RUNTIME_ANALYTICS,
+    WORKFLOW_CACHE,
+    BaseNumpyScorer,
+)
 from dataset_tools.numpy_scorers.negative_indicators_loader import negative_indicators
 
 logger = get_logger(__name__)
@@ -89,11 +93,12 @@ WORKFLOW_TYPES = {
     "complex": "Multiple conditioning paths",
     "experimental": "Unknown/new node types",
     "upscaling": "Contains upscaling workflows",
-    "controlnet": "Uses ControlNet conditioning"
+    "controlnet": "Uses ControlNet conditioning",
 }
 
 
 class ComfyUINumpyScorer(BaseNumpyScorer):
+
     """Numpy-based analyzer specifically for ComfyUI workflows."""
 
     def __init__(self):
@@ -109,7 +114,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
             "Note", "Reroute", "ImageSave", "LoadImage", "PreviewImage",
             "SaveImage", "ModelLoader", "VAELoader", "CheckpointLoaderSimple",
             "LoraLoader", "SchedulerLoader", "EmptyLatentImage",
-            "T5v11Loader", "PixArtCheckpointLoader", "PixArtResolutionSelect"
+            "T5v11Loader", "PixArtCheckpointLoader", "PixArtResolutionSelect",
         }
 
         # ComfyUI-specific template indicators
@@ -201,6 +206,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
                 - llm_node_ids: list of LLM node IDs
                 - llm_input_node_ids: list of nodes that feed INTO LLMs (user inputs)
                 - llm_output_node_ids: list of nodes that receive FROM LLMs (expanded prompts)
+
         """
         result = {
             "has_llm_expansion": False,
@@ -289,7 +295,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
                     "output_node": output_node,
                     "output_slot": output_slot,
                     "input_node": input_node,
-                    "input_slot": input_slot
+                    "input_slot": input_slot,
                 }
             # If dict (rare), try to extract values
             elif isinstance(link, dict):
@@ -304,7 +310,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
                         "output_node": output_node,
                         "output_slot": output_slot,
                         "input_node": input_node,
-                        "input_slot": input_slot
+                        "input_slot": input_slot,
                     }
 
         return link_map
@@ -315,7 +321,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
 
         high_priority_types = [
             "DPRandomGenerator", "WildcardProcessor", "ImpactWildcardProcessor",
-            "RandomPrompt", "Wildcard", "WildCardProcessor", "ImpactWildcardEncode"
+            "RandomPrompt", "Wildcard", "WildCardProcessor", "ImpactWildcardEncode",
         ]
 
         medium_priority_types = [
@@ -326,7 +332,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
             "easy positive", "T5TextEncode", "Florence2Run", "Text to Conditioning",
             "Text Find and Replace", "OllamaVision", "Text Concatenate",
             "CLIPTextEncodeFlux", "PixArtT5TextEncode", "ChatGptPrompt", "ShowText|pysssss",
-            "JjkText", "CLIPTextEncodeLumina2"
+            "JjkText", "CLIPTextEncodeLumina2",
         ]
 
         # Handle both list of nodes and TensorArt-style dict of nodes
@@ -399,12 +405,12 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
                 # Check for template/placeholder text in wildcard processors
                 template_indicators = [
                     "populate", "select the wildcard", "wildcard to add",
-                    "choose wildcard", "add to the text", "select wildcard"
+                    "choose wildcard", "add to the text", "select wildcard",
                 ]
                 # Also check for common wildcard processor mode settings that aren't real prompts
                 wildcard_mode_settings = [
                     "fixed", "randomize", "increment", "decrement",
-                    "random", "sequential", "shuffle"
+                    "random", "sequential", "shuffle",
                 ]
 
                 is_template = False
@@ -526,7 +532,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
             text_str = str(text)
             empty_patterns = [
                 "echo_empty", "empty", "null", "none", "placeholder",
-                "select the wildcard", "populate", "add text here", "enter text"
+                "select the wildcard", "populate", "add text here", "enter text",
             ]
 
             if any(pattern.lower() in text_str.lower() for pattern in empty_patterns) and len(text_str.strip()) < 50:
@@ -607,7 +613,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
                         "is_connected": is_connected,
                         # NEW: Add graph analysis data
                         "workflow_data": workflow_data,
-                        "node_id": node_id
+                        "node_id": node_id,
                     }
 
                     # Score the candidate
@@ -775,7 +781,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
             "edges": {},  # node_id -> [connected_node_ids]
             "reverse_edges": {},  # For backward tracing
             "samplers": [],
-            "prompt_nodes": []
+            "prompt_nodes": [],
         }
 
         # Index nodes by ID
@@ -946,13 +952,13 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
         # LoRA patterns - the most common issue
         lora_patterns = [
             "<lora:", ".safetensors", "ems-", "-ems.safetensors",
-            "lora:ems", "modelfilename", "modelhash"
+            "lora:ems", "modelfilename", "modelhash",
         ]
 
         # Checkpoint/model patterns
         checkpoint_patterns = [
             ".ckpt", "checkpoint", "model.safetensors",
-            "basemodel", "modelid", "vae_name"
+            "basemodel", "modelid", "vae_name",
         ]
 
         # Check for LoRA technical patterns
@@ -996,7 +1002,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
         template_indicators = [
             "{vaporwave,|}", "{sharp details,|}", "{realistic,|}",
             "{muted colors|}", "__test2_location__", "__random_waifu_xl__",
-            "__any_location__", "__rpg_character_m_sexy__"
+            "__any_location__", "__rpg_character_m_sexy__",
         ]
 
         return any(indicator in text for indicator in template_indicators)
@@ -1114,7 +1120,7 @@ class ComfyUINumpyScorer(BaseNumpyScorer):
                     "scoring_method": "comfyui_numpy",
                     "workflow_type": (best_positive if best_positive else best_negative).get("workflow_type") if (best_positive or best_negative) else None,
                     "source_node_type": (best_positive if best_positive else best_negative).get("source_node_type") if (best_positive or best_negative) else None,
-                    "workflow_data": workflow_data  # Store workflow for reference
+                    "workflow_data": workflow_data,  # Store workflow for reference
                 }
 
                 # INTELLIGENT OVERRIDE LOGIC:

@@ -17,6 +17,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIDynamicPromptsExtractor:
+
     """Handles DynamicPrompts ecosystem nodes."""
 
     # DynamicPrompts node types
@@ -305,7 +306,7 @@ class ComfyUIDynamicPromptsExtractor:
                     for n in nodes.values()
                     if isinstance(n, dict)
                     and any(dp_node in n.get("class_type", "") for dp_node in self.DYNAMICPROMPTS_NODES)
-                ]
+                ],
             ),
         }
 
@@ -375,11 +376,10 @@ class ComfyUIDynamicPromptsExtractor:
                                         score += 30  # Strong boost for negative keywords
                                     elif any(w in text_value.lower() for w in ["beautiful", "best", "masterpiece", "detailed"]):
                                         score -= 50  # Penalize positive-looking text in negative field
-                                else:  # positive
-                                    if any(w in text_value.lower() for w in ["beautiful", "detailed", "masterpiece", "1girl", "1boy"]):
-                                        score += 30  # Boost positive-looking text
-                                    elif any(w in text_value.lower() for w in ["blurry", "worst", "bad", "ugly"]):
-                                        score -= 50  # Penalize negative text in positive field
+                                elif any(w in text_value.lower() for w in ["beautiful", "detailed", "masterpiece", "1girl", "1boy"]):
+                                    score += 30  # Boost positive-looking text
+                                elif any(w in text_value.lower() for w in ["blurry", "worst", "bad", "ugly"]):
+                                    score -= 50  # Penalize negative text in positive field
 
                                 if score > best_score:
                                     best_score = score
@@ -389,8 +389,7 @@ class ComfyUIDynamicPromptsExtractor:
                 if best_text:
                     self.logger.info(f"[DynamicPrompts] ✅ Found resolved '{target_input}' prompt in API format: {best_text[:100]}...")
                     return best_text
-                else:
-                    self.logger.info(f"[DynamicPrompts] No good '{target_input}' prompts in API format, trying workflow format...")
+                self.logger.info(f"[DynamicPrompts] No good '{target_input}' prompts in API format, trying workflow format...")
 
             except Exception as e:
                 self.logger.debug(f"[DynamicPrompts] API format parsing failed: {e}, trying workflow format...")
@@ -415,6 +414,7 @@ class ComfyUIDynamicPromptsExtractor:
 
             Returns:
                 Extracted text or empty string
+
             """
             if depth > 10:  # Prevent infinite recursion
                 self.logger.warning("[DynamicPrompts] Max recursion depth reached following references")
@@ -522,7 +522,7 @@ class ComfyUIDynamicPromptsExtractor:
 
                 candidate["score"] = score
                 self.logger.debug(
-                    f"[DynamicPrompts] Node {candidate['node_id']}: score={score:.1f}, text={text[:60]}..."
+                    f"[DynamicPrompts] Node {candidate['node_id']}: score={score:.1f}, text={text[:60]}...",
                 )
 
             # Sort by score and return the best one
@@ -530,7 +530,7 @@ class ComfyUIDynamicPromptsExtractor:
             best = candidates[0]
             self.logger.info(
                 f"[DynamicPrompts] Selected best candidate: Node {best['node_id']} "
-                f"(score={best['score']:.1f}, source={best['source']}): {best['text'][:100]}..."
+                f"(score={best['score']:.1f}, source={best['source']}): {best['text'][:100]}...",
             )
             return best["text"]
 
@@ -562,7 +562,7 @@ class ComfyUIDynamicPromptsExtractor:
                                             prompt_text = source_widgets[0]
                                             if isinstance(prompt_text, str) and prompt_text.strip():
                                                 self.logger.info(
-                                                    f"[DynamicPrompts] Found prompt from {source_class}: {prompt_text[:100]}..."
+                                                    f"[DynamicPrompts] Found prompt from {source_class}: {prompt_text[:100]}...",
                                                 )
                                                 return prompt_text
 

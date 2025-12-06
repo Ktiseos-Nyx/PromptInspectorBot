@@ -79,7 +79,10 @@ except ImportError:
 
 
 try:
-    from dataset_tools.metadata_engine.template_system import OutputFormatter, TemplateProcessor
+    from dataset_tools.metadata_engine.template_system import (
+        OutputFormatter,
+        TemplateProcessor,
+    )
 except ImportError:
 
     class TemplateProcessor:
@@ -105,6 +108,7 @@ ExtractedFields = dict[str, Any]
 
 
 class MetadataEngine:
+
     """Main metadata parsing engine.
 
     This class coordinates all the components to provide a unified
@@ -140,7 +144,7 @@ class MetadataEngine:
 
         self.logger.info(
             f"MetadataEngine initialized with {len(self.sorted_definitions)} "
-            f"parser definitions from {self.parser_definitions_path}"
+            f"parser definitions from {self.parser_definitions_path}",
         )
 
     def get_parser_for_file(self, file_input: FileInput) -> dict[str, Any] | BaseFormat | None:
@@ -336,7 +340,7 @@ class MetadataEngine:
         return True
 
     def _process_json_instructions(
-        self, parser_def: ParserDefinition, context_data: ContextData
+        self, parser_def: ParserDefinition, context_data: ContextData,
     ) -> dict[str, Any] | None:
         """Process parser definition with JSON instructions.
 
@@ -367,7 +371,7 @@ class MetadataEngine:
 
         # Process output template
         return self._process_output_template(
-            parser_def, extracted_fields, context_data, original_input, transformed_data
+            parser_def, extracted_fields, context_data, original_input, transformed_data,
         )
 
     def _prepare_input_data(self, instructions: dict[str, Any], context_data: ContextData) -> tuple[Any, Any]:
@@ -431,12 +435,12 @@ class MetadataEngine:
                 ),
                 "png_chunk": (
                     lambda sk=source_key: context_data.get(
-                        "png_chunks", {}
+                        "png_chunks", {},
                     ).get(sk)
                 ),
                 "exif_field": (
                     lambda sk=source_key: context_data.get(
-                        "exif_data", {}
+                        "exif_data", {},
                     ).get(sk)
                 ),
             }
@@ -558,7 +562,7 @@ class MetadataEngine:
         return data
 
     def _extract_fields(
-        self, instructions: dict[str, Any], input_data: Any, context_data: ContextData
+        self, instructions: dict[str, Any], input_data: Any, context_data: ContextData,
     ) -> ExtractedFields:
         """Extract fields according to instruction definitions."""
         extracted_fields: ExtractedFields = {"parameters": {}}
@@ -691,7 +695,7 @@ class MetadataEngine:
             status_name = getattr(parser_status, "name", str(parser_status))
             error_msg = getattr(parser_instance, "error", "No error details")
             self.logger.warning(
-                f"Python Parser {parser_instance.tool} failed. Status: {status_name}. Error: {error_msg}"
+                f"Python Parser {parser_instance.tool} failed. Status: {status_name}. Error: {error_msg}",
             )
             return None
 
@@ -720,6 +724,7 @@ class MetadataEngine:
 
 
 class MetadataEngineBuilder:
+
     """Builder class for creating MetadataEngine instances with custom configuration.
 
     This provides a fluent interface for setting up the engine with
@@ -781,6 +786,7 @@ class MetadataEngineBuilder:
 
 
 class MetadataEngineManager:
+
     """Manager class for handling multiple MetadataEngine instances.
 
     This is useful when you need different engine configurations
@@ -927,7 +933,7 @@ def test_metadata_engine():
                 "source_type": "file_extension",
                 "operator": "equals_case_insensitive",
                 "value": "txt",
-            }
+            },
         ],
         "parsing_instructions": {
             "input_data": {"source_type": "file_content_raw_text"},

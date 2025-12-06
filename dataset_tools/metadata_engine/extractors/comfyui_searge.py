@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUISeargeExtractor:
+
     """Handles Searge-SDXL ecosystem nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -133,7 +134,7 @@ class ComfyUISeargeExtractor:
                     {
                         "name": widgets[0] if isinstance(widgets[0], str) else "",
                         "strength": widgets[1] if len(widgets) > 1 else 1.0,
-                    }
+                    },
                 )
             elif "SeargeVAELoader" in class_type and widgets:
                 model_params["vae"] = widgets[0] if isinstance(widgets[0], str) else ""
@@ -312,7 +313,7 @@ class ComfyUISeargeExtractor:
                     {
                         "name": widgets[0] if isinstance(widgets[0], str) else "",
                         "strength": widgets[1] if len(widgets) > 1 else 1.0,
-                    }
+                    },
                 )
 
         return summary

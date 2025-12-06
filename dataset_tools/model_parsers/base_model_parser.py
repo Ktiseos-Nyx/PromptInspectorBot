@@ -5,7 +5,9 @@ from enum import Enum
 from dataset_tools.correct_types import DownField, EmptyField, UpField
 
 # Corrected: Import the modified info_monitor directly
-from dataset_tools.logger import info_monitor  # Assuming info_monitor is the new name for nfo
+from dataset_tools.logger import (
+    info_monitor,  # Assuming info_monitor is the new name for nfo
+)
 
 
 class ModelParserStatus(Enum):
@@ -125,6 +127,6 @@ class BaseModelParser(ABC):
         return ui_data
 
     class NotApplicableError(Exception):
+
         """Custom exception to indicate a parser is not suitable for a given file."""
 
-        pass

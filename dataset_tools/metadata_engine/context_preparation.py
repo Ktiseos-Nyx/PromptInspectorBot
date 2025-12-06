@@ -21,10 +21,9 @@ import piexif
 import piexif.helper
 from PIL import Image, UnidentifiedImageError
 
+from ..file_readers.image_metadata_reader import ImageMetadataReader
 from ..logger import get_logger
 from ..model_parsers.safetensors_parser import SafetensorsParser
-from ..file_readers.image_metadata_reader import ImageMetadataReader
-
 
 # Type aliases
 ContextData = dict[str, Any]
@@ -38,6 +37,7 @@ MAX_BINARY_SIZE = 20 * 1024 * 1024  # 20MB
 
 
 class ContextDataPreparer:
+
     """Prepares context data from various file types for metadata parsing.
 
     This class extracts all available metadata and file information into
@@ -70,7 +70,7 @@ class ContextDataPreparer:
             # If it fails, it's either not an image or the file is inaccessible
             # Proceed to process as a non-image file type (JSON, TXT, etc.)
             self.logger.info(
-                f"[CONTEXT_PREP] Failed as image ({e}), trying as non-image: {context.get('file_path_original')}"
+                f"[CONTEXT_PREP] Failed as image ({e}), trying as non-image: {context.get('file_path_original')}",
             )
             result = self._process_as_non_image(file_input, context)
             self.logger.info(f"[CONTEXT_PREP] Successfully processed as non-image: {context.get('file_path_original')}")
@@ -131,7 +131,7 @@ class ContextDataPreparer:
                     "width": img.width,
                     "height": img.height,
                     "file_format": img.format.upper() if img.format else "",
-                }
+                },
             )
 
             # ============================================================================
@@ -178,7 +178,7 @@ class ContextDataPreparer:
 
             if img.width * img.height > MAX_IMAGE_PIXELS:
                 self.logger.warning(
-                    f"Large image ({img.width}x{img.height}) detected. Performing minimal metadata extraction."
+                    f"Large image ({img.width}x{img.height}) detected. Performing minimal metadata extraction.",
                 )
                 self._extract_minimal_metadata(context)
                 return context
@@ -248,7 +248,7 @@ class ContextDataPreparer:
                     if user_comment and user_comment.strip():
                         context["raw_user_comment_str"] = user_comment.strip()
                         self.logger.info(
-                            f"[CONTEXT_PREP_DEBUG] Successfully decoded UserComment: {len(user_comment)} chars - starts with: {user_comment[:100]}"
+                            f"[CONTEXT_PREP_DEBUG] Successfully decoded UserComment: {len(user_comment)} chars - starts with: {user_comment[:100]}",
                         )
                     else:
                         self.logger.debug("UserComment decoded but empty")
@@ -456,7 +456,7 @@ class ContextDataPreparer:
 
             self.logger.info(
                 f"[PYEXIV2] Extracted {len(context['exif_fields'])} EXIF fields, "
-                f"{len(context['xmp_fields'])} XMP fields from: {Path(file_path).name}"
+                f"{len(context['xmp_fields'])} XMP fields from: {Path(file_path).name}",
             )
 
         except Exception as e:
@@ -677,7 +677,7 @@ class ContextDataPreparer:
             file_size = file_path.stat().st_size
             if max_size and file_size > max_size:
                 self.logger.warning(
-                    f"File {file_path} ({file_size} bytes) exceeds max_size ({max_size}), reading truncated"
+                    f"File {file_path} ({file_size} bytes) exceeds max_size ({max_size}), reading truncated",
                 )
         except OSError:
             pass  # Size check failed, proceed anyway

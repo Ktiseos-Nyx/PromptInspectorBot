@@ -22,6 +22,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUITextCombinerExtractor:
+
     """Handles text combiner nodes in ComfyUI workflows."""
 
     # Node types that combine text from multiple sources
@@ -86,7 +87,7 @@ class ComfyUITextCombinerExtractor:
         return config["default_delimiter"]
 
     def _find_source_node_for_input(
-        self, node_data: dict, input_name: str, links: list, node_lookup: dict
+        self, node_data: dict, input_name: str, links: list, node_lookup: dict,
     ) -> dict | None:
         """Find the source node connected to a specific input."""
         inputs = node_data.get("inputs", [])
@@ -159,6 +160,7 @@ class ComfyUITextCombinerExtractor:
 
         Returns:
             List of text strings found from inputs
+
         """
         if max_depth <= 0:
             self.logger.warning("[TEXT COMBINER] Max depth reached, stopping traversal")
@@ -214,7 +216,7 @@ class ComfyUITextCombinerExtractor:
                 if text:
                     text_parts.append(text)
                     self.logger.info(
-                        "[TEXT COMBINER] Found text from %s: %s", input_name, text[:50]
+                        "[TEXT COMBINER] Found text from %s: %s", input_name, text[:50],
                     )
 
         return text_parts
@@ -240,6 +242,7 @@ class ComfyUITextCombinerExtractor:
 
         Returns:
             Combined text string or empty string
+
         """
         self.logger.debug("[TEXT COMBINER] Extracting combined text")
 
@@ -285,7 +288,7 @@ class ComfyUITextCombinerExtractor:
                 # Traverse inputs to find text
                 visited = set()
                 text_parts = self._traverse_combiner_inputs(
-                    node_data, config, links, node_lookup, text_encoder_types, visited
+                    node_data, config, links, node_lookup, text_encoder_types, visited,
                 )
 
                 if text_parts:
@@ -315,6 +318,7 @@ class ComfyUITextCombinerExtractor:
 
         Returns:
             True if combiner nodes are detected
+
         """
         prompt_data = self._get_node_data(data)
         if not prompt_data:

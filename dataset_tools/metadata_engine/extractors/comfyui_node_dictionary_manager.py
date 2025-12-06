@@ -19,6 +19,7 @@ ExtractionResult = dict[str, Any]
 
 
 class ComfyUINodeDictionaryManager:
+
     """Manages the ComfyUI node dictionary for intelligent extraction."""
 
     def __init__(self, logger: logging.Logger, dictionary_path: str | None = None):
@@ -63,7 +64,7 @@ class ComfyUINodeDictionaryManager:
             for node_class, node_def in nodes.items():
                 self.node_class_to_definition[node_class] = {
                     "category": category,
-                    **node_def
+                    **node_def,
                 }
 
     def get_node_definition(self, node_class: str) -> dict[str, Any] | None:
@@ -101,7 +102,7 @@ class ComfyUINodeDictionaryManager:
             "steps": ["steps"],
             "cfg_scale": ["cfg", "guidance"],
             "sampler": ["sampler_name"],
-            "scheduler": ["scheduler"]
+            "scheduler": ["scheduler"],
         }
 
         mapped_keys = common_mappings.get(parameter_type, [parameter_type])
@@ -185,7 +186,7 @@ class ComfyUINodeDictionaryManager:
             "custom_nodes": [],
             "known_nodes": [],
             "workflow_patterns": [],
-            "extraction_coverage": {}
+            "extraction_coverage": {},
         }
 
         # Categorize nodes
@@ -270,14 +271,14 @@ class ComfyUINodeDictionaryManager:
                 extracted_parameters[parameter_type] = {
                     "value": value,
                     "source_node": node_id,
-                    "source_class": node_class
+                    "source_class": node_class,
                 }
 
         return {
             "workflow_analysis": analysis,
             "extracted_parameters": extracted_parameters,
             "extraction_success_rate": len(extracted_parameters) / len(self.extraction_priorities),
-            "recommendations": self._generate_recommendations(analysis, extracted_parameters)
+            "recommendations": self._generate_recommendations(analysis, extracted_parameters),
         }
 
     def _generate_recommendations(self, analysis: dict, extracted_parameters: dict) -> list[str]:

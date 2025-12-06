@@ -76,7 +76,7 @@ def is_parser_having_paint_chip_episode(error_msg: str) -> bool:
         "line 1 column 1",
         "invalid decimal literal",
         "expecting value",
-        "char 0"
+        "char 0",
     ]
 
     error_lower = error_msg.lower()
@@ -89,5 +89,5 @@ PARSER_REHAB_TIPS = [
     "Commas can have friends (spaces) nearby",
     "Formatting irregularities don't mean the world is ending",
     "Take deep breaths and try another parsing method",
-    "It's okay if text doesn't look perfect"
+    "It's okay if text doesn't look perfect",
 ]

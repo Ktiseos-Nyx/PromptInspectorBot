@@ -20,6 +20,7 @@ MethodDefinition = dict[str, Any]
 
 
 class XMPExtractor:
+
     """Direct XMP metadata extractor for AI image generation tools."""
 
     def __init__(self, logger: logging.Logger) -> None:

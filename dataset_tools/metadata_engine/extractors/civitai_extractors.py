@@ -8,6 +8,7 @@ their ComfyUI extraMetadata injection system and API data fetching.
 
 # Module loading confirmation moved to logger
 import logging
+
 _module_logger = logging.getLogger(__name__)
 _module_logger.info("=" * 80)
 _module_logger.info("[CIVITAI_EXTRACTORS] MODULE LOADING - THIS SHOULD ALWAYS SHOW!")
@@ -18,7 +19,6 @@ import logging
 import re
 from typing import Any
 
-from ... import civitai_api
 from ...correct_types import DownField, UpField
 from ..utils import json_path_get_utility
 
@@ -29,6 +29,7 @@ MethodDefinition = dict[str, Any]
 
 
 class CivitaiExtractor:
+
     """Handles Civitai-specific extraction methods."""
 
     def __init__(self, logger: logging.Logger):
@@ -168,6 +169,7 @@ class CivitaiExtractor:
 
         Returns:
             Dictionary with 'ids_to_fetch' list for background API calls.
+
         """
         self.logger.info("=" * 80)
         self.logger.info("[CIVITAI_EXTRACTOR] extract_all_info METHOD CALLED!")
@@ -220,7 +222,7 @@ class CivitaiExtractor:
         # Safety check: only search prompts up to 10MB to avoid regex issues
         # (URN:AIR regex is fast, but we still want a sanity check for extremely large data)
         if len(full_prompt) < 10000000:
-            civitai_urns.extend(re.findall(r'urn:air:.*?civitai:[0-9]+@[0-9]+', full_prompt))
+            civitai_urns.extend(re.findall(r"urn:air:.*?civitai:[0-9]+@[0-9]+", full_prompt))
         else:
             self.logger.warning("[CIVITAI] Prompt too large (%d chars), skipping URN search", len(full_prompt))
 
@@ -228,7 +230,7 @@ class CivitaiExtractor:
 
         for urn_string in civitai_urns:
             if isinstance(urn_string, str):
-                urn_match = re.search(r'urn:air:.*?civitai:([0-9]+)@([0-9]+)', urn_string)
+                urn_match = re.search(r"urn:air:.*?civitai:([0-9]+)@([0-9]+)", urn_string)
                 if urn_match:
                     model_id, version_id = urn_match.groups()
                     ids_to_fetch.append({"model_id": model_id, "version_id": version_id})
@@ -278,6 +280,5 @@ class CivitaiExtractor:
         if ids_to_fetch:
             self.logger.info("[CIVITAI_EXTRACTOR] Returning %d IDs for async fetch", len(ids_to_fetch))
             return {"ids_to_fetch": ids_to_fetch, "fetch_pending": True}
-        else:
-            self.logger.debug("[CIVITAI_EXTRACTOR] No Civitai IDs found - returning None")
-            return None
+        self.logger.debug("[CIVITAI_EXTRACTOR] No Civitai IDs found - returning None")
+        return None

@@ -15,6 +15,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIControlNetExtractor:
+
     """Handles ControlNet ecosystem nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:

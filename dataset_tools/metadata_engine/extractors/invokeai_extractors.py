@@ -47,6 +47,7 @@ DREAM_FORMAT_PARAM_MAP: dict[str, str] = {
 
 
 class InvokeAIExtractor:
+
     """Handles InvokeAI-specific extraction methods."""
 
     def __init__(self, logger: logging.Logger) -> None:

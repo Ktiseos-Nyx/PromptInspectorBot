@@ -23,7 +23,7 @@ RUNTIME_ANALYTICS = {
     "workflow_types_processed": defaultdict(int),
     "total_processing_time": 0,
     "cache_hits": 0,
-    "cache_misses": 0
+    "cache_misses": 0,
 }
 
 # Core confidence scoring system
@@ -34,11 +34,12 @@ CONFIDENCE_INDICATORS = {
     "multiple_sources_agree": 0.8,   # Both systems find same content
     "domain_knowledge_match": 0.85,  # Format-specific node priority
     "structural_complexity": 0.6,    # Complex prompt structure
-    "semantic_indicators": 0.75      # Strong positive/negative indicators
+    "semantic_indicators": 0.75,      # Strong positive/negative indicators
 }
 
 
 class BaseNumpyScorer:
+
     """Base class for all numpy-based scoring systems."""
 
     def __init__(self):
@@ -211,7 +212,7 @@ class BaseNumpyScorer:
                 **candidate,
                 "confidence": 0.1,
                 "scoring_method": "base_numpy_error",
-                "error": str(e)
+                "error": str(e),
             }
 
 
@@ -234,5 +235,5 @@ def get_cache_info() -> dict[str, Any]:
         "workflow_cache_size": len(WORKFLOW_CACHE),
         "node_type_cache_size": len(NODE_TYPE_CACHE),
         "cache_hits": RUNTIME_ANALYTICS["cache_hits"],
-        "cache_misses": RUNTIME_ANALYTICS["cache_misses"]
+        "cache_misses": RUNTIME_ANALYTICS["cache_misses"],
     }

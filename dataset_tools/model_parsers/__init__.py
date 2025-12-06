@@ -61,7 +61,7 @@ if BaseModelParser and ModelParserStatus:
 else:
     debug_message(
         "model_parsers/__init__.py: Skipping SafetensorsParser import due to base class import failure or "
-        "them being None."
+        "them being None.",
     )
 
 # --- Attempt to import GGUFParser (NOW UNCOMMENTED) ---

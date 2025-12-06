@@ -6,7 +6,10 @@ from pathlib import Path
 
 from dataset_tools.civitai_api import get_model_info_by_hash
 from dataset_tools.logger import info_monitor
-from dataset_tools.model_parsers.base_model_parser import BaseModelParser, ModelParserStatus
+from dataset_tools.model_parsers.base_model_parser import (
+    BaseModelParser,
+    ModelParserStatus,
+)
 
 
 class SafetensorsParser(BaseModelParser):
@@ -58,13 +61,13 @@ class SafetensorsParser(BaseModelParser):
                     raise ValueError("Safetensors header length is zero.")
                 if length_of_header > MAX_HEADER_SIZE:
                     raise ValueError(
-                        "Reported safetensors header size is excessively large: %d bytes." % length_of_header
+                        "Reported safetensors header size is excessively large: %d bytes." % length_of_header,
                     )
 
                 header_json_bytes = f.read(length_of_header)
                 if len(header_json_bytes) < length_of_header:
                     raise ValueError(
-                        "Corrupted safetensors file: Expected header of %d bytes, got %d." % (length_of_header, len(header_json_bytes))
+                        "Corrupted safetensors file: Expected header of %d bytes, got %d." % (length_of_header, len(header_json_bytes)),
                     )
 
                 header_json_str = header_json_bytes.decode("utf-8", errors="strict")

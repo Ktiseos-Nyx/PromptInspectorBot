@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIWASExtractor:
+
     """Handles WAS Node Suite ecosystem."""
 
     def __init__(self, logger: logging.Logger) -> None:

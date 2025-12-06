@@ -210,7 +210,6 @@ class ComfyUI(BaseFormat):
             # For simplicity now, we'll stick to SaveImage/KSampler.
             # If a PreviewImage is the only output, we might miss it.
             # However, most useful workflows for parameter extraction end in Save or KSampler.
-            pass
 
         return candidates
 
@@ -255,7 +254,7 @@ class ComfyUI(BaseFormat):
         return count
 
     def _get_best_flow_data(
-        self, workflow_json_data: dict[str, Any], end_node_candidates: dict[str, str]
+        self, workflow_json_data: dict[str, Any], end_node_candidates: dict[str, str],
     ) -> dict[str, Any]:
         # ... (implementation as before, ensure it uses Dict) ...
         best_flow_data: dict[str, Any] = {}
@@ -407,7 +406,7 @@ class ComfyUI(BaseFormat):
         return f"Clip G: {clip_g}, Clip L: {clip_l}"
 
     def _run_traversal_for_node(
-        self, workflow_json_data: dict[str, Any], start_node_id: str
+        self, workflow_json_data: dict[str, Any], start_node_id: str,
     ) -> dict[str, Any]:  # Use Dict
         # ... (implementation as before, ensure all dicts are Dict and use BaseFormat.PARAMETER_KEY) ...
         # Reset temporary state for this traversal path
@@ -454,7 +453,7 @@ class ComfyUI(BaseFormat):
                 if setting_key in raw_flow_values and raw_flow_values[setting_key] is not None:
                     disp_key = self._format_key_for_display(setting_key)
                     current_path_data["custom_settings"][disp_key] = self._remove_quotes_from_string_utility(
-                        str(raw_flow_values[setting_key])
+                        str(raw_flow_values[setting_key]),
                     )
                     handled_in_params_or_dims.add(setting_key)
 
@@ -462,7 +461,7 @@ class ComfyUI(BaseFormat):
                 if key not in handled_in_params_or_dims and value_item is not None:
                     disp_key = self._format_key_for_display(key)
                     current_path_data["custom_settings"][disp_key] = self._remove_quotes_from_string_utility(
-                        str(value_item)
+                        str(value_item),
                     )
 
         # Restore original state
@@ -670,7 +669,7 @@ class ComfyUI(BaseFormat):
             "IntegerPrimitive",
         ]:  # Add other known seed nodes
             seed_val = current_node_inputs.get(
-                "seed", current_node_inputs.get("int", current_node_inputs.get("Value"))
+                "seed", current_node_inputs.get("int", current_node_inputs.get("Value")),
             )  # Common key names
             if seed_val is not None:
                 return {"seed": seed_val}, []

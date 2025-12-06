@@ -14,7 +14,7 @@ class RuinedFooocusFormat(BaseFormat):
         self._logger.info("Attempting to parse metadata as %s.", self.tool)
 
         if not self._raw:
-            self._logger.warn("Raw data is empty for %s parser.", self.tool)
+            self._logger.warning("Raw data is empty for %s parser.", self.tool)
             self.status = BaseFormat.Status.FORMAT_ERROR
             self._error = "Raw data for RuinedFooocus is empty."
             return

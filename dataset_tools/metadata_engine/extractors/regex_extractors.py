@@ -17,6 +17,7 @@ MethodDefinition = dict[str, Any]
 
 
 class RegexExtractor:
+
     """Handles regex-based text extraction methods."""
 
     def __init__(self, logger: logging.Logger):
@@ -135,7 +136,7 @@ class RegexExtractor:
                 return self._convert_value_type(extracted_value, value_type)
             # If no pattern match, return the entire string
             self.logger.debug(
-                f"regex_extract_before_pattern: no match found for pattern '{pattern}', returning full text"
+                f"regex_extract_before_pattern: no match found for pattern '{pattern}', returning full text",
             )
             return self._convert_value_type(data.strip(), value_type)
         except re.error as e:
@@ -290,7 +291,7 @@ class RegexExtractor:
                 extracted_value = parts[part_index].strip()
                 return self._convert_value_type(extracted_value, value_type)
             self.logger.debug(
-                f"regex_split_on_pattern: not enough parts after split, got {len(parts)} parts, requested index {part_index}"
+                f"regex_split_on_pattern: not enough parts after split, got {len(parts)} parts, requested index {part_index}",
             )
             return None
         except re.error as e:

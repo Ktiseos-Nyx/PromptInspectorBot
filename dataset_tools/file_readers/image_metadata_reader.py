@@ -34,6 +34,7 @@ from ..logger import info_monitor as nfo
 
 
 class ImageMetadataReader:
+
     """Specialized reader for image file metadata.
 
     This class handles reading EXIF, IPTC, and XMP metadata from image files
@@ -236,12 +237,10 @@ class ImageMetadataReader:
                         metadata.update(pypng_result)
                         nfo("[ImageReader] pyexiv2 (enhanced with pypng) successfully read PNG chunks from: %s", Path(file_path).name)
                         return metadata
-                    else:
-                        nfo("[ImageReader] pyexiv2 + pypng found no metadata in: %s", Path(file_path).name)
-                        return None
-                else:
-                    nfo("[ImageReader] pyexiv2 found no metadata in PNG (pypng not available): %s", Path(file_path).name)
+                    nfo("[ImageReader] pyexiv2 + pypng found no metadata in: %s", Path(file_path).name)
                     return None
+                nfo("[ImageReader] pyexiv2 found no metadata in PNG (pypng not available): %s", Path(file_path).name)
+                return None
 
             # Standard metadata found
             if has_standard_metadata:
@@ -419,6 +418,7 @@ class ImageMetadataReader:
 
         Returns:
             Dictionary with PNG_CHUNKS key containing chunk data, or None
+
         """
         try:
             with open(file_path, "rb") as f:
@@ -435,7 +435,7 @@ class ImageMetadataReader:
                         chunks.append({
                             "type": chunk_type_str,
                             "data": chunk_data,
-                            "size": len(chunk_data)
+                            "size": len(chunk_data),
                         })
 
                 if chunks:
@@ -500,6 +500,7 @@ class ImageMetadataReader:
 
 
 class ImageMetadataExtractor:
+
     """High-level interface for extracting specific metadata from images.
 
     This class provides convenient methods for getting common metadata

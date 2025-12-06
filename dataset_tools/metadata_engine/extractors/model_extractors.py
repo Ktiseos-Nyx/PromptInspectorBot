@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ModelExtractor:
+
     """Handles AI model file extraction methods."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -104,7 +105,7 @@ class ModelExtractor:
             "ss_lr_scheduler", "ss_optimizer", "ss_mixed_precision",
             "ss_training_started_at", "ss_training_finished_at",
             "ss_epoch", "ss_max_train_steps", "ss_resolution",
-            "ss_dataset_dirs", "ss_tag_frequency", "ss_dataset_size"
+            "ss_dataset_dirs", "ss_tag_frequency", "ss_dataset_size",
         ]
 
         for field in training_fields:
@@ -185,7 +186,7 @@ class ModelExtractor:
             "llama.attention.head_count_kv", "llama.attention.layer_norm_rms_epsilon",
             "llama.rope.dimension_count", "llama.rope.freq_base",
             "gpt2.context_length", "gpt2.embedding_length", "gpt2.block_count",
-            "mistral.context_length", "mistral.embedding_length", "mistral.block_count"
+            "mistral.context_length", "mistral.embedding_length", "mistral.block_count",
         ]
 
         for field in arch_fields:

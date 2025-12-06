@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIInspireExtractor:
+
     """Handles Inspire Pack ecosystem nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:

@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import os
 import requests
 
 # Try to import QSettings for GUI mode, fall back to None for headless
@@ -20,8 +19,8 @@ except (ImportError, ModuleNotFoundError):
     QSettings = None
     HAS_QSETTINGS = False
 
-from dataset_tools.logger import error_message, info_monitor, warning_message
 from dataset_tools.crypto_secrets import get_civitai_api_key as get_encrypted_api_key
+from dataset_tools.logger import error_message, info_monitor, warning_message
 
 # Cache configuration
 CACHE_DIR = Path.home() / ".cache" / "dataset-tools" / "civitai"
@@ -51,7 +50,7 @@ def _load_from_cache(cache_key: str) -> dict[str, Any] | None:
             return None
 
         # Load cached data
-        with open(cache_path, "r", encoding="utf-8") as f:
+        with open(cache_path, encoding="utf-8") as f:
             data = json.load(f)
             info_monitor("[Civitai Cache] Loaded from cache: %s", cache_key)
             return data
@@ -77,6 +76,7 @@ def clear_cache() -> tuple[int, int]:
 
     Returns:
         Tuple of (files_deleted, bytes_freed)
+
     """
     if not CACHE_DIR.exists():
         return (0, 0)

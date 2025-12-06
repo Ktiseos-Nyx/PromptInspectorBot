@@ -15,6 +15,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIPixArtExtractor:
+
     """Handles PixArt-specific ComfyUI workflows."""
 
     def __init__(self, logger: logging.Logger) -> None:

@@ -148,7 +148,7 @@ class YodayoFormat(A1111):
                     {
                         "id_or_name": match.group(1).strip(),
                         "hash": match.group(2).strip(),
-                    }
+                    },
                 )
             else:
                 self._logger.warning(

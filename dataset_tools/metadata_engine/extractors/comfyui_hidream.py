@@ -3,8 +3,7 @@
 # Copyright (c) 2025 [KTISEOS NYX / 0FTH3N1GHT / EARTH & DUSK MEDIA]
 # SPDX-License-Identifier: GPL-3.0
 
-"""
-Specialized extractor for HiDream ComfyUI workflows.
+"""Specialized extractor for HiDream ComfyUI workflows.
 
 HiDream workflows use:
 - DPRandomGenerator nodes for dynamic prompt generation
@@ -22,6 +21,7 @@ logger = get_logger(__name__)
 
 
 class ComfyUIHiDreamExtractor:
+
     """Specialized extractor for HiDream workflow patterns."""
 
     def __init__(self, parent_logger):
@@ -138,6 +138,7 @@ class ComfyUIHiDreamExtractor:
 
         Returns:
             List of text strings found by traversing the concat tree
+
         """
         if node_id in visited:
             return []
@@ -231,6 +232,7 @@ class ComfyUIHiDreamExtractor:
 
         Returns:
             Combined prompt string from all DPRandomGenerator nodes
+
         """
         workflow = self._parse_json_data(data)
 
@@ -305,6 +307,7 @@ class ComfyUIHiDreamExtractor:
 
         Returns:
             Dictionary with keys for each DPRandomGenerator found
+
         """
         workflow = self._parse_json_data(data)
         nodes = self._get_nodes_from_workflow(workflow)

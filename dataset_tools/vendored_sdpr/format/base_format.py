@@ -11,7 +11,9 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any  # Changed from typing.Any to typing.Dict for explicit Dict type hint
+from typing import (
+    Any,  # Changed from typing.Any to typing.Dict for explicit Dict type hint
+)
 
 from ..constants import PARAMETER_PLACEHOLDER
 from ..logger import get_logger
@@ -19,6 +21,7 @@ from ..logger import get_logger
 
 @dataclass
 class RemainingDataConfig:
+
     """Configuration for processing remaining data in _build_settings_string."""
 
     data_dict: dict[str, Any] | None = None  # Use Dict
@@ -138,7 +141,7 @@ class BaseFormat:
         # Initialize _parameter dictionary using PARAMETER_KEY
         # Access PARAMETER_KEY via self.__class__ to get it from the actual subclass
         param_keys_to_init = getattr(self.__class__, "PARAMETER_KEY", [])
-        self._parameter: dict[str, Any] = {key: self.DEFAULT_PARAMETER_PLACEHOLDER for key in param_keys_to_init}
+        self._parameter: dict[str, Any] = dict.fromkeys(param_keys_to_init, self.DEFAULT_PARAMETER_PLACEHOLDER)
 
         # Populate width, height, size in parameters if they are defined keys
         if "width" in self._parameter:
@@ -454,9 +457,9 @@ class BaseFormat:
                 self._raw = str(self._info)  # Fallback to string representation
 
     class NotApplicableError(Exception):  # Moved from BaseModelParser, if this is the true base
+
         """Custom exception to indicate a parser is not suitable for a given file."""
 
-        pass
 
     # --- Properties ---
     @property

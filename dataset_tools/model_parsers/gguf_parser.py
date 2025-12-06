@@ -3,14 +3,19 @@ import struct
 from enum import Enum
 from typing import Any
 
-from dataset_tools.logger import info_monitor  # Assuming info_monitor is correctly imported
-from dataset_tools.model_parsers.base_model_parser import BaseModelParser, ModelParserStatus
+from dataset_tools.logger import (
+    info_monitor,  # Assuming info_monitor is correctly imported
+)
+from dataset_tools.model_parsers.base_model_parser import (
+    BaseModelParser,
+    ModelParserStatus,
+)
 
 
 class GGUFReadError(ValueError):
+
     """Custom exception for GGUF parsing errors."""
 
-    pass
 
 
 class GGUFValueType(Enum):
@@ -45,7 +50,7 @@ class GGUFParser(BaseModelParser):
         data_bytes = f.read(num_bytes)
         if len(data_bytes) != num_bytes:
             raise GGUFReadError(
-                f"{error_context}: Expected {num_bytes} bytes, got {len(data_bytes)}. EOF or truncated file?"
+                f"{error_context}: Expected {num_bytes} bytes, got {len(data_bytes)}. EOF or truncated file?",
             )
         return data_bytes
 
@@ -98,7 +103,7 @@ class GGUFParser(BaseModelParser):
             except ValueError:  # Unknown array item type int
                 # This is critical for the integrity of subsequent KV pairs.
                 raise GGUFReadError(
-                    f"Unknown array item type {array_item_type_int} for array (len {array_len}). Cannot reliably parse rest of GGUF metadata."
+                    f"Unknown array item type {array_item_type_int} for array (len {array_len}). Cannot reliably parse rest of GGUF metadata.",
                 )
 
             if array_len == 0:

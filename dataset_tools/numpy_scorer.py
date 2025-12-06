@@ -107,5 +107,5 @@ __all__ = [
     "enhance_result",
     "get_cache_info",
     "get_runtime_analytics",
-    "should_use_numpy_scoring"
+    "should_use_numpy_scoring",
 ]

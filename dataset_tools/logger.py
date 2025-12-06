@@ -58,7 +58,7 @@ logger.setLevel(_initial_log_level_enum_for_dt)
 if not logger.handlers:
     # Check if running in CLI quiet mode
     import os
-    cli_quiet_mode = os.environ.get('DATASET_TOOLS_CLI_QUIET') == '1'
+    cli_quiet_mode = os.environ.get("DATASET_TOOLS_CLI_QUIET") == "1"
 
     if not cli_quiet_mode:
         # Rich console handler for pretty terminal output
@@ -247,10 +247,7 @@ def debug_monitor(func):
 
 
 def debug_message(msg: str, *args, **kwargs):
-
-
     """Logs a message with DEBUG level using the main app logger.
-
 
     'msg' is the primary message string, potentially with format specifiers.
 
@@ -262,8 +259,6 @@ def debug_message(msg: str, *args, **kwargs):
 
 
     """
-
-
     logger.debug(msg, *args, **kwargs)
 
 
@@ -271,10 +266,7 @@ def debug_message(msg: str, *args, **kwargs):
 
 
 def info_monitor(msg: str, *args, **kwargs):  # Renamed from nfo for clarity
-
-
     """Logs a message with INFO level using the main app logger.
-
 
     'msg' is the primary message string, potentially with format specifiers.
 
@@ -295,8 +287,6 @@ def info_monitor(msg: str, *args, **kwargs):  # Renamed from nfo for clarity
 
 
     """
-
-
     # Check if exc_info is explicitly passed by the caller
 
 
@@ -346,11 +336,7 @@ def info_monitor(msg: str, *args, **kwargs):  # Renamed from nfo for clarity
 
 
 def warning_message(msg: str, *args, **kwargs):
-
-
     """Logs a message with WARNING level using the main app logger."""
-
-
     logger.warning(msg, *args, **kwargs)
 
 
@@ -358,11 +344,7 @@ def warning_message(msg: str, *args, **kwargs):
 
 
 def error_message(msg: str, *args, **kwargs):
-
-
     """Logs a message with ERROR level using the main app logger."""
-
-
     logger.error(msg, *args, **kwargs)
 
 

@@ -17,6 +17,7 @@ from ..logger import info_monitor as nfo
 
 
 class TextFileReader:
+
     """Specialized reader for text files.
 
     This class handles reading plain text files with automatic encoding
@@ -309,6 +310,7 @@ class TextFileReader:
 
 
 class TextContentAnalyzer:
+
     """Advanced analyzer for text file content.
 
     This class provides detailed analysis of text content beyond basic
@@ -541,6 +543,7 @@ class TextContentAnalyzer:
 
 
 class PromptFileReader:
+
     """Specialized reader for AI prompt files.
 
     This class combines text reading with prompt-specific analysis.
@@ -619,7 +622,7 @@ class PromptFileReader:
                     "tag_count": analysis.get("total_tags", 0),
                     "style_count": len(analysis.get("style_tags", [])),
                     "quality_count": len(analysis.get("quality_tags", [])),
-                }
+                },
             )
 
             # Create preview from positive prompt

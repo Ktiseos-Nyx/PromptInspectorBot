@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIAnimateDiffExtractor:
+
     """Handles AnimateDiff ecosystem nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:

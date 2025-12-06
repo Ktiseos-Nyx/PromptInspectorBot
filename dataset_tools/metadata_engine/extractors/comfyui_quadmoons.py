@@ -12,6 +12,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIQuadMoonsExtractor:
+
     """Extracts data from ComfyUI workflows using quadMoons nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -70,7 +71,7 @@ class ComfyUIQuadMoonsExtractor:
                 break
 
     def extract_positive_prompt(
-        self, data: Any, method_def: dict, context: dict, fields: dict
+        self, data: Any, method_def: dict, context: dict, fields: dict,
     ) -> str:
         """Extract positive prompt from quadmoon workflows."""
         self.logger.info("[QuadMoons] extract_positive_prompt called")
@@ -94,7 +95,7 @@ class ComfyUIQuadMoonsExtractor:
         return ""
 
     def extract_negative_prompt(
-        self, data: Any, method_def: dict, context: dict, fields: dict
+        self, data: Any, method_def: dict, context: dict, fields: dict,
     ) -> str:
         """Extract negative prompt from quadmoon workflows."""
         self.logger.info("[QuadMoons] extract_negative_prompt called")
@@ -144,7 +145,7 @@ class ComfyUIQuadMoonsExtractor:
                 if widget_val is not None:
                     self.logger.debug(
                         "[QuadMoons] Found widget value for '%s' at widget index %s in node %s: %s",
-                        input_name, widget_index, node_id, widget_val
+                        input_name, widget_index, node_id, widget_val,
                     )
                     return widget_val
 
@@ -164,7 +165,7 @@ class ComfyUIQuadMoonsExtractor:
 
         origin_node_type = origin_node.get("type")
         self.logger.debug(
-            f"[QuadMoons] Tracing back from '{input_name}' on node {node_id} to node {origin_id} (type: {origin_node_type})"
+            f"[QuadMoons] Tracing back from '{input_name}' on node {node_id} to node {origin_id} (type: {origin_node_type})",
         )
 
         # Get the name of the output slot we are connected to
@@ -172,7 +173,7 @@ class ComfyUIQuadMoonsExtractor:
             output_name = origin_node["outputs"][origin_slot_idx]["name"]
         except (IndexError, KeyError):
             self.logger.error(
-                f"[QuadMoons] Could not determine output name for slot {origin_slot_idx} on node {origin_id}"
+                f"[QuadMoons] Could not determine output name for slot {origin_slot_idx} on node {origin_id}",
             )
             return None
 
@@ -208,7 +209,7 @@ class ComfyUIQuadMoonsExtractor:
                     # Determine which prompt to return based on output_name
                     if output_name == "POSITIVE" and len(origin_node["widgets_values"]) > 1:
                         return origin_node["widgets_values"][1]
-                    elif output_name == "NEGATIVE" and len(origin_node["widgets_values"]) > 2:
+                    if output_name == "NEGATIVE" and len(origin_node["widgets_values"]) > 2:
                         return origin_node["widgets_values"][2]
                 # Handle quadmoonSmartPrompt and quadmoonSmartNeg - prompt at index 0
                 elif "SmartPrompt" in origin_node_type or "SmartNeg" in origin_node_type:

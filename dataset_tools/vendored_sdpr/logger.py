@@ -107,7 +107,7 @@ if __name__ == "__main__":
     # this submodule's message would only be seen if it also had a handler.
     sub_logger = get_logger("DSVendored_SDPR.Module1.Submodule", force_basic_handler=True)
     sub_logger.error(
-        "Error from submodule, should be handled by its own basic handler now."  # Corrected long line
+        "Error from submodule, should be handled by its own basic handler now.",  # Corrected long line
     )
 
     # Test logger without forcing handler, assuming main app (or configure_global_sdpr_root_logger) handles it

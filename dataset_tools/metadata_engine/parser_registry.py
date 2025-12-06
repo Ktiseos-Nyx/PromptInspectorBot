@@ -6,13 +6,13 @@ from dataset_tools.logger import debug_message
 _PARSER_CLASS_REGISTRY = {}
 
 
-def register_parser_class(name: str, cls) -> None:  # noqa: ANN001
+def register_parser_class(name: str, cls) -> None:
     """Adds a Python-based parser class to the central registry."""  # noqa: D401
     debug_message("REGISTRY: Registering class '%s'", name)
     _PARSER_CLASS_REGISTRY[name] = cls
 
 
-def get_parser_class_by_name(name: str):  # noqa: ANN201
+def get_parser_class_by_name(name: str):
     """Gets a Python-based parser class from the central registry."""  # noqa: D401
     debug_message("REGISTRY: Looking up class '%s'", name)
     return _PARSER_CLASS_REGISTRY.get(name)

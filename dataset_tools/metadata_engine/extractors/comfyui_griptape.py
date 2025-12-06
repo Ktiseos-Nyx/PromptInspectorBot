@@ -17,6 +17,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIGriptapeExtractor:
+
     """Extracts data from ComfyUI workflows using Griptape AI nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -73,10 +74,10 @@ class ComfyUIGriptapeExtractor:
         best_candidate = max(scored_candidates, key=lambda c: c["score"])
 
         self.logger.info("[Griptape] Selected %s with score %.2f for %s: %s",
-                        best_candidate['node_type'],
-                        best_candidate['score'],
+                        best_candidate["node_type"],
+                        best_candidate["score"],
                         "NEGATIVE" if is_negative else "POSITIVE",
-                        best_candidate['text'][:100])
+                        best_candidate["text"][:100])
 
         return best_candidate["text"]
 
@@ -129,7 +130,7 @@ class ComfyUIGriptapeExtractor:
                     "node_type": node_type,
                     "node_id": node_id,
                     "title": node_title,
-                    "widgets": widgets
+                    "widgets": widgets,
                 })
 
         return candidates
@@ -230,7 +231,7 @@ class ComfyUIGriptapeExtractor:
         # Common template patterns
         template_indicators = [
             "positive", "negative", "prompt", "text", "input",
-            "enter text here", "placeholder"
+            "enter text here", "placeholder",
         ]
 
         return any(indicator == text_lower for indicator in template_indicators)

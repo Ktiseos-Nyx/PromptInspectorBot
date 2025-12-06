@@ -19,6 +19,7 @@ MethodDefinition = dict[str, Any]
 
 
 class A1111Extractor:
+
     """Handles AUTOMATIC1111-specific extraction methods."""
 
     def __init__(self, logger: logging.Logger):

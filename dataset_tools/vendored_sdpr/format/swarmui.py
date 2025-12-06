@@ -192,7 +192,7 @@ class SwarmUI(BaseFormat):
             self._extract_sampler_info(data_json, handled_keys_for_settings)
 
             self._extract_and_set_dimensions(  # From BaseFormat
-                data_json, "width", "height", handled_keys_for_settings
+                data_json, "width", "height", handled_keys_for_settings,
             )
 
             self._setting = self._build_settings_string(

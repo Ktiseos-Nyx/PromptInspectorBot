@@ -21,13 +21,13 @@ What This Doesn't Prevent:
 ❌ Social engineering
 """
 
+import base64
+import hashlib
 import json
 import logging
 import uuid
-import hashlib
-import base64
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Dict, Optional
 
 try:
     from cryptography.fernet import Fernet
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class CryptoSecretsManager:
+
     """Manages encrypted API keys and secrets.
 
     Uses Fernet symmetric encryption with machine-specific key derivation.
@@ -50,6 +51,7 @@ class CryptoSecretsManager:
 
         Args:
             config_dir: Directory for secrets files (defaults to package dir)
+
         """
         self._secrets_cache: Dict[str, str] = {}
 
@@ -93,11 +95,11 @@ class CryptoSecretsManager:
         # Priority 1: Try encrypted file
         if self.encrypted_file.exists() and CRYPTO_AVAILABLE:
             try:
-                with open(self.encrypted_file, 'rb') as f:
+                with open(self.encrypted_file, "rb") as f:
                     encrypted_data = f.read()
 
                 decrypted = self.cipher.decrypt(encrypted_data)
-                data = json.loads(decrypted.decode('utf-8'))
+                data = json.loads(decrypted.decode("utf-8"))
                 self._secrets_cache.update(data)
 
                 logger.info("Loaded encrypted secrets from %s", self.encrypted_file.name)
@@ -109,7 +111,7 @@ class CryptoSecretsManager:
         # Priority 2: Try plaintext file
         if self.plaintext_file.exists():
             try:
-                with open(self.plaintext_file, 'r') as f:
+                with open(self.plaintext_file) as f:
                     data = json.load(f)
                     self._secrets_cache.update(data)
 
@@ -131,6 +133,7 @@ class CryptoSecretsManager:
 
         Returns:
             Secret value or None if not found
+
         """
         return self._secrets_cache.get(key)
 
@@ -140,6 +143,7 @@ class CryptoSecretsManager:
         Args:
             key: Secret key name
             value: Secret value
+
         """
         self._secrets_cache[key] = value
 
@@ -148,6 +152,7 @@ class CryptoSecretsManager:
 
         Returns:
             True if successful, False if encryption unavailable
+
         """
         if not CRYPTO_AVAILABLE:
             logger.error("Cannot save encrypted - cryptography package not installed!")
@@ -159,14 +164,14 @@ class CryptoSecretsManager:
             json_data = json.dumps(self._secrets_cache, indent=2)
 
             # Encrypt
-            encrypted = self.cipher.encrypt(json_data.encode('utf-8'))
+            encrypted = self.cipher.encrypt(json_data.encode("utf-8"))
 
             # Write to file
-            with open(self.encrypted_file, 'wb') as f:
+            with open(self.encrypted_file, "wb") as f:
                 f.write(encrypted)
 
             # Set restrictive permissions (Unix only)
-            if hasattr(self.encrypted_file.chmod, '__call__'):
+            if callable(self.encrypted_file.chmod):
                 self.encrypted_file.chmod(0o600)  # rw-------
 
             logger.info("Saved encrypted secrets to %s", self.encrypted_file.name)
@@ -191,11 +196,11 @@ class CryptoSecretsManager:
         Only use for debugging or if encryption is unavailable.
         """
         try:
-            with open(self.plaintext_file, 'w') as f:
+            with open(self.plaintext_file, "w") as f:
                 json.dump(self._secrets_cache, f, indent=2)
 
             # Set restrictive permissions (Unix only)
-            if hasattr(self.plaintext_file.chmod, '__call__'):
+            if callable(self.plaintext_file.chmod):
                 self.plaintext_file.chmod(0o600)  # rw-------
 
             logger.warning("Saved PLAINTEXT secrets to %s - SECURITY RISK!",
@@ -213,17 +218,18 @@ class CryptoSecretsManager:
 
         Returns:
             API key or None if not found
+
         """
         import os
 
         # Priority 1: Environment variable
-        api_key = os.environ.get('CIVITAI_API_KEY')
+        api_key = os.environ.get("CIVITAI_API_KEY")
         if api_key:
             logger.debug("Using CivitAI API key from environment variable")
             return api_key
 
         # Priority 2: Secrets file (encrypted or plaintext)
-        api_key = self.get_secret('civitai_api_key')
+        api_key = self.get_secret("civitai_api_key")
         if api_key:
             logger.debug("Using CivitAI API key from secrets file")
             return api_key
@@ -236,7 +242,7 @@ class CryptoSecretsManager:
             if api_key:
                 logger.debug("Using CivitAI API key from QSettings")
                 # Migrate to encrypted storage
-                self.set_secret('civitai_api_key', api_key)
+                self.set_secret("civitai_api_key", api_key)
                 if CRYPTO_AVAILABLE:
                     self.save_encrypted()
                 return api_key
@@ -257,6 +263,7 @@ def get_crypto_secrets_manager() -> CryptoSecretsManager:
 
     Returns:
         CryptoSecretsManager instance
+
     """
     global _crypto_secrets_manager
     if _crypto_secrets_manager is None:
@@ -269,5 +276,6 @@ def get_civitai_api_key() -> Optional[str]:
 
     Returns:
         API key or None if not found
+
     """
     return get_crypto_secrets_manager().get_civitai_api_key()

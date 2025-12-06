@@ -12,15 +12,27 @@ from typing import Any
 from dataset_tools.logger import get_logger
 from dataset_tools.metadata_engine.extractors.a1111_extractors import A1111Extractor
 from dataset_tools.metadata_engine.extractors.civitai_extractors import CivitaiExtractor
-from dataset_tools.metadata_engine.extractors.comfyui_enhanced_extractor import ComfyUIEnhancedExtractor
+from dataset_tools.metadata_engine.extractors.comfyui_enhanced_extractor import (
+    ComfyUIEnhancedExtractor,
+)
 from dataset_tools.metadata_engine.extractors.comfyui_extractors import ComfyUIExtractor
-from dataset_tools.metadata_engine.extractors.comfyui_griptape import ComfyUIGriptapeExtractor
-from dataset_tools.metadata_engine.extractors.comfyui_pixart import ComfyUIPixArtExtractor
+from dataset_tools.metadata_engine.extractors.comfyui_griptape import (
+    ComfyUIGriptapeExtractor,
+)
+from dataset_tools.metadata_engine.extractors.comfyui_pixart import (
+    ComfyUIPixArtExtractor,
+)
 
 # Import extraction modules
-from dataset_tools.metadata_engine.extractors.direct_extractors import DirectValueExtractor
-from dataset_tools.metadata_engine.extractors.drawthings_extractors import DrawThingsExtractor
-from dataset_tools.metadata_engine.extractors.invokeai_extractors import InvokeAIExtractor
+from dataset_tools.metadata_engine.extractors.direct_extractors import (
+    DirectValueExtractor,
+)
+from dataset_tools.metadata_engine.extractors.drawthings_extractors import (
+    DrawThingsExtractor,
+)
+from dataset_tools.metadata_engine.extractors.invokeai_extractors import (
+    InvokeAIExtractor,
+)
 from dataset_tools.metadata_engine.extractors.json_extractors import JSONExtractor
 from dataset_tools.metadata_engine.extractors.model_extractors import ModelExtractor
 from dataset_tools.metadata_engine.extractors.regex_extractors import RegexExtractor
@@ -32,6 +44,7 @@ MethodDefinition = dict[str, Any]
 
 
 class FieldExtractor:
+
     """Main field extraction coordinator.
 
     This class delegates extraction work to specialized extractor modules,
@@ -263,6 +276,7 @@ if __name__ == "__main__":
 
 # Create compatibility classes for existing imports
 class A1111ParameterExtractor:
+
     """Backward compatibility wrapper for A1111Extractor."""
 
     def __init__(self, logger=None):
@@ -292,6 +306,7 @@ class A1111ParameterExtractor:
 
 
 class ComfyUIWorkflowExtractor:
+
     """Backward compatibility wrapper for ComfyUIExtractor."""
 
     def __init__(self, logger=None):

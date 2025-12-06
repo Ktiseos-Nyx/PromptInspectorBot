@@ -20,6 +20,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIExtractor:
+
     """Handles ComfyUI-specific extraction methods.
 
     This class now acts as a facade that delegates to the
@@ -102,7 +103,7 @@ class ComfyUIExtractor:
         data: Any,
         method_def: MethodDefinition,
         context: ContextData,
-        fields: ExtractedFields
+        fields: ExtractedFields,
     ) -> str:
         """3-Tier targeted extraction: WorkflowAnalyzer → Smart BFS → Dumb BFS (v3.0).
 
@@ -143,7 +144,7 @@ class ComfyUIExtractor:
             field_map = {
                 "positive": "positive_prompt",
                 "negative": "negative_prompt",
-                "guider": "positive_prompt"  # FLUX-style
+                "guider": "positive_prompt",  # FLUX-style
             }
 
             prompt_key = field_map.get(target_input, f"{target_input}_prompt")
@@ -165,7 +166,7 @@ class ComfyUIExtractor:
         data: Any,
         method_def: MethodDefinition,
         context: ContextData,
-        fields: ExtractedFields
+        fields: ExtractedFields,
     ) -> str:
         """Tier 2 & 3: Enhanced and legacy BFS prompt extraction."""
         self.logger.info("[TARGETED EXTRACTOR v2.7 DEBUG] Starting targeted prompt extraction.")
@@ -209,7 +210,7 @@ class ComfyUIExtractor:
             text_encoder_types = method_def.get("text_encoder_node_types", [
                 "CLIPTextEncode", "Text Multiline", "String Literal", "PrimitiveStringMultiline",
                 "DPRandomGenerator", "ShowText|pysssss", "ChatGptPrompt", "ChatGLM3TextEncode",
-                "easy positive", "Text Concatenate", "PCLazyTextEncode"
+                "easy positive", "Text Concatenate", "PCLazyTextEncode",
             ])
 
             for node_id, node in node_lookup.items():
@@ -244,7 +245,7 @@ class ComfyUIExtractor:
                             "id": node_id,
                             "text": resolved_text,
                             "type": node_type,
-                            "title": node.get("title", "").lower()
+                            "title": node.get("title", "").lower(),
                         })
                         self.logger.debug("[TARGETED EXTRACTOR v2.7 DEBUG]   Added dynamic prompt candidate: %s", node_id)
                         continue # Skip to next node
@@ -268,7 +269,7 @@ class ComfyUIExtractor:
                                 "id": node_id,
                                 "text": widgets[0].strip(),
                                 "type": node_type,
-                                "title": node.get("title", "").lower()
+                                "title": node.get("title", "").lower(),
                             })
                             self.logger.debug("[TARGETED EXTRACTOR v2.7 DEBUG]   Added text candidate: %s (Type: %s)", node_id, node_type)
 
@@ -315,7 +316,7 @@ class ComfyUIExtractor:
                     "BasicGuider", "SamplerCustomAdvanced", "FluxGuidance",
                     "CR LoRA Stack", "Text Concatenate (JPS)", "LoraLoader",
                     "ConditioningConcat", "ConditioningCombine", "ConditioningAverage",
-                    "Reroute"
+                    "Reroute",
                 ]
 
                 while queue:
@@ -1581,7 +1582,7 @@ class ComfyUIExtractor:
                                 "lora_name": (widgets[0] if isinstance(widgets[0], str) else ""),
                                 "strength": widgets[1] if len(widgets) > 1 else 1.0,
                                 "class_type": node_data.get("class_type", ""),
-                            }
+                            },
                         )
 
         return loras
@@ -1605,6 +1606,7 @@ class ComfyUIExtractor:
 
         Returns:
             int: Count of nodes matching the prefix, 0 on error
+
         """
         try:
             # Parse JSON if needed
@@ -1671,7 +1673,7 @@ class ComfyUIExtractor:
 
         # Use text_encoder_node_types from method_def if provided, otherwise use defaults
         text_encoder_types = method_def.get("text_encoder_node_types", [
-            "CLIPTextEncode", "BNK_CLIPTextEncodeAdvanced", "Text Multiline", "MZ_ChatGLM3_V2"
+            "CLIPTextEncode", "BNK_CLIPTextEncodeAdvanced", "Text Multiline", "MZ_ChatGLM3_V2",
         ])
 
         fake_method_def = {
@@ -1710,7 +1712,7 @@ class ComfyUIExtractor:
 
         # Use text_encoder_node_types from method_def if provided, otherwise use defaults
         text_encoder_types = method_def.get("text_encoder_node_types", [
-            "CLIPTextEncode", "BNK_CLIPTextEncodeAdvanced", "Text Multiline", "MZ_ChatGLM3_V2"
+            "CLIPTextEncode", "BNK_CLIPTextEncodeAdvanced", "Text Multiline", "MZ_ChatGLM3_V2",
         ])
 
         fake_method_def = {
@@ -1838,7 +1840,7 @@ class ComfyUIExtractor:
                             "class_type": class_type,
                             "ecosystem": ecosystem,
                             "complexity": "unknown",
-                        }
+                        },
                     )
 
         return custom_nodes
@@ -1905,7 +1907,7 @@ class ComfyUIExtractor:
                         widgets_values = node.get("widgets_values", [])
                         if not isinstance(widgets_values, list):
                             self.logger.warning(
-                                "Invalid widgets_values type in primitive node: %s", type(widgets_values)
+                                "Invalid widgets_values type in primitive node: %s", type(widgets_values),
                             )
                             continue
 
@@ -2097,7 +2099,7 @@ class ComfyUIExtractor:
         data: Any,
         method_def: MethodDefinition,
         context: ContextData,
-        fields: ExtractedFields
+        fields: ExtractedFields,
     ) -> str:
         """Simple DFS traversal to find prompt text.
 
@@ -2121,7 +2123,7 @@ class ComfyUIExtractor:
             # Find sampler nodes (common types)
             sampler_types = [
                 "KSampler", "SamplerCustomAdvanced", "UltimateSDUpscale",
-                "KSamplerAdvanced", "SamplerCustom"
+                "KSamplerAdvanced", "SamplerCustom",
             ]
 
             target_input = method_def.get("target_input", "positive")  # positive or negative

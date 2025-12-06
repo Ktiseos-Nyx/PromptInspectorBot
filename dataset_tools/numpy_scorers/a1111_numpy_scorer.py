@@ -45,6 +45,7 @@ A1111_TEMPLATE_INDICATORS = [
 
 
 class A1111NumpyScorer(BaseNumpyScorer):
+
     """Numpy-based analyzer specifically for Automatic1111 format."""
 
     def __init__(self):
@@ -57,14 +58,14 @@ class A1111NumpyScorer(BaseNumpyScorer):
             "masterpiece", "best quality", "ultra detailed", "extremely detailed",
             "highly detailed", "high resolution", "sharp focus", "professional",
             "award winning", "perfect", "stunning", "beautiful", "gorgeous",
-            "photorealistic", "realistic", "detailed", "intricate", "fine art"
+            "photorealistic", "realistic", "detailed", "intricate", "fine art",
         ]
 
         # A1111-specific negative prompt indicators
         self.negative_indicators = [
             "worst quality", "low quality", "blurry", "bad anatomy", "ugly",
             "deformed", "mutated", "extra limbs", "missing limbs", "watermark",
-            "signature", "text", "error", "jpeg artifacts", "lowres"
+            "signature", "text", "error", "jpeg artifacts", "lowres",
         ]
 
         # Common A1111 style patterns
@@ -73,7 +74,7 @@ class A1111NumpyScorer(BaseNumpyScorer):
             ["anime", "girl", "detailed"],
             ["landscape", "beautiful", "detailed"],
             ["photorealistic", "portrait", "professional"],
-            ["masterpiece", "detailed", "art"]
+            ["masterpiece", "detailed", "art"],
         ]
 
     def _is_a1111_template_text(self, text: str) -> bool:
@@ -106,7 +107,7 @@ class A1111NumpyScorer(BaseNumpyScorer):
                 "negative_prompt": "",
                 "parameters": {},
                 "raw_text": raw_data,
-                "parsing_confidence": 0.0
+                "parsing_confidence": 0.0,
             }
 
             # Split into sections using numpy array operations for efficiency
@@ -272,7 +273,7 @@ class A1111NumpyScorer(BaseNumpyScorer):
         analysis = {
             "parameter_count": len(parameters),
             "completeness_score": 0.0,
-            "quality_indicators": []
+            "quality_indicators": [],
         }
 
         # Calculate completeness score based on common A1111 parameters
@@ -355,7 +356,7 @@ class A1111NumpyScorer(BaseNumpyScorer):
                 **candidate,
                 "confidence": 0.1,
                 "scoring_method": "a1111_numpy_error",
-                "error": str(e)
+                "error": str(e),
             }
 
     def enhance_engine_result(self, engine_result: dict[str, Any], original_file_path: str | None = None) -> dict[str, Any]:
@@ -409,7 +410,7 @@ class A1111NumpyScorer(BaseNumpyScorer):
                             "fallback_parsing_used": True,
                             "parsing_confidence": parsed_data["parsing_confidence"],
                             "scoring_method": "a1111_numpy_fallback",
-                            "extracted_fields": list(parsed_data.keys())
+                            "extracted_fields": list(parsed_data.keys()),
                         }
 
                         return enhanced_result
@@ -423,14 +424,14 @@ class A1111NumpyScorer(BaseNumpyScorer):
                     candidates.append({
                         "text": prompt,
                         "type": "positive",
-                        "parameters": parameters
+                        "parameters": parameters,
                     })
 
                 if negative_prompt:
                     candidates.append({
                         "text": negative_prompt,
                         "type": "negative",
-                        "parameters": parameters
+                        "parameters": parameters,
                     })
 
                 # Score candidates
@@ -448,7 +449,7 @@ class A1111NumpyScorer(BaseNumpyScorer):
                             "best_positive_confidence": best_positive.get("confidence"),
                             "scoring_method": "a1111_numpy",
                             "parameter_analysis": best_positive.get("parameter_analysis", {}),
-                            "fallback_parsing_used": False
+                            "fallback_parsing_used": False,
                         }
 
                         return enhanced_result

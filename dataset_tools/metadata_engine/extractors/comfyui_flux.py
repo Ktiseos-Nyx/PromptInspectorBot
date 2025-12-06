@@ -15,6 +15,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIFluxExtractor:
+
     """Handles FLUX-specific ComfyUI workflows."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -202,7 +203,7 @@ class ComfyUIFluxExtractor:
                             "denoise": (
                                 widgets[1] if len(widgets) > 1 and isinstance(widgets[1], (int, float)) else 1.0
                             ),
-                        }
+                        },
                     )
 
             # FLUX samplers
@@ -219,7 +220,7 @@ class ComfyUIFluxExtractor:
                             "base_shift": (
                                 widgets[2] if len(widgets) > 2 and isinstance(widgets[2], (int, float)) else 0.5
                             ),
-                        }
+                        },
                     )
 
         return scheduler_params

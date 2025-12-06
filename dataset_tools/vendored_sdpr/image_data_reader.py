@@ -505,7 +505,7 @@ class ImageDataReader:
                             if caption_b:
                                 try:
                                     self._parsed_iptc_info["iptc_caption_abstract"] = caption_b.decode(
-                                        "utf-8", "replace"
+                                        "utf-8", "replace",
                                     )
                                 except AttributeError:
                                     self._parsed_iptc_info["iptc_caption_abstract"] = str(caption_b)
@@ -514,7 +514,7 @@ class ImageDataReader:
                             if program_b:
                                 try:
                                     self._parsed_iptc_info["iptc_originating_program"] = program_b.decode(
-                                        "utf-8", "replace"
+                                        "utf-8", "replace",
                                     )
                                 except AttributeError:
                                     self._parsed_iptc_info["iptc_originating_program"] = str(program_b)
@@ -523,7 +523,7 @@ class ImageDataReader:
                             if version_b:
                                 try:
                                     self._parsed_iptc_info["iptc_program_version"] = version_b.decode(
-                                        "utf-8", "replace"
+                                        "utf-8", "replace",
                                     )
                                 except AttributeError:
                                     self._parsed_iptc_info["iptc_program_version"] = str(version_b)
@@ -693,7 +693,7 @@ class ImageDataReader:
                 self._parser,
                 "positive",
                 (self._positive_sdxl.get("positive", "") if self._positive_sdxl else self._positive),
-            )
+            ),
         )
 
     @property
@@ -703,7 +703,7 @@ class ImageDataReader:
                 self._parser,
                 "negative",
                 (self._negative_sdxl.get("negative", "") if self._negative_sdxl else self._negative),
-            )
+            ),
         )
 
     @property

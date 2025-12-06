@@ -194,7 +194,7 @@ class EasyDiffusion(BaseFormat):
             if ed_key in data_json:
                 value_processor = value_processors_map.get(canonical_key_target)  # Check if target needs processor
                 if not value_processor and isinstance(
-                    canonical_key_target, list
+                    canonical_key_target, list,
                 ):  # Check if any in list need processor
                     for k_target in canonical_key_target:
                         if value_processors_map.get(k_target):

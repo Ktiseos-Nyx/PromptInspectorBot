@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIEfficiencyExtractor:
+
     """Handles Efficiency Nodes ecosystem."""
 
     def __init__(self, logger: logging.Logger) -> None:

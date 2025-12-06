@@ -27,6 +27,7 @@ from .text_file_reader import PromptFileReader, TextContentAnalyzer, TextFileRea
 
 
 class FileReaderFactory:
+
     """Factory class that coordinates different file readers.
 
     This class determines which specialized reader to use for each file
@@ -318,6 +319,7 @@ class FileReaderFactory:
 
 
 class FileReaderManager:
+
     """High-level manager for file reading operations.
 
     This class provides additional functionality like batch reading,

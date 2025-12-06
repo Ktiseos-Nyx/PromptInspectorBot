@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 
 class DrawThingsNumpyScorer(BaseNumpyScorer):
+
     """Numpy-based analyzer specifically for Draw Things XMP format."""
 
     def __init__(self):
@@ -45,7 +46,7 @@ class DrawThingsNumpyScorer(BaseNumpyScorer):
             # We just need to verify and enhance what's there
             prompts_found = {
                 "positive": bool(existing_prompt and existing_prompt.strip()),
-                "negative": bool(existing_negative and existing_negative.strip())
+                "negative": bool(existing_negative and existing_negative.strip()),
             }
 
             if not (prompts_found["positive"] or prompts_found["negative"]):
@@ -68,7 +69,7 @@ class DrawThingsNumpyScorer(BaseNumpyScorer):
                 "extraction_method": "SDPR Format Enhancement",
                 "processing_time": processing_time,
                 "prompts_found": prompts_found,
-                "parameters_available": len(existing_params)
+                "parameters_available": len(existing_params),
             }
 
             logger.info("Draw Things numpy enhancement completed in %.3fs", processing_time)
@@ -86,7 +87,7 @@ class DrawThingsNumpyScorer(BaseNumpyScorer):
         result = {
             "positive_prompt": "",
             "negative_prompt": "",
-            "parameters": {}
+            "parameters": {},
         }
 
         try:
@@ -123,7 +124,7 @@ class DrawThingsNumpyScorer(BaseNumpyScorer):
                 "clip_skip": "clip_skip",
                 "strength": "strength",
                 "aesthetic_score": "aesthetic_score",
-                "negative_aesthetic_score": "negative_aesthetic_score"
+                "negative_aesthetic_score": "negative_aesthetic_score",
             }
 
             for dt_key, standard_key in param_mapping.items():
@@ -158,7 +159,7 @@ class DrawThingsNumpyScorer(BaseNumpyScorer):
                     "steps": "steps",
                     "seed": "seed",
                     "strength": "strength",
-                    "clipSkip": "clip_skip"
+                    "clipSkip": "clip_skip",
                 }
 
                 for v2_key, standard_key in v2_mapping.items():

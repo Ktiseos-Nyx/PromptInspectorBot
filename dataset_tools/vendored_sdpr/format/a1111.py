@@ -109,8 +109,7 @@ class A1111(BaseFormat):
                 user_comment_str = user_comment_raw
 
             # Strip charset prefix from UserComment
-            if user_comment_str.startswith("charset=Unicode "):
-                user_comment_str = user_comment_str[len("charset=Unicode ") :]
+            user_comment_str = user_comment_str.removeprefix("charset=Unicode ")
             user_comment_str = user_comment_str.strip()
 
             # Prioritize parameters chunk (PNG), then UserComment (JPEG/WEBP)
@@ -206,7 +205,7 @@ class A1111(BaseFormat):
 
         # First, try to find settings block to isolate prompts
         settings_match_for_prompt_isolation = re.search(
-            settings_marker_pattern, "\n" + raw_data
+            settings_marker_pattern, "\n" + raw_data,
         )  # Prepend \n for consistency
 
         prompt_candidate_area = raw_data
@@ -328,7 +327,7 @@ class A1111(BaseFormat):
             # _extract_and_set_dimensions_from_string will update self._width, self._height,
             # and self._parameter["width"], self._parameter["height"], self._parameter["size"]
             self._extract_and_set_dimensions_from_string(
-                size_val_from_dict, "Size", settings_dict, handled_keys_for_params
+                size_val_from_dict, "Size", settings_dict, handled_keys_for_params,
             )
             # handled_keys_for_params.add("Size") is done by the method above if successful
 

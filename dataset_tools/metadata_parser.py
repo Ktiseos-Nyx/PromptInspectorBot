@@ -220,7 +220,7 @@ def _transform_engine_result_to_ui_dict(result: dict[str, Any], ui_dict: dict[st
     # --- Civitai API Info ---
     # Check both top-level (from Safetensors) and parameters (from ComfyUI/A1111 parsers)
     civitai_api_info = None
-    if "civitai_api_info" in result and result["civitai_api_info"]:
+    if result.get("civitai_api_info"):
         civitai_api_info = result["civitai_api_info"]
     elif "parameters" in result and isinstance(result["parameters"], dict):
         if "civitai_api_info" in result["parameters"] and result["parameters"]["civitai_api_info"]:

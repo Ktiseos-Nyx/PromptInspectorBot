@@ -17,6 +17,7 @@ MethodDefinition = dict[str, Any]
 
 
 class JSONExtractor:
+
     """Handles JSON-specific extraction methods."""
 
     def __init__(self, logger: logging.Logger):
@@ -49,7 +50,7 @@ class JSONExtractor:
         if not isinstance(string_to_parse, str):
             if string_to_parse is not None:
                 self.logger.warning(
-                    f"Variable '{variable_name}' is not a string (type: {type(string_to_parse)}), cannot parse as JSON"
+                    f"Variable '{variable_name}' is not a string (type: {type(string_to_parse)}), cannot parse as JSON",
                 )
             return None
 

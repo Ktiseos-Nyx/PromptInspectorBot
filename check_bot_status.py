@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Quick script to check if bot token is valid and bot is banned."""
 import os
+
 import discord
 from dotenv import load_dotenv
 
 load_dotenv()
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)

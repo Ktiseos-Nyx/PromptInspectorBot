@@ -15,6 +15,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUISDXLExtractor:
+
     """Handles SDXL-specific ComfyUI workflows."""
 
     def __init__(self, logger: logging.Logger) -> None:

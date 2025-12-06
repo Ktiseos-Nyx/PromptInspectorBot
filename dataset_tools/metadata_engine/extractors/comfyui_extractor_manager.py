@@ -37,6 +37,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIExtractorManager:
+
     """Unified manager for all ComfyUI extractors."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -108,7 +109,7 @@ class ComfyUIExtractorManager:
                 "comfyui_detect_custom_node_ecosystems": self._detect_custom_node_ecosystems,
                 "comfyui_extract_workflow_techniques": self._extract_workflow_techniques,
                 "comfyui_detect_tensorart_signatures": self._detect_tensorart_signatures,
-            }
+            },
         )
 
         return methods
@@ -189,7 +190,7 @@ class ComfyUIExtractorManager:
             "custom_nodes_used": analysis_result.get("custom_nodes_used", {}),
             "workflow_types": self._auto_detect_workflow(data, method_def, context, fields),  # Keep for compatibility
             "complexity_analysis": self.complexity.analyze_workflow_complexity(
-                data, method_def, context, fields
+                data, method_def, context, fields,
             ),  # Keep for now
             "architecture_summaries": {},
             "ecosystem_summaries": {},
@@ -219,7 +220,7 @@ class ComfyUIExtractorManager:
         summary["node_analysis"] = {
             "total_nodes": summary["node_count"],
             "node_types": analysis_result.get(
-                "node_types_found", []
+                "node_types_found", [],
             ),  # This might need to be re-calculated from custom_nodes_used
             "custom_nodes": analysis_result.get("custom_nodes_used", {}),
         }
@@ -769,7 +770,7 @@ class ComfyUIExtractorManager:
             "Griptape Prompt Driver: LM Studio",
             "Griptape Prompt Driver: Anthropic",
             "Griptape Tool: Calculator",
-            "Griptape Tool: DateTime"
+            "Griptape Tool: DateTime",
         ]
 
         node_iterator = (
@@ -827,7 +828,7 @@ class ComfyUIExtractorManager:
                 echo_nodes.append({
                     "node_id": str(node_id),
                     "class_type": class_type,
-                    "inputs": node_data.get("inputs", {})
+                    "inputs": node_data.get("inputs", {}),
                 })
                 signatures_found.append("ECHOCheckpointLoaderSimple")
                 confidence_score += 0.8  # High confidence indicator
@@ -843,7 +844,7 @@ class ComfyUIExtractorManager:
                         "node_id": str(node_id),
                         "class_type": class_type,
                         "field": input_key,
-                        "value": input_value
+                        "value": input_value,
                     })
                     if "EMS" not in [s for s in signatures_found if "EMS" in s]:
                         signatures_found.append("EMS-pattern-model")
@@ -856,7 +857,7 @@ class ComfyUIExtractorManager:
                         "node_id": str(node_id),
                         "class_type": class_type,
                         "field": f"widget_{i}",
-                        "value": widget_value
+                        "value": widget_value,
                     })
                     if "EMS" not in [s for s in signatures_found if "EMS" in s]:
                         signatures_found.append("EMS-pattern-model")
@@ -867,7 +868,7 @@ class ComfyUIExtractorManager:
             "TensorArt_CheckpointLoader",
             "TensorArt_LoraLoader",
             "LoraTagLoader",
-            "TensorArt_TextEncode"
+            "TensorArt_TextEncode",
         ]
 
         for node_id, node_data in node_iterator:
@@ -894,7 +895,7 @@ class ComfyUIExtractorManager:
             "confidence": round(confidence_score, 2),
             "echo_nodes": echo_nodes,
             "ems_models": ems_models,
-            "total_signatures": len(signatures_found)
+            "total_signatures": len(signatures_found),
         }
 
         if is_tensorart:

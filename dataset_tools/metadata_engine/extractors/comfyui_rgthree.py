@@ -16,6 +16,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIRGthreeExtractor:
+
     """Handles RGthree ecosystem nodes."""
 
     def __init__(self, logger: logging.Logger) -> None:

@@ -15,11 +15,12 @@ WORKFLOW_INDICATORS = {
     "multi_stage": ["StableCascade", "StageA", "StageB", "StageC"],
     "custom_ecosystem": ["hidream", "pixart", "flux", "auraflow", "griptape"],
     "complex_conditioning": ["ConditioningCombine", "ConditioningConcat", "ConditioningSetArea"],
-    "template_systems": ["ShowText", "StringConstant", "ConcatStringSingle"]
+    "template_systems": ["ShowText", "StringConstant", "ConcatStringSingle"],
 }
 
 
 class WorkflowClassifier:
+
     """Classifies ComfyUI workflows by type and complexity."""
 
     def classify_workflow_type(self, workflow_data: dict[str, Any]) -> str:

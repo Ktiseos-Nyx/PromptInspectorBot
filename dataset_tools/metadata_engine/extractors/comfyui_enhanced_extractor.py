@@ -21,6 +21,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUIEnhancedExtractor:
+
     """Enhanced ComfyUI extractor using dictionary-driven extraction."""
 
     def __init__(self, logger: logging.Logger) -> None:
@@ -35,7 +36,7 @@ class ComfyUIEnhancedExtractor:
         self.extraction_stats = {
             "dictionary_successes": 0,
             "traversal_fallbacks": 0,
-            "total_extractions": 0
+            "total_extractions": 0,
         }
 
     def get_methods(self) -> dict[str, callable]:
@@ -81,7 +82,7 @@ class ComfyUIEnhancedExtractor:
                         "text": prompt.strip(),
                         "source_node_id": node_id,
                         "source_node_class": node_class,
-                        "prompt_type": "positive"
+                        "prompt_type": "positive",
                     }
 
         # Fallback to traversal extraction
@@ -92,7 +93,7 @@ class ComfyUIEnhancedExtractor:
         if fallback_prompt and len(fallback_prompt.strip()) > 5:
             return {
                 "text": fallback_prompt.strip(),
-                "prompt_type": "positive"
+                "prompt_type": "positive",
             }
         return {}
 
@@ -121,7 +122,7 @@ class ComfyUIEnhancedExtractor:
                         "negative_prompt": negative_prompt.strip(),
                         "source_node_id": node_id,
                         "source_node_class": node_class,
-                        "prompt_type": "negative"
+                        "prompt_type": "negative",
                     }
 
         # Fallback to traversal extraction
@@ -129,7 +130,7 @@ class ComfyUIEnhancedExtractor:
         if fallback_prompt:
             return {
                 "negative_prompt": fallback_prompt.strip(),
-                "prompt_type": "negative"
+                "prompt_type": "negative",
             }
         return {}
 
@@ -257,7 +258,7 @@ class ComfyUIEnhancedExtractor:
             "value": value,
             "source_node_id": node_id,
             "source_node_class": node_class,
-            "extraction_method": "dictionary_priority"
+            "extraction_method": "dictionary_priority",
         }
 
     def get_extraction_report(
@@ -338,6 +339,7 @@ class ComfyUIEnhancedExtractor:
 
         Returns:
             dict with keys: detected (bool), batch_count (int), vhs_nodes (list)
+
         """
         try:
             # Parse JSON if needed
@@ -376,7 +378,7 @@ class ComfyUIEnhancedExtractor:
                     detected_vhs_nodes.append({
                         "node_id": node_id,
                         "type": class_type,
-                        "widgets": node_data.get("widgets_values", [])
+                        "widgets": node_data.get("widgets_values", []),
                     })
 
                     # Try to extract batch count from widgets
@@ -390,7 +392,7 @@ class ComfyUIEnhancedExtractor:
                 "detected": len(detected_vhs_nodes) > 0,
                 "batch_count": batch_count,
                 "vhs_nodes": detected_vhs_nodes,
-                "node_count": len(detected_vhs_nodes)
+                "node_count": len(detected_vhs_nodes),
             }
 
         except Exception as e:

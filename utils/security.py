@@ -13,12 +13,13 @@ def sanitize_text(text: str, max_length: int = 10000) -> str:
 
     Returns:
         Sanitized text string
+
     """
     if not text:
         return ""
 
     # Remove potentially dangerous characters, keep common punctuation
-    text = re.sub(r'[^A-Za-z0-9\(\)_\-<>:,\{\}\'"\ \n\r\\\[\]\.\|]', '', text)
+    text = re.sub(r'[^A-Za-z0-9\(\)_\-<>:,\{\}\'"\ \n\r\\\[\]\.\|]', "", text)
 
     # Truncate to max length
     if len(text) > max_length:
@@ -28,6 +29,7 @@ def sanitize_text(text: str, max_length: int = 10000) -> str:
 
 
 class RateLimiter:
+
     """Rate limiter to prevent abuse.
 
     Tracks requests per user and enforces limits.
@@ -39,6 +41,7 @@ class RateLimiter:
         Args:
             max_requests: Maximum requests allowed in window
             window_seconds: Time window in seconds
+
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
@@ -52,6 +55,7 @@ class RateLimiter:
 
         Returns:
             True if rate limited, False otherwise
+
         """
         current_time = time.time()
         user_requests = self.request_counts[user_id]

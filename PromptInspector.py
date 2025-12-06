@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 import asyncio
 import contextlib
@@ -6,14 +7,15 @@ import io
 import json
 import logging
 import os
-import sys
 import re
-import time
 import resource
+import sys
+import time
 from collections import OrderedDict, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Sequence
+from typing import Any
 
 import toml
 from discord import (
@@ -31,25 +33,26 @@ from discord.ui import View, button
 from dotenv import load_dotenv
 from PIL import Image
 
+
 # Security hardening
 def set_resource_limits():
     """Set resource limits to prevent DoS attacks"""
     # Limit max memory usage (1GB)
     resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
-    
+
     # Limit number of processes/threads
     try:
         resource.setrlimit(resource.RLIMIT_NPROC, (100, 100))
-    except (ValueError, resource.error):
+    except (OSError, ValueError):
         pass  # May not work depending on permissions
 
 # Apply resource limits early
 set_resource_limits()
 
 # Disable dangerous modules
-sys.modules['pickle'] = None
-sys.modules['cPickle'] = None
-sys.modules['subprocess'] = None
+sys.modules["pickle"] = None
+sys.modules["cPickle"] = None
+sys.modules["subprocess"] = None
 
 # Set secure environment
 os.umask(0o077)  # Set restrictive file creation mask
@@ -58,18 +61,17 @@ load_dotenv()
 log = None
 
 def sanitize_text(text, max_length=10000):
-    """
-    Sanitize text content to only allow specific characters:
+    r"""Sanitize text content to only allow specific characters:
     A-Z a-z 0-9 () _ <> : , {} ' " \ [] and newlines
     """
     if not isinstance(text, str):
         return ""
 
-    text = re.sub(r'https?://\S+|ftp://\S+|www\.\S+', '', text)
+    text = re.sub(r"https?://\S+|ftp://\S+|www\.\S+", "", text)
     # Truncate overly long text
     text = text[:max_length]
     # Only allow specified characters and newlines (\n and \r)
-    text = re.sub(r'[^A-Za-z0-9\(\)_\-<>:,\{\}\'"\ \n\r\\\[\]\.\|]', '', text)
+    text = re.sub(r'[^A-Za-z0-9\(\)_\-<>:,\{\}\'"\ \n\r\\\[\]\.\|]', "", text)
     return text
 
 def safe_json_loads(json_str, default=None):
@@ -91,12 +93,12 @@ class RateLimiter:
         """Check if a user has exceeded their rate limit"""
         current_time = time.time()
         # Remove old timestamps
-        self.request_counts[user_id] = [t for t in self.request_counts[user_id] 
+        self.request_counts[user_id] = [t for t in self.request_counts[user_id]
                                        if current_time - t < self.TIME_WINDOW]
         # Check rate limit
         if len(self.request_counts[user_id]) >= self.RATE_LIMIT:
             return True
-            
+
         # Track this request
         self.request_counts[user_id].append(current_time)
         return False
@@ -204,7 +206,7 @@ class InspectAttachmentView(View):
         if not self.text_metadata:
             await interaction.followup.send("No metadata to send!", **self.kwargs)
             return
-        
+
         if len(self.text_metadata) <= CFG.attach_file_size_threshold:
             typ = self.TXTBLOCK_TYPES.get(self.content_extension, "plaintext")
             await interaction.followup.send(
@@ -212,7 +214,7 @@ class InspectAttachmentView(View):
                 **self.kwargs,
             )
             return
-        
+
         with io.StringIO() as f:
             f.write(self.text_metadata)
             f.seek(0)
@@ -246,90 +248,90 @@ class Metadata:
     def _calculate_embed_character_count(self, embed):
         """Calculate total character count of an embed including all components that count toward Discord's limit"""
         total = 0
-        
+
         # Title (up to 256 chars)
         if embed.title:
             total += len(embed.title)
-        
+
         # Description (up to 4096 chars)
         if embed.description:
             total += len(embed.description)
-        
+
         # Footer text (up to 2048 chars)
         if embed.footer and embed.footer.text:
             total += len(embed.footer.text)
-            
+
         # Author name (up to 256 chars)
         if embed.author and embed.author.name:
             total += len(embed.author.name)
-            
+
         # All field names and values
         for field in embed.fields:
             total += len(field.name) + len(field.value)
-            
+
         return total
 
     def _prune_embed_fields(self, embed, prioritize_fields: tuple[str] = ()):
         """Prune embed fields to keep total character count under 5500"""
         target_limit = 5500  # More aggressive limit to account for any overhead
-        
+
         original_count = self._calculate_embed_character_count(embed)
         if original_count <= target_limit:
             return embed
-            
+
         log.info(f"Embed too large ({original_count} chars), pruning to fit under {target_limit}")
-        
+
         # Create lists of prioritized and non-prioritized fields with their lengths
         prioritized_fields = []
         other_fields = []
-        
+
         for field in embed.fields:
             field_data = {
-                'name': field.name,
-                'value': field.value,
-                'inline': field.inline,
-                'length': len(field.name) + len(field.value)
+                "name": field.name,
+                "value": field.value,
+                "inline": field.inline,
+                "length": len(field.name) + len(field.value),
             }
-            
+
             if field.name in prioritize_fields:
                 prioritized_fields.append(field_data)
             else:
                 other_fields.append(field_data)
-        
+
         # Sort non-prioritized fields by length (descending) to keep longer ones
-        other_fields.sort(key=lambda x: x['length'], reverse=True)
-        
+        other_fields.sort(key=lambda x: x["length"], reverse=True)
+
         # Clear embed fields and rebuild
         embed.clear_fields()
-        
+
         # Always add prioritized fields first
         for field_data in prioritized_fields:
             embed.add_field(
-                name=field_data['name'],
-                value=field_data['value'],
-                inline=field_data['inline']
+                name=field_data["name"],
+                value=field_data["value"],
+                inline=field_data["inline"],
             )
-        
+
         # Add non-prioritized fields one by one until we approach the limit
         for field_data in other_fields:
             # Calculate what the count would be if we add this field
             temp_embed = embed.copy()
             temp_embed.add_field(
-                name=field_data['name'],
-                value=field_data['value'],
-                inline=field_data['inline']
+                name=field_data["name"],
+                value=field_data["value"],
+                inline=field_data["inline"],
             )
-            
+
             if self._calculate_embed_character_count(temp_embed) <= target_limit:
                 embed.add_field(
-                    name=field_data['name'],
-                    value=field_data['value'],
-                    inline=field_data['inline']
+                    name=field_data["name"],
+                    value=field_data["value"],
+                    inline=field_data["inline"],
                 )
             else:
                 # Stop adding fields as we've reached the limit
                 break
-                
+
         final_count = self._calculate_embed_character_count(embed)
         log.info(f"Embed pruned from {original_count} to {final_count} characters")
         return embed
@@ -343,18 +345,18 @@ class Metadata:
         embed_dict = self.params | {}
         embed = Embed(title=f"{self.NAME} Parameters", color=msg_ctx.author.color)
         count = 0
-        
+
         for key in prioritize_fields:
             if count >= CFG.message_embed_limit:
                 break
             value = embed_dict.get(key)
             if value is None:
                 continue
-                
+
             # Ensure value is within Discord's field length limit (1024 chars)
             if len(value) > 1024:
                 value = value[:1021] + "..."
-                
+
             embed.add_field(
                 name=key,
                 value=value,
@@ -364,15 +366,15 @@ class Metadata:
             )
             del embed_dict[key]
             count += 1
-            
+
         for key, value in embed_dict.items():
             if count >= CFG.message_embed_limit:
                 break
-                
+
             # Ensure value is within Discord's field length limit
             if len(value) > 1024:
                 value = value[:1021] + "..."
-                
+
             embed.add_field(
                 name=key,
                 value=value,
@@ -381,17 +383,17 @@ class Metadata:
                 and len(value) < 32,
             )
             count += 1
-            
+
         embed.set_footer(
             text=f"Posted by {msg_ctx.author}",
             icon_url=msg_ctx.author.display_avatar,
         )
         if attachment is not None:
             embed.set_image(url=attachment.url)
-            
+
         # Apply pruning logic if embed is too large
         embed = self._prune_embed_fields(embed, prioritize_fields)
-        
+
         # Final safety check
         final_count = self._calculate_embed_character_count(embed)
         if final_count > 6000:
@@ -410,13 +412,13 @@ class Metadata:
                 embed.add_field(
                     name=key[:100],  # Truncate field names too
                     value=value,
-                    inline=False
+                    inline=False,
                 )
                 field_count += 1
                 if self._calculate_embed_character_count(embed) > 5000:
                     break
             log.info(f"Emergency pruning applied, final size: {self._calculate_embed_character_count(embed)}")
-        
+
         return embed
 
 class MetadataA1111(Metadata):
@@ -434,16 +436,16 @@ class MetadataA1111(Metadata):
     def get_params_from_string(self, param_str: str) -> OrderedDict[str, str]:
         # Sanitize input
         param_str = sanitize_text(param_str, 50000)
-        
+
         max_prompt = CFG.a1111_prompt_size_limit
         output_dict = OrderedDict()
-        
+
         # Safely parse A1111 format
         try:
             parts = param_str.split("Steps: ", 1)
             if len(parts) != 2:
                 raise ValueError("Can't parse A1111 metadata: missing Steps key")
-                
+
             prompts = parts[0]
             params = "Steps: " + parts[1]
             neg_parts = (
@@ -451,13 +453,13 @@ class MetadataA1111(Metadata):
                 if "Negative prompt: " in prompts
                 else ()
             )
-            
+
             if neg_parts:
                 output_dict["Prompt"] = sanitize_text(neg_parts[0].strip(), max_prompt)
                 output_dict["Negative Prompt"] = sanitize_text(neg_parts[1].strip(), max_prompt)
             else:
                 output_dict["Prompt"] = sanitize_text(prompts.strip(), max_prompt)
-                
+
             params = params.split(", ")
             for param in params:
                 params = param.split(": ", 1)
@@ -465,11 +467,11 @@ class MetadataA1111(Metadata):
                     key = sanitize_text(params[0].strip(), 100)
                     value = sanitize_text(params[1].strip(), max_prompt)
                     output_dict[key] = value
-                    
+
         except Exception as e:
             log.warning(f"Error parsing A1111 metadata: {e}")
             output_dict["Error"] = "Could not parse metadata correctly"
-            
+
         return output_dict
 
 class MetadataComfyUI(Metadata):
@@ -603,18 +605,18 @@ class MetadataComfyUI(Metadata):
         # Safely parse JSON with limits
         promptdata = safe_json_loads(param_str, {})
         workflowdata = safe_json_loads(workflow_str, {}) if workflow_str else {}
-        
+
         comfymeta = self.extract_comfy_metadata(promptdata, workflowdata)
         params = OrderedDict()
         nl = "\n"
-        
+
         for k, v in comfymeta.items():
             vs = ((ik, sanitize_text(str(iv), 1000)) for ik, iv in v.items())
             params[k] = sanitize_text("\n".join(
                 f"[{ik}]:{f' {iv}' if len(iv) < 32 else f'{nl}{iv}{nl}'}"
                 for ik, iv in vs
             ).strip(), 1024)  # Enforce 1024 char limit for Discord embed fields
-            
+
         return params
 
     @staticmethod
@@ -666,11 +668,11 @@ class MetadataComfyUI(Metadata):
             workflowdata = {str(v["id"]): v for v in workflowdata.get("nodes", ())}
         except (KeyError, TypeError, AttributeError):
             workflowdata = {}
-            
+
         handlers = cls.COMFY_HANDLERS
         if result is None:
             result = OrderedDict()
-            
+
         for k, v in promptdata.items():
             try:
                 inputs = v.get("inputs", {}).copy()
@@ -678,7 +680,7 @@ class MetadataComfyUI(Metadata):
                 handler = handlers.get(typ.lower())
                 if not inputs or not handler:
                     continue
-                    
+
                 for input_name, required_type, *rest in handler:
                     if rest and CFG.comfyui_extract_widget_values:
                         cls.set_widget_value(
@@ -700,40 +702,40 @@ class MetadataComfyUI(Metadata):
                             title = None
                     else:
                         title = None
-                        
+
                     name = sanitize_text(
                         f"{typ}.{k} - {title.strip()}"
                         if isinstance(title, str)
                         else f"{typ}.{k}",
-                        100
+                        100,
                     )
                     cls.set_comfy_input(result, name, input_name, inputs, required_type)
             except Exception as e:
                 log.warning(f"Error processing ComfyUI node {k}: {e}")
-                
+
         return result
 
 class MetadataNovelAI(Metadata):
     NAME = "NovelAI"
     CONTENT_TYPE = "application/json"
     EXTENSION = "json"
-    
+
     def get_embed(self, msg_ctx: Message, attachment=None):
         return super().get_embed(
             msg_ctx,
             attachment=attachment,
             prioritize_fields=("Prompt", "Negative Prompt", "Steps", "Sampler", "CFG scale", "Seed", "Size", "Model"),
         )
-    
+
     def get_params_from_string(self, param_str: str) -> OrderedDict[str, str]:
         # Sanitize input
         param_str = sanitize_text(param_str, 50000)
         output_dict = OrderedDict()
-        
+
         try:
             # Parse the JSON data from the Comment field
             data = safe_json_loads(param_str, {})
-            
+
             # Extract v4 prompt structure if available
             v4_prompt = data.get("v4_prompt", {})
             if isinstance(v4_prompt, dict) and "caption" in v4_prompt:
@@ -743,7 +745,7 @@ class MetadataNovelAI(Metadata):
                     base_caption = v4_caption.get("base_caption", "")
                     if base_caption:
                         output_dict["Prompt"] = sanitize_text(base_caption, 1000)
-                    
+
                     # Extract character-specific captions
                     char_captions = v4_caption.get("char_captions", [])
                     if isinstance(char_captions, list) and char_captions:
@@ -761,7 +763,7 @@ class MetadataNovelAI(Metadata):
             else:
                 # Fallback to old prompt field for backwards compatibility
                 output_dict["Prompt"] = sanitize_text(data.get("prompt", ""), 1000)
-            
+
             # Extract v4 negative prompt structure if available
             v4_negative_prompt = data.get("v4_negative_prompt", {})
             if isinstance(v4_negative_prompt, dict) and "caption" in v4_negative_prompt:
@@ -771,7 +773,7 @@ class MetadataNovelAI(Metadata):
                     base_neg_caption = v4_neg_caption.get("base_caption", "")
                     if base_neg_caption:
                         output_dict["Negative Prompt"] = sanitize_text(base_neg_caption, 1000)
-                    
+
                     # Extract character-specific negative captions
                     char_neg_captions = v4_neg_caption.get("char_captions", [])
                     if isinstance(char_neg_captions, list) and char_neg_captions:
@@ -788,37 +790,37 @@ class MetadataNovelAI(Metadata):
                                     output_dict[f"Character {i+1} Negative Prompt"] = sanitize_text(char_neg_caption + center_info, 1000)
             elif "uc" in data:  # Fallback to uc field if available
                 output_dict["Negative Prompt"] = sanitize_text(data.get("uc", ""), 1000)
-            
+
             # Extract other common parameters
             output_dict["Steps"] = str(data.get("steps", ""))
             output_dict["Sampler"] = sanitize_text(data.get("sampler", ""), 100)
             output_dict["CFG scale"] = str(data.get("scale", ""))
             output_dict["Seed"] = str(data.get("seed", ""))
-            
+
             # Size information
             width = data.get("width", "")
             height = data.get("height", "")
             if width and height:
                 output_dict["Size"] = f"{width}x{height}"
-                
+
             # Add model information if available
             if "Source" in data:
                 output_dict["Model"] = sanitize_text(data.get("Source", ""), 100)
-                
+
             if "cfg_rescale" in data and data["cfg_rescale"] != 0:
                 output_dict["CFG Rescale"] = str(data["cfg_rescale"])
-                
+
         except Exception as e:
             log.warning(f"Error parsing NovelAI metadata: {e}")
             output_dict["Error"] = "Could not parse metadata correctly"
-            
+
         return output_dict
 
 def is_valid_image(image_data: bytes) -> bool:
     """Verify this is actually a valid image file"""
     if not image_data or len(image_data) < 100:
         return False
-        
+
     try:
         with Image.open(io.BytesIO(image_data)) as img:
             # Access basic properties to verify it's a valid image
@@ -841,20 +843,20 @@ def populate_attachment_metadata(
             if not img.info:
                 return
             ii = img.info
-            
+
             # Check for NovelAI format
             if "Software" in ii and ii["Software"] == "NovelAI" and "Comment" in ii:
                 comment = sanitize_text(ii["Comment"], 50000)
                 metadata[i] = MetadataNovelAI(comment)
                 return
-            
+
             # Check for A1111 format
             if "parameters" in ii and isinstance(ii["parameters"], str):
                 parameters = sanitize_text(ii["parameters"], 50000)
                 if "Steps:" in parameters:
                     metadata[i] = MetadataA1111(parameters)
                     return
-                    
+
             # Check for ComfyUI format
             elif "prompt" in ii and isinstance(ii["prompt"], str):
                 prompt = sanitize_text(ii["prompt"], 50000)
@@ -875,12 +877,12 @@ async def read_attachment_metadata(
     try:
         # Add timeout to read operation
         image_data = await asyncio.wait_for(attachment.read(), timeout=10.0)
-        
+
         # Check file size before processing
         if len(image_data) > CFG.scan_limit_bytes:
             log.warning(f"File too large: {attachment.filename} ({len(image_data)} bytes)")
             return
-            
+
         populate_attachment_metadata(i, image_data, metadata)
     except asyncio.TimeoutError:
         log.warning(f"Timeout reading attachment {attachment.filename}")
@@ -902,14 +904,14 @@ async def collect_attachments(
         if respond:
             await ctx.respond("Sorry, this post has no images, or none of the images have prompts.", ephemeral=True)
         return None, None
-        
+
     metadata = OrderedDict()
     tasks = [
         read_attachment_metadata(i, attachment, metadata)
         for i, attachment in enumerate(attachments)
     ]
     await asyncio.gather(*tasks)
-    
+
     if not metadata:
         if respond:
             await ctx.respond(
@@ -940,7 +942,7 @@ async def on_message(message: Message):
         or message.author.bot
     ):
         return
-        
+
     try:
         attachments = [
             a
@@ -951,10 +953,10 @@ async def on_message(message: Message):
             # No metadata, send reaction with count 0 for no meta found
             await update_reactions(message, 0)
             return
-            
+
         log.info(__f("MESSAGE: {0!r}", message))
         count = 0
-        
+
         for i, attachment in enumerate(
             attachments,
         ):  # download one at a time as usually the first image is already ai-generated
@@ -963,7 +965,7 @@ async def on_message(message: Message):
             if metadata:
                 count += 1
                 break
-                
+
         await update_reactions(message, count)
     except Exception as error:
         log.exception(f"Error in on_message: {error}")
@@ -976,31 +978,31 @@ async def on_raw_reaction_add(ctx: RawReactionActionEvent):
         or ctx.channel_id not in CFG.monitored_channel_ids
     ):
         return
-        
+
     try:
         # Check if reaction is from the bot itself
         if ctx.member and ctx.member.bot:
             return
-            
+
         channel = client.get_channel(ctx.channel_id)
         message = await channel.fetch_message(ctx.message_id)
         if not message:
             return
-            
+
         log.info(__f("REACTION: {0!r}", ctx))
         metadata, attachments = await collect_attachments(ctx, message, respond=False)
-        
+
         count = 0
         if metadata:
             # Check rate limit before processing
             if rate_limiter.is_rate_limited(ctx.user_id):
                 log.warning(f"Rate limit exceeded for user {ctx.user_id}")
                 return
-                
+
             user = await client.fetch_user(ctx.user_id)
             try:
                 user_dm = await user.create_dm()
-                
+
                 for attachment, md in ((attachments[i], data) for i, data in metadata.items()):
                     embed, view = md.get_embed_view(message, attachment)
                     await user_dm.send(embed=embed, view=view, mention_author=False)
@@ -1009,7 +1011,7 @@ async def on_raw_reaction_add(ctx: RawReactionActionEvent):
                 errname = type(error).__name__
                 log.exception(__f("Error sending DM: {errname}", errname=errname), exc_info=error)
 
-        if count > 0:        
+        if count > 0:
             await update_reactions(message, count)
         else:
             return
@@ -1022,17 +1024,17 @@ async def message_command_view_prompt(ctx: ApplicationContext, message: Message)
     try:
         # Check rate limit
         if rate_limiter.is_rate_limited(ctx.author.id):
-            await ctx.respond("You're making requests too quickly. Please wait a minute.", 
+            await ctx.respond("You're making requests too quickly. Please wait a minute.",
                              ephemeral=True)
             return
-            
+
         log.info(
             __f("APP: View: ctx={ctx!r}, message={message!r}", ctx=ctx, message=message),
         )
         metadata, attachments = await collect_attachments(ctx, message)
         if not metadata:
             return
-            
+
         extraargs = {}
         for idx, (attachment, md) in enumerate(
             (attachments[i], data) for i, data in metadata.items()
@@ -1061,17 +1063,17 @@ async def message_command_view_prompt_dm(ctx: ApplicationContext, message: Messa
     try:
         # Check rate limit
         if rate_limiter.is_rate_limited(ctx.author.id):
-            await ctx.respond("You're making requests too quickly. Please wait a minute.", 
+            await ctx.respond("You're making requests too quickly. Please wait a minute.",
                              ephemeral=True)
             return
-            
+
         log.info(
             __f("APP: ViewDM: ctx={ctx!r}, message={message!r}", ctx=ctx, message=message),
         )
         metadata, attachments = await collect_attachments(ctx, message)
         if not metadata:
             return
-            
+
         user_dm = await client.get_user(ctx.author.id).create_dm()
         for attachment, md in ((attachments[i], data) for i, data in metadata.items()):
             embed, view = md.get_embed_view(message, attachment)
@@ -1173,10 +1175,10 @@ def setup_logging():
     )
     if log_level is None:
         log_level = logging.INFO
-        
+
     log = logging.getLogger("PromptInspector")
     log.setLevel(log_level)
-    
+
     ch = logging.StreamHandler()  # Simple console logging
     ch.setLevel(log_level)
     ch.setFormatter(ColorLogFormatter(CFG.log_color))
@@ -1186,14 +1188,14 @@ def load_bot_token():
     """Securely load bot token from environment or .env file"""
     load_dotenv()
     bot_token = os.environ.get("BOT_TOKEN")
-    
+
     if not bot_token:
         return None
-        
+
     # Simple validation
     if len(bot_token) < 20:
         return None
-        
+
     return bot_token
 
 def main():
@@ -1212,30 +1214,30 @@ def main():
         help="Check metadata for the specified file",
     )
     args = parser.parse_args()
-    
+
     # Initialize logging early for error reporting
     setup_logging()
-    
+
     try:
         CFG.load(args.config)
     except Exception as e:
         log.error(f"Error loading config: {e}")
         log.info("Using default configuration")
-        
+
     if args.dump:
         handle_check(args.dump)
         return
-        
+
     # Otherwise run the bot
     if not CFG.monitored_channel_ids:
         log.error("No channels to monitor!")
         sys.exit(1)
-        
+
     bot_token = load_bot_token()
     if bot_token is None:
         log.error("BOT_TOKEN environment variable missing or invalid!")
         sys.exit(1)
-        
+
     client.run(bot_token)
 
 if __name__ == "__main__":

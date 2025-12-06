@@ -34,6 +34,7 @@ RuleResult = bool
 
 
 class RuleOperators:
+
     """Collection of rule operators for evaluating conditions.
 
     Each operator method takes the data to check, rule configuration,
@@ -268,7 +269,7 @@ class RuleOperators:
         is_not_empty = bool(data) if is_dict else False
 
         self.logger.debug(
-            f"exists_and_is_dictionary: data type {type(data)}, is_dict={is_dict}, is_not_empty={is_not_empty}"
+            f"exists_and_is_dictionary: data type {type(data)}, is_dict={is_dict}, is_not_empty={is_not_empty}",
         )
 
         return is_dict and is_not_empty
@@ -366,6 +367,7 @@ class RuleOperators:
 
 
 class DataSourceHandler:
+
     """Handles extraction of data from various sources for rule evaluation.
 
     This class knows how to extract data from different source types
@@ -743,6 +745,7 @@ class DataSourceHandler:
 
 
 class RuleEngine:
+
     """Main rule evaluation engine.
 
     This class coordinates rule evaluation by loading rules from TOML files
@@ -868,7 +871,7 @@ class RuleEngine:
         if operator_method is None:
             self.logger.warning(f"Unknown operator: '{operator}'")
             self.logger.debug(
-                f"_apply_operator: hasattr(self.operators, '{operator}') returned {hasattr(self.operators, operator)}"
+                f"_apply_operator: hasattr(self.operators, '{operator}') returned {hasattr(self.operators, operator)}",
             )
             return False
 
@@ -996,6 +999,7 @@ def evaluate_detection_rules(rules: list[RuleDict], context: ContextData, logger
 
 
 class RuleBuilder:
+
     """Helper class for building rule dictionaries programmatically.
 
     This provides a fluent interface for creating rules without having
@@ -1117,6 +1121,7 @@ class RuleBuilder:
 
 
 class RuleValidator:
+
     """Validates rule dictionaries for correctness and completeness.
 
     This helps catch configuration errors before rules are used

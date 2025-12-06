@@ -14,7 +14,7 @@ from .metadata_engine.utils import json_path_get_utility
 
 
 class RuleEvaluator:
-    def __init__(self, logger) -> None:  # noqa: ANN001
+    def __init__(self, logger) -> None:
         self.logger = logger
         self.rules: list[dict] = []
 
@@ -87,7 +87,7 @@ class RuleEvaluator:
                                 decoded = utf16_data.decode("utf-16le")
                                 if "Steps:" in decoded:
                                     self.logger.debug(
-                                        "Detection: Manual Unicode extracted %d chars with A1111 patterns", len(decoded)
+                                        "Detection: Manual Unicode extracted %d chars with A1111 patterns", len(decoded),
                                     )
                                     return decoded
                             except Exception as e:
@@ -100,7 +100,7 @@ class RuleEvaluator:
                                 decoded = unicode_part.decode("utf-16le", errors="ignore")
                                 if "Steps:" in decoded:
                                     self.logger.debug(
-                                        "Detection: charset=Unicode extracted %d chars with A1111 patterns", len(decoded)
+                                        "Detection: charset=Unicode extracted %d chars with A1111 patterns", len(decoded),
                                     )
                                     return decoded
                             except Exception as e:
@@ -400,7 +400,7 @@ class RuleEvaluator:
                 # Now check if we have a dictionary to work with
                 if not isinstance(target_json_obj_for_keys, dict):
                     self.logger.debug(
-                        "RuleEvaluator: Op '%s', target for key check is not a dictionary (was %s).", operator, type(data_to_check)
+                        "RuleEvaluator: Op '%s', target for key check is not a dictionary (was %s).", operator, type(data_to_check),
                     )
                     return False
 
@@ -411,7 +411,7 @@ class RuleEvaluator:
 
                 if not expected_keys:  # If the list of expected_keys is empty
                     self.logger.debug(
-                        "RuleEvaluator: Op '%s', 'expected_keys' list is empty. Returning False as no keys can be found.", operator
+                        "RuleEvaluator: Op '%s', 'expected_keys' list is empty. Returning False as no keys can be found.", operator,
                     )
                     return False  # Or True, depending on desired behavior for empty list (usually False)
 
@@ -423,7 +423,7 @@ class RuleEvaluator:
                 # bool(data_to_check) checks if the dictionary is not empty
                 is_not_empty = bool(data_to_check) if is_dict else False
                 self.logger.debug(
-                    "RuleEvaluator: Op 'exists_and_is_dictionary': data type %s, is_dict=%s, is_not_empty=%s", type(data_to_check), is_dict, is_not_empty
+                    "RuleEvaluator: Op 'exists_and_is_dictionary': data type %s, is_dict=%s, is_not_empty=%s", type(data_to_check), is_dict, is_not_empty,
                 )
                 return is_dict and is_not_empty
 
@@ -488,12 +488,12 @@ class RuleEvaluator:
             elif operator == "is_true" and source_type == "pil_info_key_json_path_query":
                 if not isinstance(data_to_check, str):
                     self.logger.debug(
-                        "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query' expected string data_to_check, got {type(data_to_check)}"
+                        "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query' expected string data_to_check, got {type(data_to_check)}",
                     )
                     return False
                 if not json_query_type:  # json_query_type is from top of this method
                     self.logger.warning(
-                        "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query': 'json_query_type' not provided."
+                        "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query': 'json_query_type' not provided.",
                     )
                     return False
                 try:
@@ -502,10 +502,10 @@ class RuleEvaluator:
                         return isinstance(json_obj_for_query, dict) and any(k.isdigit() for k in json_obj_for_query)
                     if json_query_type == "has_any_node_class_type":
                         if not class_types_to_check or not isinstance(
-                            class_types_to_check, list
+                            class_types_to_check, list,
                         ):  # class_types_to_check from top
                             self.logger.warning(
-                                "RuleEvaluator: Operator 'is_true' with query 'has_any_node_class_type': 'class_types_to_check' not provided or not a list."
+                                "RuleEvaluator: Operator 'is_true' with query 'has_any_node_class_type': 'class_types_to_check' not provided or not a list.",
                             )
                             return False
                         if not isinstance(json_obj_for_query, dict):
@@ -519,12 +519,12 @@ class RuleEvaluator:
                         )
                     else:  # noqa: RET505
                         self.logger.warning(
-                            "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query': Unknown 'json_query_type': {json_query_type}"
+                            "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query': Unknown 'json_query_type': {json_query_type}",
                         )
                         return False
                 except json.JSONDecodeError:
                     self.logger.debug(
-                        "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query': data_to_check string is not valid JSON."
+                        "RuleEvaluator: Operator 'is_true' with 'pil_info_key_json_path_query': data_to_check string is not valid JSON.",
                     )
                     return False
 
@@ -556,14 +556,14 @@ class RuleEvaluator:
                 # bool(data_to_check) checks if the dictionary is not empty
                 is_not_empty = bool(data_to_check) if is_dict else False
                 self.logger.debug(
-                    "RuleEvaluator: Op 'exists_and_is_dictionary': data type %s, is_dict=%s, is_not_empty=%s", type(data_to_check), is_dict, is_not_empty
+                    "RuleEvaluator: Op 'exists_and_is_dictionary': data type %s, is_dict=%s, is_not_empty=%s", type(data_to_check), is_dict, is_not_empty,
                 )
                 return is_dict and is_not_empty
 
             # This 'else' should be the VERY LAST condition in the operator chain
             else:
                 self.logger.warning(
-                    "RuleEvaluator: Operator '%s' is not implemented or recognized. Rule: %s", operator, rule.get("comment", "Unnamed")
+                    "RuleEvaluator: Operator '%s' is not implemented or recognized. Rule: %s", operator, rule.get("comment", "Unnamed"),
                 )
                 return False
 

@@ -15,6 +15,7 @@ MethodDefinition = dict[str, Any]
 
 
 class ComfyUITraversalExtractor:
+
     """Handles ComfyUI workflow traversal and link following."""
 
     def __init__(self, logger: logging.Logger) -> None:

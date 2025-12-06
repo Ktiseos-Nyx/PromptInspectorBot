@@ -185,12 +185,12 @@ class InvokeAI(BaseFormat):
             for k, v_val in image_data.items():
                 if k not in handled_keys_image_data:
                     custom_settings_parts.append(
-                        f"{self._format_key_for_display(k)}: {self._remove_quotes_from_string(v_val)}"
+                        f"{self._format_key_for_display(k)}: {self._remove_quotes_from_string(v_val)}",
                     )
             for k, v_val in data_json.items():
                 if k not in handled_keys_top_level:
                     custom_settings_parts.append(
-                        f"{self._format_key_for_display(k)}: {self._remove_quotes_from_string(v_val)}"
+                        f"{self._format_key_for_display(k)}: {self._remove_quotes_from_string(v_val)}",
                     )
 
             if custom_settings_parts:
