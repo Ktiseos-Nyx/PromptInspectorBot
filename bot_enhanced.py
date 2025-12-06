@@ -1072,7 +1072,8 @@ async def on_message(message: discord.Message):
         await track_message(message)
 
         # Get user context for security checks
-        user_has_roles = len(message.author.roles) > 1  # More than just @everyone
+        # Only Members (in guilds) have roles, Users (in DMs) don't
+        user_has_roles = isinstance(message.author, discord.Member) and len(message.author.roles) > 1
 
         # --- UNIFIED IMAGE GATHERING (Attachments & Embeds) ---
         images_to_check = []
