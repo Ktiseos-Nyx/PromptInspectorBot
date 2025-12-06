@@ -17,7 +17,12 @@ import os
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional
-
+import base64
+import datetime
+import hashlib
+import random
+import re
+import time
 import aiohttp
 import boto3
 import botocore
@@ -3139,4 +3144,422 @@ class FullMetadataView(discord.ui.View):
             else:
                 followup_text = f"```\n{full_text}\n```"
 
-            await interaction.followup.send(followup_text, ephemeral=True)
+            await interaction.followup.send(followup_text, ephemeral=True
+                                            )
+# =============================================================================
+# R2 UPLOAD WORKFLOW (for JPEG/WebP metadata)
+# =============================================================================
+
+# Rate limiting for uploads (DDoS protection + fair use)
+user_upload_timestamps = {}  # {user_id: [timestamp1, timestamp2, ...]}
+
+# Rate limit tiers
+MAX_UPLOADS_PER_MINUTE = 10  # Burst protection (DDoS prevention)
+MAX_UPLOADS_PER_DAY_FREE = 100  # Free tier (generous!)
+MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters (practically unlimited)
+
+# Time windows
+BURST_WINDOW = 60  # 1 minute in seconds
+DAILY_WINDOW = 86400  # 24 hours in seconds
+
+# Ko-fi supporter role IDs (Admins + Mods + Supporters get higher limits)
+# Get these from: Discord Server Settings → Roles → Right-click role → Copy ID
+# Can be comma-separated list in env: SUPPORTER_ROLE_IDS=123,456,789
+SUPPORTER_ROLE_IDS = parse_id_list("SUPPORTER_ROLE_IDS", "SUPPORTER_ROLE_IDS")
+# Backward compatibility: also check old KOFI_SUPPORTER_ROLE_ID config
+if not SUPPORTER_ROLE_IDS and "KOFI_SUPPORTER_ROLE_ID" in config:
+    kofi_role = config.get("KOFI_SUPPORTER_ROLE_ID", 0)
+    if kofi_role:
+        SUPPORTER_ROLE_IDS = {kofi_role}
+
+def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool, int, str]:
+    """
+    Check if user can upload. Returns (can_upload, remaining_uploads, limit_type).
+
+    Args:
+        user_id: Discord user ID
+        user_roles: List of role IDs the user has (optional)
+
+    Returns:
+        (can_upload, remaining, limit_type) where limit_type is 'burst', 'daily_free', or 'daily_supporter'
+    """
+    import time
+    current_time = time.time()
+
+    # Initialize user timestamps if needed
+    if user_id not in user_upload_timestamps:
+        user_upload_timestamps[user_id] = []
+
+    # Clean old timestamps (remove anything older than 24 hours)
+    user_upload_timestamps[user_id] = [
+        ts for ts in user_upload_timestamps[user_id]
+        if current_time - ts < DAILY_WINDOW
+    ]
+
+    # Check if user is a supporter (Ko-fi, Admin, or Mod)
+    is_supporter = False
+    if user_roles and SUPPORTER_ROLE_IDS:
+        # Check if any of the user's roles are in the supporter set
+        is_supporter = bool(set(user_roles) & SUPPORTER_ROLE_IDS)
+
+    # BURST PROTECTION (applies to everyone, even supporters)
+    burst_uploads = [
+        ts for ts in user_upload_timestamps[user_id]
+        if current_time - ts < BURST_WINDOW
+    ]
+    if len(burst_uploads) >= MAX_UPLOADS_PER_MINUTE:
+        return (False, 0, "burst")
+
+    # DAILY LIMIT (varies by supporter status)
+    daily_uploads = len(user_upload_timestamps[user_id])
+    max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
+
+    if daily_uploads >= max_daily:
+        limit_type = "daily_supporter" if is_supporter else "daily_free"
+        return (False, 0, limit_type)
+
+    # User can upload! Track this upload
+    user_upload_timestamps[user_id].append(current_time)
+    remaining = max_daily - daily_uploads - 1
+    limit_type = "daily_supporter" if is_supporter else "daily_free"
+
+    return (True, remaining, limit_type)
+
+# This command is only registered if R2 is enabled
+if R2_ENABLED:
+    @bot.tree.command(name="upload_image", description="Upload up to 10 JPEG/WebP images to extract metadata.")
+    async def upload_image_command(interaction: discord.Interaction, private: bool = False):
+        """Upload images to R2 for metadata extraction.
+
+        Args:
+            private: If True, response is only visible to you (ephemeral)
+        """
+        if not R2_ENABLED or not r2_client:
+            await interaction.response.send_message("❌ R2 upload feature is not configured on the bot.", ephemeral=True)
+            return
+
+        # Check rate limit (with role-based limits)
+        user_role_ids = [role.id for role in interaction.user.roles] if hasattr(interaction.user, "roles") else []
+        can_upload, remaining, limit_type = check_upload_rate_limit(interaction.user.id, user_role_ids)
+
+        if not can_upload:
+            # Different messages based on limit type
+            if limit_type == "burst":
+                await interaction.response.send_message(
+                    "⏰ **Whoa there!** You're uploading too fast. Please wait a minute before trying again.\n"
+                    "_(DDoS protection: Max 10 uploads per minute)_",
+                    ephemeral=True,
+                )
+            elif limit_type == "daily_supporter":
+                await interaction.response.send_message(
+                    f"✅ **Ko-fi Supporter limit reached!** You've hit your {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day limit. Try again tomorrow!\n"
+                    "_(This is to protect R2 storage costs)_",
+                    ephemeral=True,
+                )
+            else:  # daily_free
+                await interaction.response.send_message(
+                    f"📦 **Daily limit reached!** Free users get {MAX_UPLOADS_PER_DAY_FREE} uploads per day.\n\n"
+                    f"💰 **Want unlimited?** Support us on Ko-fi to get {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day!\n"
+                    f"🔗 https://ko-fi.com/OTNAngel/",
+                    ephemeral=True,
+                )
+            return
+
+        await interaction.response.defer(ephemeral=private, thinking=True)
+
+        try:
+            # Generate unique keys and presigned URLs for up to 10 files
+            MAX_FILES = 10
+            file_keys = []
+            upload_urls = []
+
+            for i in range(MAX_FILES):
+                file_key = f"uploads/{uuid.uuid4()}.tmp"
+                presigned_url = r2_client.generate_presigned_url(
+                    "put_object",
+                    Params={"Bucket": R2_BUCKET_NAME, "Key": file_key},
+                    ExpiresIn=R2_UPLOAD_EXPIRATION,
+                )
+                file_keys.append(file_key)
+                upload_urls.append(presigned_url)
+
+            # --- Define the View with the Button and its Callback ---
+            view = discord.ui.View(timeout=R2_UPLOAD_EXPIRATION)
+
+            async def process_button_callback(button_interaction: discord.Interaction):
+                # The callback has access to 'file_keys' from the outer scope
+                await button_interaction.response.defer(thinking=True, ephemeral=private)
+
+                try:
+                    # Try to download and process each uploaded file
+                    processed_count = 0
+                    files_to_cleanup = []
+
+                    for idx, file_key in enumerate(file_keys):
+                        try:
+                            # Check if file exists
+                            response = r2_client.get_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                            image_data = response["Body"].read()
+                            files_to_cleanup.append(file_key)
+                            logger.info(f"Downloaded {file_key} from R2 for processing by {button_interaction.user.name}")
+
+                            # Parse metadata
+                            metadata = await parse_image_metadata(image_data, file_key)
+
+                            if metadata:
+                                embed = format_metadata_embed(metadata, button_interaction.user)
+                                view = FullMetadataView(metadata)
+
+                                # Save the image to a Discord file so it displays in the embed
+                                # Convert .tmp to .png for better Discord compatibility
+                                image_file = discord.File(
+                                    io.BytesIO(image_data),
+                                    filename=f"{button_interaction.user.name}_upload_{idx+1}.png",
+                                )
+
+                                # Attach the image to the embed
+                                embed.set_image(url=f"attachment://{button_interaction.user.name}_upload_{idx+1}.png")
+
+                                # Send to channel or ephemeral based on private setting
+                                if private:
+                                    await button_interaction.followup.send(
+                                        f"✨ Metadata from image {idx+1}:",
+                                        embed=embed,
+                                        file=image_file,
+                                        view=view,
+                                        ephemeral=True,
+                                    )
+                                else:
+                                    await interaction.channel.send(
+                                        f"✨ Metadata processed for {button_interaction.user.mention} (image {idx+1}):",
+                                        embed=embed,
+                                        file=image_file,
+                                        view=view,
+                                    )
+                                processed_count += 1
+
+                        except botocore.exceptions.ClientError as e:
+                            if e.response["Error"]["Code"] == "NoSuchKey":
+                                # File doesn't exist, skip it (user didn't upload this slot)
+                                continue
+                            else:
+                                logger.error(f"R2 error for {file_key}: {e}")
+
+                    # Clean up all uploaded files
+                    for file_key in files_to_cleanup:
+                        try:
+                            r2_client.delete_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                            logger.info(f"Cleaned up {file_key} from R2 bucket.")
+                        except Exception as e:
+                            logger.error(f"Failed to delete {file_key} from R2: {e}")
+
+                    # Send summary
+                    if processed_count > 0:
+                        await button_interaction.followup.send(
+                            f"✅ Successfully processed {processed_count} image(s)!",
+                            ephemeral=True,
+                        )
+                    else:
+                        await button_interaction.followup.send(
+                            "❌ No images found or no metadata in uploaded images.",
+                            ephemeral=True,
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error processing R2 uploads: {e}")
+                    await button_interaction.followup.send(f"❌ An unexpected error occurred: {e}", ephemeral=True)
+
+                # Disable the button after it's been used
+                button.disabled = True
+                await interaction.edit_original_response(view=view)
+
+
+            process_button = discord.ui.Button(
+                label="Process Uploaded Images",
+                style=discord.ButtonStyle.green,
+            )
+            process_button.callback = process_button_callback
+            view.add_item(process_button)
+
+            # --- Create and send the initial response ---
+            uploader_base_url = UPLOADER_URL
+            # Pass multiple upload URLs as JSON array
+            params = {"upload_urls": json.dumps(upload_urls)}
+            uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
+
+            # Determine user tier for display
+            is_supporter = bool(set(user_role_ids) & SUPPORTER_ROLE_IDS) if SUPPORTER_ROLE_IDS else False
+            tier_name = "Ko-fi Supporter" if is_supporter else "Free"
+            max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
+
+            embed = discord.Embed(
+                title="📤 Upload Images for Metadata Extraction",
+                description=(
+                    "Upload up to 10 JPEG or WebP files to extract metadata:\n\n"
+                    "1. **Click the link below** to open the uploader\n"
+                    "2. **Select up to 10 images** (Max 10MB each)\n"
+                    "3. **Click Upload** for each file\n"
+                    "4. Come back and click **Process Uploaded Images** when done"
+                ),
+                color=discord.Color.blue(),
+            )
+            embed.add_field(name="🔗 Upload Link", value=f"[Click here to upload]({uploader_link})", inline=False)
+            embed.add_field(
+                name="ℹ️ Info",
+                value=(
+                    f"• **{tier_name}** - {remaining}/{max_daily} uploads remaining today\n"
+                    f"• **Auto-cleanup** - Files deleted after processing\n"
+                    f"• **JPEG/WebP only** - For ComfyUI/A1111/Forge metadata\n"
+                    f"• **Max 10MB** per file"
+                ),
+                inline=False,
+            )
+            if not is_supporter:
+                embed.add_field(
+                    name="💰 Want More Uploads?",
+                    value=f"[Support on Ko-fi]({' https://ko-fi.com/OTNAngel/'}) to get {MAX_UPLOADS_PER_DAY_SUPPORTER} uploads/day!",
+                    inline=False,
+                )
+            embed.set_footer(text=f"Link valid for {R2_UPLOAD_EXPIRATION // 60} min • Need help? discord.gg/HhBSvM9gBY")
+
+            await interaction.followup.send(embed=embed, view=view)
+
+        except Exception as e:
+            logger.error(f"Error generating pre-signed URL: {e}")
+            await interaction.followup.send(f"❌ An error occurred while creating the upload link: {e}", ephemeral=True)
+
+
+# =============================================================================
+# BOT LIFECYCLE
+# =============================================================================
+
+@bot.event
+async def on_close():
+    """Cleanup handler for graceful shutdown."""
+    logger.info("👋 Bot shutting down gracefully...")
+    # Close all aiohttp sessions
+    try:
+        # Clear conversation sessions to prevent memory leaks
+        global conversation_sessions
+        conversation_sessions.clear()
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+    # Give aiohttp time to cleanup sessions
+    await asyncio.sleep(0.1)
+
+@bot.event
+async def on_disconnect():
+    """Handle disconnection from Discord."""
+    logger.warning("⚠️ Bot disconnected from Discord! Will attempt to reconnect...")
+
+@bot.event
+async def on_resumed():
+    """Handle reconnection to Discord."""
+    logger.info("✅ Bot reconnected to Discord successfully!")
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    """Handle bot being added to a new server - check whitelist."""
+    # If whitelist is empty, allow all servers (public mode)
+    if not ALLOWED_GUILD_IDS:
+        logger.info("✅ Joined server: %s (ID: %s) - Public mode, all servers allowed", guild.name, guild.id)
+        return
+
+    # Check if server is whitelisted
+    if guild.id not in ALLOWED_GUILD_IDS:
+        logger.warning("⛔ UNAUTHORIZED server join: %s (ID: %s) - Auto-leaving!", guild.name, guild.id)
+
+        # Try to notify the server owner
+        try:
+            owner = guild.owner
+            if owner:
+                await owner.send(
+                    f"👋 Hello! Thanks for trying to add **{bot.user.name}** to **{guild.name}**!\n\n"
+                    f"However, this is a **private bot instance** and only available in authorized servers.\n\n"
+                    f"If you'd like to use this bot, you can:\n"
+                    f"• Self-host your own instance: https://github.com/Ktiseos-Nyx/PromptInspectorBot\n"
+                    f"• Contact the bot owner to request access\n\n"
+                    f"The bot has automatically left your server. Sorry for the inconvenience!"
+                )
+                logger.info("📬 Sent notification to server owner: %s", owner.name)
+        except discord.Forbidden:
+            logger.warning("Couldn't DM server owner (DMs disabled)")
+        except Exception as e:
+            logger.error("Error notifying server owner: %s", e)
+
+        # Leave the server
+        await guild.leave()
+        logger.info("👋 Left unauthorized server: %s", guild.name)
+    else:
+        logger.info("✅ Joined whitelisted server: %s (ID: %s)", guild.name, guild.id)
+
+
+@bot.event
+async def on_ready():
+    """Bot startup handler."""
+    logger.info("✅ Logged in as %s!", bot.user)
+    logger.info("📡 Monitoring %s channels", len(MONITORED_CHANNEL_IDS))
+
+    # Log whitelist status
+    if ALLOWED_GUILD_IDS:
+        logger.info("🔒 Guild whitelist enabled: %s authorized servers", len(ALLOWED_GUILD_IDS))
+    else:
+        logger.info("🌐 Public mode: All servers allowed")
+
+    # Sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info("⚡ Synced %s slash commands", len(synced))
+    except Exception as e:
+        logger.error("Failed to sync commands: %s", e)
+
+
+def main():
+    """Main entry point."""
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN not found in .env file!")
+        return
+
+    logger.info("🚀 Starting PromptInspectorBot-Enhanced...")
+
+    # Add retry logic with EXPONENTIAL BACKOFF to prevent Cloudflare rate limiting
+    max_retries = 5
+    retry_count = 0
+
+    while retry_count < max_retries:
+        try:
+            bot.run(BOT_TOKEN, reconnect=True)
+            break  # Exit loop if bot stops gracefully
+        except discord.LoginFailure:
+            logger.error("❌ INVALID TOKEN - Bot token may be banned or revoked!")
+            break  # Don't retry on auth failures
+        except discord.HTTPException as e:
+            # Check if it's a rate limit error (429 or Cloudflare block)
+            if '429' in str(e) or 'rate limit' in str(e).lower() or '1015' in str(e):
+                retry_count += 1
+                # Exponential backoff: 10s, 20s, 40s, 80s, 160s
+                wait_time = min(10 * (2 ** retry_count), 300)  # Cap at 5 minutes
+                logger.error(f"⚠️ RATE LIMITED by Discord/Cloudflare (attempt {retry_count}/{max_retries})")
+                logger.info(f"🕐 Waiting {wait_time}s before retry to avoid IP ban...")
+                import time
+                time.sleep(wait_time)
+            else:
+                # Other Discord HTTP errors
+                logger.error(f"❌ Discord HTTP error: {e}")
+                raise
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"❌ Bot crashed (attempt {retry_count}/{max_retries}): {e}")
+            if retry_count < max_retries:
+                # Shorter delay for non-rate-limit errors
+                wait_time = 5 * retry_count
+                logger.info(f"🔄 Restarting in {wait_time} seconds...")
+                import time
+                time.sleep(wait_time)
+            else:
+                logger.error("❌ Max retries reached. Bot shutting down.")
+                raise
+
+
+if __name__ == '__main__':
+    main()
