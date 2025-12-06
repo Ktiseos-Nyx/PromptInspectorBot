@@ -2419,6 +2419,132 @@ async def qotd_add_command(interaction: discord.Interaction, question: str):
     logger.info(f"User {interaction.user.name} added QOTD: {question[:50]}...")
 
 
+@bot.tree.command(name="interact", description="Interact with another user (hug, poke, etc.)")
+@app_commands.choices(action=[
+    app_commands.Choice(name="🤗 Hug", value="hug"),
+    app_commands.Choice(name="👉 Poke", value="poke"),
+    app_commands.Choice(name="😤 Taunt", value="taunt"),
+    app_commands.Choice(name="⭐ Pat", value="pat"),
+    app_commands.Choice(name="🙌 High-five", value="highfive"),
+])
+async def interact_command(interaction: discord.Interaction, action: app_commands.Choice[str], user: discord.User, system_member: str = None):
+    """Interact with another user or a specific system member.
+
+    Args:
+        action: Type of interaction
+        user: The user to interact with
+        system_member: Optional - specific system member name (for PluralKit users)
+    """
+    # Check if interact feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "interact", default=True):
+        await interaction.response.send_message(
+            "❌ The `/interact` command is not enabled in this server.\n"
+            "_Administrators can enable it with `/settings`_",
+            ephemeral=True
+        )
+        return
+
+    try:
+        # Load interaction templates
+        interactions_file = Path('interactions.json')
+        if not interactions_file.exists():
+            await interaction.response.send_message(
+                "❌ Interactions configuration not found. Please contact the bot admin.",
+                ephemeral=True
+            )
+            return
+
+        with open(interactions_file, 'r') as f:
+            interactions_data = json.load(f)
+
+        action_data = interactions_data.get(action.value, {})
+
+        if not action_data:
+            await interaction.response.send_message(
+                "❌ Invalid interaction type.",
+                ephemeral=True
+            )
+            return
+
+        # Determine the message
+        import random
+
+        if user.id == interaction.user.id:
+            # Self-interaction
+            message = action_data.get("self", f"{interaction.user.mention} {action.value}s themselves!")
+            message = message.format(user=interaction.user.mention)
+            target_name = "themselves"
+            avatar_url = interaction.user.display_avatar.url
+
+        elif system_member:
+            # System member interaction
+            message = action_data.get("system_member", f"{interaction.user.mention} {action.value}s {system_member} from {user.mention}'s system!")
+            taunt_text = random.choice(action_data.get("messages", [""])) if action.value == "taunt" else ""
+            message = message.format(
+                user=interaction.user.mention,
+                target=user.mention,
+                system_member=system_member,
+                taunt_text=taunt_text
+            )
+            target_name = f"{system_member} ({user.name})"
+
+            # Try to get system member avatar from PluralKit
+            avatar_url = user.display_avatar.url  # Fallback to user avatar
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # Search for system members
+                    async with session.get(f"https://api.pluralkit.me/v2/systems/@{user.id}/members") as resp:
+                        if resp.status == 200:
+                            members = await resp.json()
+                            # Find matching member
+                            for member in members:
+                                if member.get('name', '').lower() == system_member.lower():
+                                    if member.get('avatar_url'):
+                                        avatar_url = member['avatar_url']
+                                    break
+            except Exception as e:
+                logger.debug(f"Error fetching PluralKit avatar: {e}")
+
+        else:
+            # Regular user interaction
+            message = action_data.get("target", f"{interaction.user.mention} {action.value}s {user.mention}!")
+            taunt_text = random.choice(action_data.get("messages", [""])) if action.value == "taunt" else ""
+            message = message.format(
+                user=interaction.user.mention,
+                target=user.mention,
+                taunt_text=taunt_text
+            )
+            target_name = user.display_name
+            avatar_url = user.display_avatar.url
+
+        # Create embed
+        embed = discord.Embed(
+            description=message,
+            color=discord.Color.pink()
+        )
+
+        # Add GIF if available
+        gifs = action_data.get("gifs", [])
+        if gifs:
+            embed.set_image(url=random.choice(gifs))
+
+        # Set target's avatar as thumbnail
+        embed.set_thumbnail(url=avatar_url)
+
+        embed.set_footer(text=f"From {interaction.user.display_name}")
+
+        await interaction.response.send_message(embed=embed)
+
+        logger.info(f"Interaction: {interaction.user.name} {action.value}ed {target_name}")
+
+    except Exception as e:
+        logger.error(f"Error in interact_command: {e}")
+        await interaction.response.send_message(
+            "❌ An error occurred. Please try again.",
+            ephemeral=True
+        )
+
+
 # =============================================================================
 # AI HELPER FUNCTIONS
 # =============================================================================
