@@ -1,0 +1,44 @@
+{
+  "subjects": [
+    "warrior", "mage", "dragon", "phoenix", "cat", "wolf", "robot", "cyborg",
+    "knight", "princess", "demon", "angel", "witch", "wizard", "samurai",
+    "ninja", "pirate", "astronaut", "scientist", "detective", "vampire",
+    "werewolf", "fairy", "mermaid", "centaur", "elf", "dwarf", "orc"
+  ],
+  "styles": [
+    "anime", "realistic", "oil painting", "watercolor", "pixel art", "sketch",
+    "digital art", "3D render", "cartoon", "comic book", "manga", "chibi",
+    "photorealistic", "impressionist", "cyberpunk", "steampunk", "fantasy",
+    "sci-fi", "horror", "noir", "vaporwave", "synthwave", "low poly"
+  ],
+  "settings": [
+    "futuristic city", "medieval castle", "enchanted forest", "desert wasteland",
+    "underwater kingdom", "space station", "cyberpunk alley", "ancient ruins",
+    "mountain peak", "volcanic landscape", "frozen tundra", "tropical beach",
+    "haunted mansion", "mystical cave", "floating islands", "post-apocalyptic",
+    "victorian street", "japanese temple", "alien planet", "crystal cavern"
+  ],
+  "lighting": [
+    "golden hour", "neon lights", "moonlight", "dramatic shadows", "soft ambient",
+    "harsh sunlight", "bioluminescent", "candlelight", "aurora borealis",
+    "sunset", "sunrise", "starlight", "fog", "volumetric lighting", "rim lighting",
+    "backlight", "firelight", "magical glow", "thunder and lightning"
+  ],
+  "moods": [
+    "epic", "serene", "ominous", "whimsical", "melancholic", "triumphant",
+    "mysterious", "peaceful", "chaotic", "ethereal", "dramatic", "playful",
+    "dark", "vibrant", "dreamy", "intense", "calm", "energetic"
+  ],
+  "actions": [
+    "standing heroically", "casting a spell", "wielding a sword", "flying through the air",
+    "meditating", "fighting", "dancing", "exploring", "resting", "charging forward",
+    "leaping", "summoning magic", "defending", "attacking", "sneaking",
+    "running", "floating", "transforming", "conjuring"
+  ],
+  "details": [
+    "glowing eyes", "flowing hair", "intricate armor", "magical particles",
+    "energy aura", "detailed clothing", "ornate jewelry", "battle scars",
+    "tattoos", "wings", "tail", "horns", "crown", "cape", "weapon",
+    "staff", "shield", "mask", "hood", "robe"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "hug": {
+    "self": "{user} hugs themselves. Self-care is important! 💚",
+    "target": "{user} gives {target} a warm hug! 🤗",
+    "system_member": "{user} hugs {system_member} from {target}'s system! 💕",
+    "gifs": [
+      "https://media.tenor.com/images/c26a1d162d99e3db4d39e0c0b90a0a19/tenor.gif",
+      "https://media.tenor.com/images/3469c7f15f1e65e8ada39e763a7f6d51/tenor.gif",
+      "https://media.tenor.com/images/4b0f84f93e6b95a6ff1ea1c6af0a9ed5/tenor.gif"
+    ]
+  },
+  "poke": {
+    "self": "{user} pokes themselves. Why though? 🤔",
+    "target": "{user} pokes {target}! 👉",
+    "system_member": "{user} pokes {system_member} from {target}'s system! 👉",
+    "gifs": [
+      "https://media.tenor.com/images/7e3d1e0f1c0e1d8e8b9c3f5c0c9c0c0c/tenor.gif",
+      "https://media.tenor.com/images/8a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p/tenor.gif"
+    ]
+  },
+  "taunt": {
+    "self": "{user} taunts themselves. That's... an interesting choice. 😅",
+    "target": "{user} taunts {target}! {taunt_text}",
+    "system_member": "{user} taunts {system_member} from {target}'s system! {taunt_text}",
+    "messages": [
+      "Come at me bro! 😤",
+      "Is that all you've got? 😏",
+      "You call that a challenge? 🙄",
+      "Bring it on! 💪",
+      "Too slow! ⚡",
+      "Can't touch this! 🎵",
+      "Git gud! 🎮",
+      "Nice try! 😎"
+    ]
+  },
+  "pat": {
+    "self": "{user} pats themselves on the head. Good job! ⭐",
+    "target": "{user} gently pats {target} on the head! 🌟",
+    "system_member": "{user} pats {system_member} from {target}'s system! 🌟",
+    "gifs": [
+      "https://media.tenor.com/images/a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6/tenor.gif"
+    ]
+  },
+  "highfive": {
+    "self": "{user} tries to high-five themselves... awkward! ✋",
+    "target": "{user} gives {target} an epic high-five! 🙌",
+    "system_member": "{user} high-fives {system_member} from {target}'s system! 🙌",
+    "gifs": [
+      "https://media.tenor.com/images/q1w2e3r4t5y6u7i8o9p0a1s2d3f4g5h6/tenor.gif"
+    ]
+  }
+}

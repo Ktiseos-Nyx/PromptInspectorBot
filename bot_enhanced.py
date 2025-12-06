@@ -246,7 +246,19 @@ metadata_processing_semaphore = asyncio.Semaphore(1)
 # Security configuration
 CATCHER_ROLE_ID = int(os.getenv('CATCHER_ROLE_ID', config.get('CATCHER_ROLE_ID', 0)))
 TRUSTED_USER_IDS = parse_id_list('TRUSTED_USER_IDS', 'TRUSTED_USER_IDS')
-ADMIN_CHANNEL_ID = int(os.getenv('ADMIN_CHANNEL_ID', config.get('ADMIN_CHANNEL_ID', 0)))
+# Admin channel IDs for security alerts (supports multiple channels/servers)
+# Can be comma-separated in env: ADMIN_CHANNEL_IDS=123,456,789
+ADMIN_CHANNEL_IDS = parse_id_list('ADMIN_CHANNEL_IDS', 'ADMIN_CHANNEL_IDS')
+# Backward compatibility: also check old ADMIN_CHANNEL_ID config
+if not ADMIN_CHANNEL_IDS and 'ADMIN_CHANNEL_ID' in config:
+    admin_channel = config.get('ADMIN_CHANNEL_ID', 0)
+    if admin_channel:
+        ADMIN_CHANNEL_IDS = {admin_channel}
+# Also check env for single ID
+if not ADMIN_CHANNEL_IDS:
+    env_admin = os.getenv('ADMIN_CHANNEL_ID')
+    if env_admin and env_admin.isdigit():
+        ADMIN_CHANNEL_IDS = {int(env_admin)}
 
 # Message tracking for cross-posting detection
 # Structure: {user_id: [{'fingerprint': hash, 'channel_id': int, 'timestamp': float, 'message_id': int}, ...]}
@@ -527,14 +539,9 @@ async def delete_all_user_messages(user: discord.User, guild: discord.Guild, min
 
 
 async def alert_admins(guild: discord.Guild, user: discord.User, reason: str, details: list = None, action: str = "ALERT"):
-    """Send alert to admin channel about security event."""
-    if not ADMIN_CHANNEL_ID:
-        return  # No admin channel configured
-
-    channel = guild.get_channel(ADMIN_CHANNEL_ID)
-    if not channel:
-        logger.warning(f"Admin channel {ADMIN_CHANNEL_ID} not found")
-        return
+    """Send alert to admin channels about security event (supports multiple channels)."""
+    if not ADMIN_CHANNEL_IDS:
+        return  # No admin channels configured
 
     # Choose color based on severity
     color_map = {
@@ -547,7 +554,7 @@ async def alert_admins(guild: discord.Guild, user: discord.User, reason: str, de
 
     embed = discord.Embed(
         title=f"🚨 Security {action}",
-        description=f"**User:** {user.mention} (`{user.id}`)\n**Reason:** {reason}",
+        description=f"**User:** {user.mention} (`{user.id}`)\n**Server:** {guild.name}\n**Reason:** {reason}",
         color=embed_color
     )
 
@@ -569,10 +576,21 @@ async def alert_admins(guild: discord.Guild, user: discord.User, reason: str, de
     if user.avatar:
         embed.set_thumbnail(url=user.avatar.url)
 
-    try:
-        await channel.send(embed=embed)
-    except Exception as e:
-        logger.error(f"Failed to send admin alert: {e}")
+    # Send to all configured admin channels
+    for channel_id in ADMIN_CHANNEL_IDS:
+        try:
+            # Try to get channel from the current guild first
+            channel = guild.get_channel(channel_id)
+            # If not in current guild, try to get from bot's accessible channels
+            if not channel:
+                channel = bot.get_channel(channel_id)
+
+            if channel:
+                await channel.send(embed=embed)
+            else:
+                logger.warning(f"Admin channel {channel_id} not found or not accessible")
+        except Exception as e:
+            logger.error(f"Failed to send admin alert to channel {channel_id}: {e}")
 
 
 def reformat_json(string: str, indent: int = 2) -> Optional[str]:
@@ -1564,13 +1582,14 @@ RULES:
     app_commands.Choice(name="Danbooru Tags", value="danbooru"),
     app_commands.Choice(name="Natural Language", value="natural"),
 ])
-async def describe_command(interaction: discord.Interaction, style: app_commands.Choice[str], image: discord.Attachment = None):
-    """Slash command to describe an image using Gemini vision.
+async def describe_command(interaction: discord.Interaction, style: app_commands.Choice[str], image: discord.Attachment = None, private: bool = False):
+    """Slash command to describe an image using AI vision.
 
     Args:
         interaction: Discord interaction
         style: Description style (danbooru tags or natural language)
         image: Image attachment to describe (optional if replying to a message with an image)
+        private: If True, response is only visible to you (ephemeral)
     """
     # Check if describe feature is enabled for this channel
     if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "describe" not in CHANNEL_FEATURES[interaction.channel.id]:
@@ -1609,17 +1628,17 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
 
     # Validate file type
     if not image.content_type or not image.content_type.startswith("image/"):
-        await interaction.response.send_message("❌ Please provide a valid image file.")
+        await interaction.response.send_message("❌ Please provide a valid image file.", ephemeral=True)
         return
 
     # Validate file size (10MB limit)
     if image.size > SCAN_LIMIT_BYTES:
         size_mb = image.size / (1024 * 1024)
         limit_mb = SCAN_LIMIT_BYTES / (1024 * 1024)
-        await interaction.response.send_message(f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB.")
+        await interaction.response.send_message(f"❌ File too large ({size_mb:.1f}MB). Max: {limit_mb:.1f}MB.", ephemeral=True)
         return
 
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=private)
 
     try:
         image_data = await image.read()
@@ -1748,7 +1767,245 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
         await interaction.followup.send(f"❌ Error generating description: {str(e)}")
 
 
+# =============================================================================
+# COMMUNITY COMMANDS (Non-AI)
+# =============================================================================
+
+@bot.tree.command(name="decide", description="Let the bot make a choice for you")
+async def decide_command(interaction: discord.Interaction, choices: str):
+    """Randomly picks one option from a comma-separated list.
+
+    Args:
+        choices: Comma-separated list of options (e.g. "pizza, tacos, sushi")
+    """
+    # Split by comma and clean up whitespace
+    options = [opt.strip() for opt in choices.split(',') if opt.strip()]
+
+    if len(options) < 2:
+        await interaction.response.send_message(
+            "❌ Please provide at least 2 choices separated by commas!\n"
+            "Example: `/decide choices:pizza, tacos, sushi`",
+            ephemeral=True
+        )
+        return
+
+    if len(options) > 20:
+        await interaction.response.send_message(
+            "❌ Too many choices! Maximum is 20.",
+            ephemeral=True
+        )
+        return
+
+    import random
+    chosen = random.choice(options)
+
+    embed = discord.Embed(
+        title="🎲 Decision Made!",
+        description=f"I choose: **{chosen}**",
+        color=discord.Color.green()
+    )
+
+    embed.add_field(
+        name="Options",
+        value=", ".join(f"`{opt}`" for opt in options),
+        inline=False
+    )
+
+    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="poll", description="Create a quick poll")
+@app_commands.choices(poll_type=[
+    app_commands.Choice(name="Yes/No", value="yesno"),
+    app_commands.Choice(name="A or B", value="ab"),
+])
+async def poll_command(interaction: discord.Interaction, question: str, poll_type: app_commands.Choice[str], option_a: str = None, option_b: str = None):
+    """Create a quick poll with automatic reactions.
+
+    Args:
+        question: The poll question
+        poll_type: Type of poll (Yes/No or A/B)
+        option_a: Option A text (required for A/B polls)
+        option_b: Option B text (required for A/B polls)
+    """
+    if poll_type.value == "ab":
+        if not option_a or not option_b:
+            await interaction.response.send_message(
+                "❌ For A/B polls, you must provide both option_a and option_b!",
+                ephemeral=True
+            )
+            return
+
+    embed = discord.Embed(
+        title="📊 Poll",
+        description=f"**{question}**",
+        color=discord.Color.blue()
+    )
+
+    if poll_type.value == "yesno":
+        embed.add_field(name="Options", value="✅ Yes\n❌ No", inline=False)
+        reactions = ["✅", "❌"]
+    else:  # A/B poll
+        embed.add_field(name="Option A", value=f"🇦 {option_a}", inline=True)
+        embed.add_field(name="Option B", value=f"🇧 {option_b}", inline=True)
+        reactions = ["🇦", "🇧"]
+
+    embed.set_footer(text=f"Poll by {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+    message = await interaction.original_response()
+
+    # Add reaction buttons
+    for reaction in reactions:
+        await message.add_reaction(reaction)
+
+
+@bot.tree.command(name="wildcard", description="Generate a random art prompt")
+async def wildcard_command(interaction: discord.Interaction):
+    """Generates a random art prompt using wildcards."""
+    import random
+
+    try:
+        # Load wildcards from JSON
+        wildcard_path = Path('wildcards.json')
+        if not wildcard_path.exists():
+            await interaction.response.send_message(
+                "❌ Wildcards file not found! Please contact the bot admin.",
+                ephemeral=True
+            )
+            return
+
+        with open(wildcard_path, 'r') as f:
+            wildcards = json.load(f)
+
+        # Generate random prompt
+        subject = random.choice(wildcards['subjects'])
+        style = random.choice(wildcards['styles'])
+        setting = random.choice(wildcards['settings'])
+        lighting = random.choice(wildcards['lighting'])
+        mood = random.choice(wildcards['moods'])
+        action = random.choice(wildcards['actions'])
+        detail = random.choice(wildcards['details'])
+
+        # Construct the prompt
+        prompt = f"{subject} {action}, {detail}, {style} style, {setting}, {lighting}, {mood} mood"
+
+        embed = discord.Embed(
+            title="🎨 Random Art Prompt",
+            description=f"```{prompt}```",
+            color=discord.Color.purple()
+        )
+
+        embed.add_field(name="Subject", value=subject, inline=True)
+        embed.add_field(name="Action", value=action, inline=True)
+        embed.add_field(name="Style", value=style, inline=True)
+        embed.add_field(name="Setting", value=setting, inline=True)
+        embed.add_field(name="Lighting", value=lighting, inline=True)
+        embed.add_field(name="Mood", value=mood, inline=True)
+
+        embed.set_footer(text=f"Generated for {interaction.user.display_name} • Roll again for a new prompt!")
+
+        await interaction.response.send_message(embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error in wildcard_command: {e}")
+        await interaction.response.send_message(
+            "❌ Error generating prompt. Please try again.",
+            ephemeral=True
+        )
+
+
+# =============================================================================
+# AI HELPER FUNCTIONS
+# =============================================================================
+
 conversation_sessions = {}
+
+async def get_pluralkit_name(message: discord.Message) -> str:
+    """Get the fronting alter's name from PluralKit if the message is proxied.
+
+    Args:
+        message: Discord message to check
+
+    Returns:
+        Fronting alter's name if message is from PluralKit, otherwise the Discord username
+    """
+    # PluralKit's webhook messages have a specific pattern
+    if message.webhook_id:
+        try:
+            # Try to fetch the PluralKit API for message info
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"https://api.pluralkit.me/v2/messages/{message.id}") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # Return the member's name if found
+                        if 'member' in data and 'name' in data['member']:
+                            return data['member']['name']
+        except Exception as e:
+            logger.debug(f"Error fetching PluralKit info: {e}")
+
+    # Fallback to Discord display name
+    return message.author.display_name
+
+def optimize_image_for_api(image_data: bytes, mime_type: str, max_size_mb: float = 3.5) -> tuple[bytes, str]:
+    """Optimize image for API consumption by resizing if it exceeds the size limit.
+
+    Args:
+        image_data: Raw image bytes
+        mime_type: Image MIME type (e.g. 'image/jpeg')
+        max_size_mb: Maximum size in MB before optimization (default 3.5MB for Claude)
+
+    Returns:
+        Tuple of (optimized_image_bytes, mime_type)
+    """
+    import io
+    from PIL import Image
+
+    # Check current size
+    current_size_mb = len(image_data) / (1024 * 1024)
+
+    if current_size_mb <= max_size_mb:
+        # Image is already small enough
+        return image_data, mime_type
+
+    logger.info(f"🔄 Image too large ({current_size_mb:.2f}MB), optimizing to under {max_size_mb}MB...")
+
+    # Open image
+    img = Image.open(io.BytesIO(image_data))
+
+    # Convert RGBA to RGB if needed (for JPEG compatibility)
+    if img.mode in ('RGBA', 'LA', 'P'):
+        background = Image.new('RGB', img.size, (255, 255, 255))
+        if img.mode == 'P':
+            img = img.convert('RGBA')
+        background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+        img = background
+
+    # Calculate resize factor to get under max_size_mb
+    # Start with 80% of original dimensions
+    scale_factor = 0.8
+
+    while current_size_mb > max_size_mb and scale_factor > 0.1:
+        new_width = int(img.width * scale_factor)
+        new_height = int(img.height * scale_factor)
+
+        # Resize image
+        resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Save to bytes with quality optimization
+        output = io.BytesIO()
+        resized_img.save(output, format='JPEG', quality=85, optimize=True)
+        optimized_data = output.getvalue()
+        current_size_mb = len(optimized_data) / (1024 * 1024)
+
+        # Reduce scale factor for next iteration if needed
+        scale_factor -= 0.1
+
+    logger.info(f"✅ Image optimized to {current_size_mb:.2f}MB ({new_width}x{new_height})")
+
+    return optimized_data, 'image/jpeg'
 
 async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: str, model: str = None) -> str:
     """Describe an image using Claude's vision API.
@@ -1767,6 +2024,9 @@ async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: 
 
     if model is None:
         model = CLAUDE_PRIMARY_MODEL
+
+    # Optimize image if needed (prevents 400 errors from oversized images)
+    image_data, mime_type = optimize_image_for_api(image_data, mime_type)
 
     # Encode image to base64 for Claude
     import base64
@@ -1866,19 +2126,28 @@ async def call_gemini_with_retry(api_call_factory, max_retries: int = None, base
     # All retries and fallbacks failed
     raise last_error
 
-async def ask_gemini(user: discord.User, question: str) -> str:
-    """Asks a question to the Gemini API using the new SDK with retry and fallback support."""
+async def ask_gemini(user: discord.User, question: str, user_display_name: str = None) -> str:
+    """Asks a question to the Gemini API using the new SDK with retry and fallback support.
+
+    Args:
+        user: Discord user object
+        question: Question to ask
+        user_display_name: Optional display name to use (for PluralKit integration)
+    """
     if not gemini_client:
         return "❌ Gemini API key is not configured."
 
     try:
+        # Use provided display name or fall back to Discord name
+        display_name = user_display_name or user.display_name
+
         # Get or create chat session for the user
         if user.id not in conversation_sessions:
             # Create new chat session with system instruction (using primary model)
             conversation_sessions[user.id] = gemini_client.aio.chats.create(
                 model=GEMINI_PRIMARY_MODEL,
                 config=types.GenerateContentConfig(
-                    system_instruction="You are a helpful assistant. Your goal is to provide accurate and concise answers."
+                    system_instruction=f"You are a helpful assistant talking to {display_name}. Address them by name when appropriate. Your goal is to provide accurate and concise answers."
                 )
             )
 
@@ -2212,9 +2481,15 @@ MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters (practically unlimited)
 BURST_WINDOW = 60  # 1 minute in seconds
 DAILY_WINDOW = 86400  # 24 hours in seconds
 
-# Ko-fi supporter role ID (replace with your server's role)
-# Get this from: Discord Server Settings → Roles → Right-click role → Copy ID
-KOFI_SUPPORTER_ROLE_ID = config.get('KOFI_SUPPORTER_ROLE_ID', 0)  # Set in config.toml
+# Ko-fi supporter role IDs (Admins + Mods + Supporters get higher limits)
+# Get these from: Discord Server Settings → Roles → Right-click role → Copy ID
+# Can be comma-separated list in env: SUPPORTER_ROLE_IDS=123,456,789
+SUPPORTER_ROLE_IDS = parse_id_list('SUPPORTER_ROLE_IDS', 'SUPPORTER_ROLE_IDS')
+# Backward compatibility: also check old KOFI_SUPPORTER_ROLE_ID config
+if not SUPPORTER_ROLE_IDS and 'KOFI_SUPPORTER_ROLE_ID' in config:
+    kofi_role = config.get('KOFI_SUPPORTER_ROLE_ID', 0)
+    if kofi_role:
+        SUPPORTER_ROLE_IDS = {kofi_role}
 
 def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool, int, str]:
     """
@@ -2240,10 +2515,11 @@ def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool
         if current_time - ts < DAILY_WINDOW
     ]
 
-    # Check if user is a Ko-fi supporter
+    # Check if user is a supporter (Ko-fi, Admin, or Mod)
     is_supporter = False
-    if user_roles and KOFI_SUPPORTER_ROLE_ID:
-        is_supporter = KOFI_SUPPORTER_ROLE_ID in user_roles
+    if user_roles and SUPPORTER_ROLE_IDS:
+        # Check if any of the user's roles are in the supporter set
+        is_supporter = bool(set(user_roles) & SUPPORTER_ROLE_IDS)
 
     # BURST PROTECTION (applies to everyone, even supporters)
     burst_uploads = [
@@ -2335,10 +2611,21 @@ if R2_ENABLED:
                     if metadata:
                         embed = format_metadata_embed(metadata, button_interaction.user)
                         view = FullMetadataView(metadata)
-                        
+
+                        # Save the image to a Discord file so it displays in the embed
+                        # Convert .tmp to .png for better Discord compatibility
+                        image_file = discord.File(
+                            io.BytesIO(image_data),
+                            filename=f"{button_interaction.user.name}_upload.png"
+                        )
+
+                        # Attach the image to the embed
+                        embed.set_image(url=f"attachment://{button_interaction.user.name}_upload.png")
+
                         await interaction.channel.send(
                             f"✨ Metadata processed for {button_interaction.user.mention} (from direct upload):",
-                            embed=embed, 
+                            embed=embed,
+                            file=image_file,
                             view=view
                         )
                         await button_interaction.followup.send("✅ Metadata posted in the channel!", ephemeral=True)
@@ -2380,7 +2667,7 @@ if R2_ENABLED:
             uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
 
             # Determine user tier for display
-            is_supporter = KOFI_SUPPORTER_ROLE_ID in user_role_ids if KOFI_SUPPORTER_ROLE_ID else False
+            is_supporter = bool(set(user_role_ids) & SUPPORTER_ROLE_IDS) if SUPPORTER_ROLE_IDS else False
             tier_name = "Ko-fi Supporter" if is_supporter else "Free"
             max_daily = MAX_UPLOADS_PER_DAY_SUPPORTER if is_supporter else MAX_UPLOADS_PER_DAY_FREE
 

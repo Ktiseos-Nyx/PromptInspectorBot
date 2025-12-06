@@ -4,6 +4,7 @@ venv
 *.bak
 *~
 config.toml
+ENV_SETUP_GUIDE.html
 
 # macOS system files
 .DS_Store
