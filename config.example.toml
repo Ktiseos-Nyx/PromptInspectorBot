@@ -49,6 +49,20 @@ SUPPORTER_ROLE_IDS = []  # Example: [123456789, 987654321]
 # Get channel ID: Right-click channel → Copy Channel ID
 ADMIN_CHANNEL_IDS = []  # Example: [123456789, 987654321]
 
+# Trusted User IDs who bypass security checks
+# Get user ID: Right-click user → Copy User ID
+TRUSTED_USER_IDS = []  # Example: [123456789, 987654321]
+
+# ============================================================================
+# DM (DIRECT MESSAGE) ACCESS
+# ============================================================================
+
+# User IDs allowed to interact with the bot via DMs
+# Users NOT on this list will receive an auto-response with donation/support info
+# Early Supporters ($5/month donors) get added to this list for DM access
+# Get user ID: Right-click user → Copy User ID
+DM_ALLOWED_USER_IDS = []  # Example: [123456789, 987654321]
+
 # ============================================================================
 # BOT BEHAVIOR
 # ============================================================================

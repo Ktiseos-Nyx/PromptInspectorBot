@@ -449,6 +449,9 @@ def get_qotd_stats() -> dict:
 # Security configuration
 CATCHER_ROLE_ID = int(os.getenv('CATCHER_ROLE_ID', config.get('CATCHER_ROLE_ID', 0)))
 TRUSTED_USER_IDS = parse_id_list('TRUSTED_USER_IDS', 'TRUSTED_USER_IDS')
+# DM whitelist - users allowed to interact with bot via DMs
+# Can be comma-separated in env: DM_ALLOWED_USER_IDS=123,456,789
+DM_ALLOWED_USER_IDS = parse_id_list('DM_ALLOWED_USER_IDS', 'DM_ALLOWED_USER_IDS')
 # Admin channel IDs for security alerts (supports multiple channels/servers)
 # Can be comma-separated in env: ADMIN_CHANNEL_IDS=123,456,789
 ADMIN_CHANNEL_IDS = parse_id_list('ADMIN_CHANNEL_IDS', 'ADMIN_CHANNEL_IDS')
@@ -462,6 +465,30 @@ if not ADMIN_CHANNEL_IDS:
     env_admin = os.getenv('ADMIN_CHANNEL_ID')
     if env_admin and env_admin.isdigit():
         ADMIN_CHANNEL_IDS = {int(env_admin)}
+
+# DM Auto-Response Message
+DM_RESPONSE_MESSAGE = """👋 **Hi there!** This bot is currently configured for private server use.
+
+🔧 **Developed by:** Ktiseos Nyx
+
+🔗 **All my links:** https://beacons.ai/duskfallcrew
+
+💰 **Support the project & get Early Supporter access:**
+Donate $5/month to get DM access + higher upload limits!
+• Ko-fi (Angel): https://ko-fi.com/OTNAngel/
+• Ko-fi (Duskfall): https://ko-fi.com/duskfallcrew/
+• Shop: https://duskfallcrew-shop.fourthwall.com/
+
+✨ **Note:** We're actively developing new features for Early Supporters! Join our Discord to stay updated on upcoming features and get your supporter access configured.
+
+🤖 **Want to run your own instance?**
+Self-host this bot using our open-source code:
+https://github.com/Ktiseos-Nyx/PromptInspectorBot
+
+❓ **Need help or have questions?**
+Join our Discord community: https://discord.gg/HhBSvM9gBY
+
+💖 Thanks for your interest in the PromptInspector Bot!"""
 
 # Message tracking for cross-posting detection
 # Structure: {user_id: [{'fingerprint': hash, 'channel_id': int, 'timestamp': float, 'message_id': int}, ...]}
@@ -1047,9 +1074,21 @@ async def on_message(message: discord.Message):
     if message.author.bot and not message.webhook_id:
         return
 
-    # Ignore DMs (only process server messages)
+    # DM Handling - Only allow whitelisted users
     if not message.guild:
-        return
+        # Check if user is whitelisted for DM access
+        if message.author.id not in DM_ALLOWED_USER_IDS:
+            # Send auto-response to non-whitelisted users
+            try:
+                await message.channel.send(DM_RESPONSE_MESSAGE)
+                logger.info(f"📩 Sent DM auto-response to non-whitelisted user: {message.author} ({message.author.id})")
+            except discord.Forbidden:
+                logger.warning(f"⚠️ Cannot send DM to {message.author} - they may have DMs disabled")
+            return
+        else:
+            # User is whitelisted, allow DM processing
+            logger.info(f"✅ Processing DM from whitelisted user: {message.author} ({message.author.id})")
+            # Continue to process the DM normally
 
     # ============================================================================
     # SECURITY CHECKS - Run BEFORE processing to catch scammers early
