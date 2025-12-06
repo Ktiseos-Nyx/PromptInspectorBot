@@ -118,13 +118,14 @@
         </div>
 
         <div class="upload-area" id="upload-area">
-            <p id="upload-text">Click or drag & drop a file here</p>
-            <p style="font-size: 0.8rem; color: #72767d; margin-top: 0.5rem;">JPEG/WebP only • Max 10MB</p>
+            <p id="upload-text">Click or drag & drop up to 10 files here</p>
+            <p style="font-size: 0.8rem; color: #72767d; margin-top: 0.5rem;">JPEG/WebP only • Max 10MB each • Up to 10 files</p>
         </div>
 
-        <button id="upload-button" disabled>Upload</button>
+        <button id="upload-button" disabled>Upload All</button>
 
         <div id="status"></div>
+        <div id="file-list" style="margin-top: 1rem; font-size: 0.9rem;"></div>
     </div>
 
     <script>
@@ -133,15 +134,18 @@
         fileInput.type = 'file';
         fileInput.id = 'file-input';
         fileInput.accept = 'image/jpeg,image/webp'; // Only JPEG/WebP for metadata preservation
+        fileInput.multiple = true; // Allow multiple file selection
         document.body.appendChild(fileInput);
 
         const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+        const MAX_FILES = 10; // Max 10 files
 
         const uploadButton = document.getElementById('upload-button');
         const statusDiv = document.getElementById('status');
         const uploadText = document.getElementById('upload-text');
+        const fileListDiv = document.getElementById('file-list');
 
-        let selectedFile = null;
+        let selectedFiles = [];
 
         // --- Event Listeners ---
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -168,77 +172,137 @@
 
 
         function handleFileSelect(event) {
-            selectedFile = event.target.files[0];
-            if (selectedFile) {
+            const files = Array.from(event.target.files);
+            selectedFiles = [];
+            fileListDiv.innerHTML = '';
+
+            if (files.length === 0) {
+                uploadText.textContent = 'Click or drag & drop up to 10 files here';
+                uploadButton.disabled = true;
+                return;
+            }
+
+            // Check file count
+            if (files.length > MAX_FILES) {
+                showStatus(`❌ Too many files! Maximum is ${MAX_FILES} files.`, 'error');
+                uploadButton.disabled = true;
+                uploadText.textContent = 'Click or drag & drop up to 10 files here';
+                return;
+            }
+
+            // Validate each file
+            let allValid = true;
+            const fileListHTML = [];
+
+            for (const file of files) {
                 // Validate file type
                 const validTypes = ['image/jpeg', 'image/webp'];
-                if (!validTypes.includes(selectedFile.type)) {
-                    showStatus('❌ Invalid file type. Only JPEG and WebP files are supported.', 'error');
-                    selectedFile = null;
-                    uploadButton.disabled = true;
-                    uploadText.textContent = 'Click or drag & drop a file here';
-                    return;
+                if (!validTypes.includes(file.type)) {
+                    showStatus(`❌ Invalid file type for ${file.name}. Only JPEG and WebP files are supported.', 'error');
+                    allValid = false;
+                    break;
                 }
 
                 // Validate file size (10MB max)
-                if (selectedFile.size > MAX_FILE_SIZE) {
-                    const sizeMB = (selectedFile.size / 1024 / 1024).toFixed(2);
-                    showStatus(`❌ File too large (${sizeMB}MB). Maximum size is 10MB.`, 'error');
-                    selectedFile = null;
-                    uploadButton.disabled = true;
-                    uploadText.textContent = 'Click or drag & drop a file here';
-                    return;
+                if (file.size > MAX_FILE_SIZE) {
+                    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+                    showStatus(`❌ File too large: ${file.name} (${sizeMB}MB). Maximum size is 10MB.`, 'error');
+                    allValid = false;
+                    break;
                 }
 
                 // File is valid
-                const sizeMB = (selectedFile.size / 1024 / 1024).toFixed(2);
-                uploadText.textContent = `Selected: ${selectedFile.name} (${sizeMB}MB)`;
+                selectedFiles.push(file);
+                const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+                fileListHTML.push(`<div style="color: #b9bbbe; padding: 0.25rem 0;">✓ ${file.name} (${sizeMB}MB)</div>`);
+            }
+
+            if (allValid && selectedFiles.length > 0) {
+                uploadText.textContent = `Selected ${selectedFiles.length} file(s)`;
+                fileListDiv.innerHTML = fileListHTML.join('');
                 uploadButton.disabled = false;
                 statusDiv.innerHTML = '';
             } else {
-                uploadText.textContent = 'Click or drag & drop a file here';
+                selectedFiles = [];
+                uploadText.textContent = 'Click or drag & drop up to 10 files here';
                 uploadButton.disabled = true;
             }
         }
 
         async function handleUpload() {
-            if (!selectedFile) {
-                showStatus('Please select a file first.', 'error');
+            if (selectedFiles.length === 0) {
+                showStatus('Please select at least one file first.', 'error');
                 return;
             }
 
             const params = new URLSearchParams(window.location.search);
-            const uploadUrl = params.get('upload_url');
+            const uploadUrlsParam = params.get('upload_urls');
 
-            if (!uploadUrl) {
-                showStatus('Error: No upload URL provided. Please use the link from the bot again.', 'error');
+            if (!uploadUrlsParam) {
+                showStatus('Error: No upload URLs provided. Please use the link from the bot again.', 'error');
+                return;
+            }
+
+            let uploadUrls;
+            try {
+                uploadUrls = JSON.parse(decodeURIComponent(uploadUrlsParam));
+            } catch (e) {
+                showStatus('Error: Invalid upload URLs. Please use the link from the bot again.', 'error');
+                return;
+            }
+
+            if (selectedFiles.length > uploadUrls.length) {
+                showStatus(`Error: Too many files selected. Maximum is ${uploadUrls.length}.`, 'error');
                 return;
             }
 
             setUploadingState(true);
 
-            try {
-                const response = await fetch(uploadUrl, {
-                    method: 'PUT',
-                    body: selectedFile,
-                    headers: {
-                        'Content-Type': selectedFile.type || 'application/octet-stream'
-                    }
-                });
+            let successCount = 0;
+            let failCount = 0;
+            const results = [];
 
-                if (response.ok) {
-                    showStatus('✅ Success! You can now go back to Discord and click the "Process" button.', 'success');
-                    uploadButton.disabled = true; // Prevent re-upload
-                } else {
-                    const errorText = await response.text();
-                    console.error('Upload failed:', errorText);
-                    showStatus(`❌ Upload Failed: Server responded with status ${response.status}. The link may have expired. Please try again.`, 'error');
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const uploadUrl = uploadUrls[i];
+
+                try {
+                    statusDiv.innerHTML = `<div class="spinner"></div><p>Uploading ${i + 1}/${selectedFiles.length}: ${file.name}...</p>`;
+
+                    const response = await fetch(uploadUrl, {
+                        method: 'PUT',
+                        body: file,
+                        headers: {
+                            'Content-Type': file.type || 'application/octet-stream'
+                        }
+                    });
+
+                    if (response.ok) {
+                        successCount++;
+                        results.push(`✅ ${file.name}`);
+                    } else {
+                        failCount++;
+                        results.push(`❌ ${file.name} (Error ${response.status})`);
+                        console.error(`Upload failed for ${file.name}:`, response.status);
+                    }
+                } catch (error) {
+                    failCount++;
+                    results.push(`❌ ${file.name} (Network error)`);
+                    console.error(`Network error for ${file.name}:`, error);
                 }
-            } catch (error) {
-                console.error('Network or other error:', error);
-                showStatus('❌ An error occurred during upload. Check the console for details.', 'error');
-            } finally {
-                setUploadingState(false);
+            }
+
+            setUploadingState(false);
+
+            // Show final status
+            const resultHTML = results.map(r => `<div style="margin: 0.25rem 0;">${r}</div>`).join('');
+            if (failCount === 0) {
+                showStatus(`✅ Success! All ${successCount} file(s) uploaded. Go back to Discord and click "Process Uploaded Images".`, 'success');
+                fileListDiv.innerHTML = resultHTML;
+                uploadButton.disabled = true;
+            } else {
+                showStatus(`⚠️ Completed with errors: ${successCount} succeeded, ${failCount} failed.`, 'error');
+                fileListDiv.innerHTML = resultHTML;
             }
         }
         

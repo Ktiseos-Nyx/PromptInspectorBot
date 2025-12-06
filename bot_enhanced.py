@@ -2546,8 +2546,13 @@ def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool
 
 # This command is only registered if R2 is enabled
 if R2_ENABLED:
-    @bot.tree.command(name="upload_image", description="Upload a JPEG/WebP to get its metadata without stripping.")
-    async def upload_image_command(interaction: discord.Interaction):
+    @bot.tree.command(name="upload_image", description="Upload up to 10 JPEG/WebP images to extract metadata.")
+    async def upload_image_command(interaction: discord.Interaction, private: bool = False):
+        """Upload images to R2 for metadata extraction.
+
+        Args:
+            private: If True, response is only visible to you (ephemeral)
+        """
         if not R2_ENABLED or not r2_client:
             await interaction.response.send_message("❌ R2 upload feature is not configured on the bot.", ephemeral=True)
             return
@@ -2579,91 +2584,126 @@ if R2_ENABLED:
                 )
             return
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(ephemeral=private, thinking=True)
 
         try:
-            # Generate a unique key for the file
-            file_key = f"uploads/{uuid.uuid4()}.tmp"
+            # Generate unique keys and presigned URLs for up to 10 files
+            MAX_FILES = 10
+            file_keys = []
+            upload_urls = []
 
-            # Generate the pre-signed URL for a PUT request
-            presigned_url = r2_client.generate_presigned_url(
-                'put_object',
-                Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
-                ExpiresIn=R2_UPLOAD_EXPIRATION
-            )
+            for i in range(MAX_FILES):
+                file_key = f"uploads/{uuid.uuid4()}.tmp"
+                presigned_url = r2_client.generate_presigned_url(
+                    'put_object',
+                    Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
+                    ExpiresIn=R2_UPLOAD_EXPIRATION
+                )
+                file_keys.append(file_key)
+                upload_urls.append(presigned_url)
 
             # --- Define the View with the Button and its Callback ---
             view = discord.ui.View(timeout=R2_UPLOAD_EXPIRATION)
 
             async def process_button_callback(button_interaction: discord.Interaction):
-                # The callback has access to 'file_key' from the outer scope
-                await button_interaction.response.defer(thinking=True, ephemeral=True)
-                
+                # The callback has access to 'file_keys' from the outer scope
+                await button_interaction.response.defer(thinking=True, ephemeral=private)
+
                 try:
-                    # Download the file from R2
-                    response = r2_client.get_object(Bucket=R2_BUCKET_NAME, Key=file_key)
-                    image_data = response['Body'].read()
-                    logger.info(f"Downloaded {file_key} from R2 for processing by {button_interaction.user.name}")
+                    # Try to download and process each uploaded file
+                    processed_count = 0
+                    files_to_cleanup = []
 
-                    # Parse metadata
-                    metadata = await parse_image_metadata(image_data, file_key)
+                    for idx, file_key in enumerate(file_keys):
+                        try:
+                            # Check if file exists
+                            response = r2_client.get_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                            image_data = response['Body'].read()
+                            files_to_cleanup.append(file_key)
+                            logger.info(f"Downloaded {file_key} from R2 for processing by {button_interaction.user.name}")
 
-                    if metadata:
-                        embed = format_metadata_embed(metadata, button_interaction.user)
-                        view = FullMetadataView(metadata)
+                            # Parse metadata
+                            metadata = await parse_image_metadata(image_data, file_key)
 
-                        # Save the image to a Discord file so it displays in the embed
-                        # Convert .tmp to .png for better Discord compatibility
-                        image_file = discord.File(
-                            io.BytesIO(image_data),
-                            filename=f"{button_interaction.user.name}_upload.png"
+                            if metadata:
+                                embed = format_metadata_embed(metadata, button_interaction.user)
+                                view = FullMetadataView(metadata)
+
+                                # Save the image to a Discord file so it displays in the embed
+                                # Convert .tmp to .png for better Discord compatibility
+                                image_file = discord.File(
+                                    io.BytesIO(image_data),
+                                    filename=f"{button_interaction.user.name}_upload_{idx+1}.png"
+                                )
+
+                                # Attach the image to the embed
+                                embed.set_image(url=f"attachment://{button_interaction.user.name}_upload_{idx+1}.png")
+
+                                # Send to channel or ephemeral based on private setting
+                                if private:
+                                    await button_interaction.followup.send(
+                                        f"✨ Metadata from image {idx+1}:",
+                                        embed=embed,
+                                        file=image_file,
+                                        view=view,
+                                        ephemeral=True
+                                    )
+                                else:
+                                    await interaction.channel.send(
+                                        f"✨ Metadata processed for {button_interaction.user.mention} (image {idx+1}):",
+                                        embed=embed,
+                                        file=image_file,
+                                        view=view
+                                    )
+                                processed_count += 1
+
+                        except botocore.exceptions.ClientError as e:
+                            if e.response['Error']['Code'] == 'NoSuchKey':
+                                # File doesn't exist, skip it (user didn't upload this slot)
+                                continue
+                            else:
+                                logger.error(f"R2 error for {file_key}: {e}")
+
+                    # Clean up all uploaded files
+                    for file_key in files_to_cleanup:
+                        try:
+                            r2_client.delete_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                            logger.info(f"Cleaned up {file_key} from R2 bucket.")
+                        except Exception as e:
+                            logger.error(f"Failed to delete {file_key} from R2: {e}")
+
+                    # Send summary
+                    if processed_count > 0:
+                        await button_interaction.followup.send(
+                            f"✅ Successfully processed {processed_count} image(s)!",
+                            ephemeral=True
+                        )
+                    else:
+                        await button_interaction.followup.send(
+                            "❌ No images found or no metadata in uploaded images.",
+                            ephemeral=True
                         )
 
-                        # Attach the image to the embed
-                        embed.set_image(url=f"attachment://{button_interaction.user.name}_upload.png")
-
-                        await interaction.channel.send(
-                            f"✨ Metadata processed for {button_interaction.user.mention} (from direct upload):",
-                            embed=embed,
-                            file=image_file,
-                            view=view
-                        )
-                        await button_interaction.followup.send("✅ Metadata posted in the channel!", ephemeral=True)
-                    else:
-                        await button_interaction.followup.send("❌ No metadata found in the uploaded image.", ephemeral=True)
-
-                    # Clean up the file from R2
-                    try:
-                        r2_client.delete_object(Bucket=R2_BUCKET_NAME, Key=file_key)
-                        logger.info(f"Cleaned up {file_key} from R2 bucket.")
-                    except Exception as e:
-                        logger.error(f"Failed to delete {file_key} from R2: {e}")
-
-                except botocore.exceptions.ClientError as e:
-                    if e.response['Error']['Code'] == 'NoSuchKey':
-                        await button_interaction.followup.send("❌ It looks like the file wasn't uploaded correctly. Please try the `/upload_image` command again.", ephemeral=True)
-                    else:
-                        logger.error(f"R2 Boto3 error: {e}")
-                        await button_interaction.followup.send(f"❌ An error occurred with the R2 service: {e}", ephemeral=True)
                 except Exception as e:
-                    logger.error(f"Error processing R2 upload: {e}")
+                    logger.error(f"Error processing R2 uploads: {e}")
                     await button_interaction.followup.send(f"❌ An unexpected error occurred: {e}", ephemeral=True)
-                
+
                 # Disable the button after it's been used
                 button.disabled = True
                 await interaction.edit_original_response(view=view)
 
 
             process_button = discord.ui.Button(
-                label="Process Uploaded Image", 
-                style=discord.ButtonStyle.green, 
+                label="Process Uploaded Images",
+                style=discord.ButtonStyle.green,
             )
             process_button.callback = process_button_callback
             view.add_item(process_button)
 
             # --- Create and send the initial response ---
             uploader_base_url = UPLOADER_URL
-            params = {'upload_url': presigned_url}
+            # Pass multiple upload URLs as JSON array
+            params = {'upload_urls': json.dumps(upload_urls)}
             uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
 
             # Determine user tier for display
@@ -2674,11 +2714,11 @@ if R2_ENABLED:
             embed = discord.Embed(
                 title="📤 Upload Images for Metadata Extraction",
                 description=(
-                    "Upload JPEG or WebP files to extract metadata:\n\n"
+                    "Upload up to 10 JPEG or WebP files to extract metadata:\n\n"
                     "1. **Click the link below** to open the uploader\n"
-                    "2. **Select your images** (Max 10MB each)\n"
-                    "3. **Click Upload**\n"
-                    "4. Come back and click **Process** when done"
+                    "2. **Select up to 10 images** (Max 10MB each)\n"
+                    "3. **Click Upload** for each file\n"
+                    "4. Come back and click **Process Uploaded Images** when done"
                 ),
                 color=discord.Color.blue()
             )
