@@ -237,6 +237,100 @@ metadata_processing_semaphore = asyncio.Semaphore(1)
 
 
 # ============================================================================
+# GUILD SETTINGS SYSTEM - Per-Server Configuration
+# ============================================================================
+
+GUILD_SETTINGS_FILE = Path('guild_settings.json')
+
+def load_guild_settings() -> dict:
+    """Load guild settings from JSON file."""
+    if not GUILD_SETTINGS_FILE.exists():
+        return {"_defaults": {
+            "ask": False,
+            "metadata": True,
+            "describe": True,
+            "techsupport": False,
+            "coder": False,
+            "fun_commands": True,
+            "qotd": False,
+            "interact": True
+        }}
+
+    try:
+        with open(GUILD_SETTINGS_FILE, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading guild settings: {e}")
+        return {"_defaults": {}}
+
+def save_guild_settings(settings: dict):
+    """Save guild settings to JSON file."""
+    try:
+        with open(GUILD_SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving guild settings: {e}")
+
+def get_guild_setting(guild_id: int, setting: str, default: bool = None) -> bool:
+    """Get a specific setting for a guild, falling back to defaults.
+
+    Args:
+        guild_id: Discord guild ID
+        setting: Setting name (e.g. 'ask', 'metadata', 'describe')
+        default: Default value if not found (overrides _defaults)
+
+    Returns:
+        Boolean setting value
+    """
+    settings = load_guild_settings()
+    guild_id_str = str(guild_id)
+
+    # Check guild-specific setting
+    if guild_id_str in settings and setting in settings[guild_id_str]:
+        return settings[guild_id_str][setting]
+
+    # Fall back to defaults
+    if "_defaults" in settings and setting in settings["_defaults"]:
+        return settings["_defaults"][setting]
+
+    # Final fallback
+    return default if default is not None else False
+
+def set_guild_setting(guild_id: int, setting: str, value: bool):
+    """Set a specific setting for a guild.
+
+    Args:
+        guild_id: Discord guild ID
+        setting: Setting name
+        value: Boolean value to set
+    """
+    settings = load_guild_settings()
+    guild_id_str = str(guild_id)
+
+    # Initialize guild settings if not exists
+    if guild_id_str not in settings:
+        settings[guild_id_str] = {}
+
+    settings[guild_id_str][setting] = value
+    save_guild_settings(settings)
+    logger.info(f"Guild {guild_id}: Set {setting} = {value}")
+
+def get_all_guild_settings(guild_id: int) -> dict:
+    """Get all settings for a guild, with defaults filled in.
+
+    Returns:
+        Dictionary of all settings for the guild
+    """
+    settings = load_guild_settings()
+    guild_id_str = str(guild_id)
+    defaults = settings.get("_defaults", {})
+    guild_specific = settings.get(guild_id_str, {})
+
+    # Merge defaults with guild-specific (guild-specific overrides)
+    return {**defaults, **guild_specific}
+
+
+# ============================================================================
 # SECURITY SYSTEM - Anti-Scam Detection
 # ============================================================================
 # This system detects and prevents two main scammer types:
@@ -1333,9 +1427,13 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
 @bot.tree.command(name="ask", description="Ask a question to the bot.")
 async def ask_command(interaction: discord.Interaction, question: str):
     """Slash command to ask a question to the bot."""
-    # Check if ask feature is enabled for this channel
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "ask" not in CHANNEL_FEATURES[interaction.channel.id]:
-        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+    # Check if ask feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "ask", default=False):
+        await interaction.response.send_message(
+            "❌ The `/ask` command is not enabled in this server.\n"
+            "_Administrators can enable it with `/settings`_",
+            ephemeral=True
+        )
         return
 
     # STRICT rate limit for Gemini API (1 per 10 seconds)
@@ -1591,9 +1689,13 @@ async def describe_command(interaction: discord.Interaction, style: app_commands
         image: Image attachment to describe (optional if replying to a message with an image)
         private: If True, response is only visible to you (ephemeral)
     """
-    # Check if describe feature is enabled for this channel
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "describe" not in CHANNEL_FEATURES[interaction.channel.id]:
-        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+    # Check if describe feature is enabled for this guild
+    if interaction.guild and not get_guild_setting(interaction.guild.id, "describe", default=True):
+        await interaction.response.send_message(
+            "❌ The `/describe` command is not enabled in this server.\n"
+            "_Administrators can enable it with `/settings`_",
+            ephemeral=True
+        )
         return
 
     # STRICT rate limit for Gemini API (1 per 10 seconds)
@@ -1915,6 +2017,166 @@ async def wildcard_command(interaction: discord.Interaction):
             "❌ Error generating prompt. Please try again.",
             ephemeral=True
         )
+
+
+@bot.tree.command(name="settings", description="Configure bot features for this server (Admin only)")
+@app_commands.default_permissions(administrator=True)
+async def settings_command(interaction: discord.Interaction):
+    """Configure which bot features are enabled for this server.
+
+    Only server administrators can use this command.
+    """
+    if not interaction.guild:
+        await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        return
+
+    # Get current settings
+    current_settings = get_all_guild_settings(interaction.guild.id)
+
+    # Create embed showing current settings
+    embed = discord.Embed(
+        title=f"⚙️ Bot Settings for {interaction.guild.name}",
+        description="Configure which features are enabled in this server:",
+        color=discord.Color.blue()
+    )
+
+    # Feature descriptions
+    features = {
+        "metadata": ("🔎 Metadata Extraction", "Emoji reactions, /metadata command, context menu"),
+        "describe": ("🎨 /describe", "AI image descriptions (Danbooru tags or natural language)"),
+        "ask": ("💬 /ask", "Conversational AI with context memory"),
+        "techsupport": ("🛠️ /techsupport", "IT support with personality"),
+        "coder": ("💻 /coder", "Coding help and solutions"),
+        "fun_commands": ("🎲 Fun Commands", "/decide, /poll, /wildcard"),
+        "qotd": ("❓ QOTD", "Question of the Day system"),
+        "interact": ("🤗 /interact", "Hug/Poke/Taunt interactions")
+    }
+
+    # Add fields for each feature
+    for feature, (name, desc) in features.items():
+        enabled = current_settings.get(feature, False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed.add_field(
+            name=f"{name}",
+            value=f"{desc}\n**Status:** {status}",
+            inline=False
+        )
+
+    embed.set_footer(text="Use the buttons below to toggle features")
+
+    # Create toggle buttons
+    class SettingsView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=300)  # 5 minute timeout
+
+        async def create_toggle_button(self, feature: str, label: str, enabled: bool):
+            """Helper to create a toggle button."""
+            button = discord.ui.Button(
+                label=f"{'Disable' if enabled else 'Enable'} {label}",
+                style=discord.ButtonStyle.red if enabled else discord.ButtonStyle.green,
+                custom_id=f"toggle_{feature}"
+            )
+
+            async def button_callback(button_interaction: discord.Interaction):
+                # Check permissions
+                if not button_interaction.user.guild_permissions.administrator:
+                    await button_interaction.response.send_message(
+                        "❌ Only administrators can change settings.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Toggle the setting
+                current = get_guild_setting(interaction.guild.id, feature)
+                set_guild_setting(interaction.guild.id, feature, not current)
+
+                # Update the embed and buttons
+                await button_interaction.response.send_message(
+                    f"✅ {label} {'disabled' if current else 'enabled'}!",
+                    ephemeral=True
+                )
+
+                # Refresh the settings display
+                await interaction.edit_original_response(
+                    embed=create_updated_embed(),
+                    view=create_updated_view()
+                )
+
+            button.callback = button_callback
+            return button
+
+        def create_updated_embed():
+            """Create updated embed with current settings."""
+            current = get_all_guild_settings(interaction.guild.id)
+            new_embed = discord.Embed(
+                title=f"⚙️ Bot Settings for {interaction.guild.name}",
+                description="Configure which features are enabled in this server:",
+                color=discord.Color.blue()
+            )
+
+            for feature, (name, desc) in features.items():
+                enabled = current.get(feature, False)
+                status = "✅ Enabled" if enabled else "❌ Disabled"
+                new_embed.add_field(
+                    name=f"{name}",
+                    value=f"{desc}\n**Status:** {status}",
+                    inline=False
+                )
+
+            new_embed.set_footer(text="Use the buttons below to toggle features")
+            return new_embed
+
+        def create_updated_view():
+            """Create updated view with current button states."""
+            current = get_all_guild_settings(interaction.guild.id)
+            new_view = SettingsView()
+
+            # Add buttons in rows (max 5 per row)
+            row = 0
+            col = 0
+
+            for feature, (name, _) in features.items():
+                enabled = current.get(feature, False)
+                button = discord.ui.Button(
+                    label=f"{'Disable' if enabled else 'Enable'} {name.split()[0]}",  # Shortened label
+                    style=discord.ButtonStyle.red if enabled else discord.ButtonStyle.green,
+                    custom_id=f"toggle_{feature}",
+                    row=row
+                )
+
+                async def make_callback(f=feature, n=name):
+                    async def callback(bi: discord.Interaction):
+                        if not bi.user.guild_permissions.administrator:
+                            await bi.response.send_message("❌ Only administrators can change settings.", ephemeral=True)
+                            return
+
+                        current_val = get_guild_setting(interaction.guild.id, f)
+                        set_guild_setting(interaction.guild.id, f, not current_val)
+
+                        await bi.response.send_message(
+                            f"✅ {n.split()[0]} {'disabled' if current_val else 'enabled'}!",
+                            ephemeral=True
+                        )
+
+                        await interaction.edit_original_response(
+                            embed=create_updated_embed(),
+                            view=create_updated_view()
+                        )
+
+                    return callback
+
+                button.callback = make_callback()
+                new_view.add_item(button)
+
+                col += 1
+                if col >= 4:  # 4 buttons per row
+                    col = 0
+                    row += 1
+
+            return new_view
+
+    view = SettingsView().create_updated_view()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 # =============================================================================

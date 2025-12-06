@@ -1,0 +1,13 @@
+{
+  "_comment": "Per-server feature configuration. Guild ID as key, features as values.",
+  "_defaults": {
+    "ask": false,
+    "metadata": true,
+    "describe": true,
+    "techsupport": false,
+    "coder": false,
+    "fun_commands": true,
+    "qotd": false,
+    "interact": true
+  }
+}
