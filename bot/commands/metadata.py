@@ -15,7 +15,9 @@ from ..config import (
     rate_limiter,
     CHANNEL_FEATURES,
     SCAN_LIMIT_BYTES,
+    DM_ALLOWED_USER_IDS,
 )
+from ..guild_settings import get_guild_setting
 from ..metadata_helpers import parse_image_metadata
 from ..ui_components import FullMetadataView
 from utils.discord_formatter import format_metadata_embed
@@ -41,10 +43,20 @@ def register_metadata_commands(bot: "commands.Bot"):
             image: Image attachment
 
         """
-        # Check if metadata feature is enabled for this channel
-        if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
-            await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
-            return
+        # Check authorization (DM vs Guild)
+        if not interaction.guild:
+            # DM: Check if user is whitelisted for DMs
+            if interaction.user.id not in DM_ALLOWED_USER_IDS:
+                await interaction.response.send_message("❌ This command cannot be used in DMs. Please use it in a server.", ephemeral=True)
+                return
+        else:
+            # Guild: Check channel-specific features and guild settings
+            if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+                await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+                return
+            if not get_guild_setting(interaction.guild.id, "metadata", default=True):
+                await interaction.response.send_message("❌ Metadata extraction is not enabled in this server.", ephemeral=True)
+                return
 
         await interaction.response.defer()
 
