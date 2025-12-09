@@ -387,7 +387,6 @@ def get_random_qotd() -> tuple[str, int]:
         return None, -1
 
     # Pick random question
-    import random
     question = random.choice(unused)
     question_index = all_questions.index(question)
 
@@ -395,7 +394,6 @@ def get_random_qotd() -> tuple[str, int]:
 
 def mark_qotd_used(question: str):
     """Mark a question as used and update last_posted timestamp."""
-    import time
     data = load_qotd_data()
 
     if question not in data.get("used_questions", []):
@@ -500,8 +498,6 @@ MAX_TRACKED_MESSAGES_PER_USER = 50
 CROSS_POST_WINDOW_SECONDS = 300  # 5 minutes
 
 # Crypto scam keyword patterns (case-insensitive, with point values)
-import re
-
 CRYPTO_SCAM_PATTERNS = {
     r"\bWALL?LET\b": 50,
     r"\b\d+\s*SOL\b": 50,
@@ -517,7 +513,6 @@ CRYPTO_SCAM_PATTERNS = {
 
 def get_message_fingerprint(message: discord.Message) -> str:
     """Create a hash of message content + attachments for duplicate detection."""
-    import hashlib
     fingerprint = message.content.strip()
     for att in message.attachments:
         fingerprint += f"|{att.filename}|{att.size}"
@@ -766,7 +761,6 @@ async def instant_ban(message: discord.Message, reason: str, details: list = Non
 
 async def delete_all_user_messages(user: discord.User, guild: discord.Guild, minutes: int = 5):
     """Delete all messages from a user in the guild from the last N minutes."""
-    import datetime
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes)
 
     for channel in guild.text_channels:
@@ -1119,7 +1113,7 @@ async def on_message(message: discord.Message):
     # 1. Server owner (you literally own the server)
     # 2. Manually trusted users (TRUSTED_USER_IDS in config)
     # NOTE: We don't bypass based on account age anymore - real scammers can be years old!
-    is_server_owner = message.author.id == message.guild.owner_id
+    is_server_owner = message.guild and message.author.id == message.guild.owner_id
     is_trusted_user = message.author.id in TRUSTED_USER_IDS
 
     # Full bypass for server owner and manually trusted users
@@ -1418,6 +1412,10 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     """Handle emoji reactions for metadata display (numbered or batch)."""
+    # Reactions only work in guilds, not DMs
+    if not payload.guild_id:
+        return
+
     # For threads/forums, check parent channel ID
     channel = bot.get_channel(payload.channel_id)
     channel_id_to_check = channel.parent_id if hasattr(channel, "parent_id") and channel.parent_id else payload.channel_id
@@ -1533,10 +1531,20 @@ async def metadata_command(interaction: discord.Interaction, image: discord.Atta
         image: Image attachment
 
     """
-    # Check if metadata feature is enabled for this channel
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
-        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
-        return
+    # Check if metadata feature is enabled
+    if not interaction.guild:
+        # DM: Check if user is whitelisted for DMs
+        if interaction.user.id not in DM_ALLOWED_USER_IDS:
+            await interaction.response.send_message("❌ This command cannot be used in DMs. Please use it in a server.", ephemeral=True)
+            return
+    else:
+        # Guild: Check channel-specific features and guild settings
+        if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+            await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+            return
+        if not get_guild_setting(interaction.guild.id, "metadata", default=True):
+            await interaction.response.send_message("❌ Metadata extraction is not enabled in this server.", ephemeral=True)
+            return
 
     await interaction.response.defer()
 
@@ -2078,7 +2086,6 @@ async def decide_command(interaction: discord.Interaction, choices: str):
         )
         return
 
-    import random
     chosen = random.choice(options)
 
     embed = discord.Embed(
@@ -2157,8 +2164,6 @@ async def wildcard_command(interaction: discord.Interaction):
     if interaction.guild and not get_guild_setting(interaction.guild.id, "fun_commands", default=True):
         await interaction.response.send_message("❌ Fun commands are not enabled on this server.", ephemeral=True)
         return
-
-    import random
 
     try:
         # Load wildcards from JSON
@@ -2515,8 +2520,6 @@ async def interact_command(interaction: discord.Interaction, action: app_command
             return
 
         # Determine the message
-        import random
-
         if user.id == interaction.user.id:
             # Self-interaction
             message = action_data.get("self", f"{interaction.user.mention} {action.value}s themselves!")
@@ -2709,7 +2712,6 @@ async def describe_image_with_claude(image_data: bytes, mime_type: str, prompt: 
     image_data, mime_type = optimize_image_for_api(image_data, mime_type)
 
     # Encode image to base64 for Claude
-    import base64
     image_base64 = base64.b64encode(image_data).decode("utf-8")
 
     # Claude vision API call
@@ -2877,10 +2879,20 @@ async def view_prompt_context(interaction: discord.Interaction, message: discord
         interaction: Discord interaction
         message: Target message
     """
-    # Check if metadata feature is enabled for this channel
-    if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
-        await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
-        return
+    # Check if metadata feature is enabled
+    if not interaction.guild:
+        # DM: Check if user is whitelisted for DMs
+        if interaction.user.id not in DM_ALLOWED_USER_IDS:
+            await interaction.response.send_message("❌ This command cannot be used in DMs. Please use it in a server.", ephemeral=True)
+            return
+    else:
+        # Guild: Check channel-specific features and guild settings
+        if CHANNEL_FEATURES and interaction.channel.id in CHANNEL_FEATURES and "metadata" not in CHANNEL_FEATURES[interaction.channel.id]:
+            await interaction.response.send_message("❌ This command is not enabled in this channel.", ephemeral=True)
+            return
+        if not get_guild_setting(interaction.guild.id, "metadata", default=True):
+            await interaction.response.send_message("❌ Metadata extraction is not enabled in this server.", ephemeral=True)
+            return
 
     await interaction.response.defer(ephemeral=True)
 
@@ -3188,7 +3200,6 @@ def check_upload_rate_limit(user_id: int, user_roles: list = None) -> tuple[bool
     Returns:
         (can_upload, remaining, limit_type) where limit_type is 'burst', 'daily_free', or 'daily_supporter'
     """
-    import time
     current_time = time.time()
 
     # Initialize user timestamps if needed
@@ -3242,6 +3253,18 @@ if R2_ENABLED:
         if not R2_ENABLED or not r2_client:
             await interaction.response.send_message("❌ R2 upload feature is not configured on the bot.", ephemeral=True)
             return
+
+        # Check if command is used in an authorized guild or by whitelisted DM user
+        if not interaction.guild:
+            # DM: Check if user is whitelisted for DMs
+            if interaction.user.id not in DM_ALLOWED_USER_IDS:
+                await interaction.response.send_message("❌ This command cannot be used in DMs. Please use it in an authorized server.", ephemeral=True)
+                return
+        elif ALLOWED_GUILD_IDS:
+            # Guild: Check if guild is whitelisted (if whitelist is enabled)
+            if interaction.guild.id not in ALLOWED_GUILD_IDS:
+                await interaction.response.send_message("❌ This bot is not authorized for use in this server.", ephemeral=True)
+                return
 
         # Check rate limit (with role-based limits)
         user_role_ids = [role.id for role in interaction.user.roles] if hasattr(interaction.user, "roles") else []
