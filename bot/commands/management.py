@@ -115,7 +115,7 @@ def register_management_commands(bot: "commands.Bot"):
                     row=row,
                 )
 
-                async def make_callback(f=feature, n=name):
+                def make_callback(f=feature, n=name):
                     async def callback(bi: discord.Interaction):
                         if not bi.user.guild_permissions.administrator:
                             await bi.response.send_message("❌ Only administrators can change settings.", ephemeral=True)
