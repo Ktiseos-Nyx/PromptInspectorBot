@@ -275,6 +275,12 @@ def register_upload_command(bot: "commands.Bot"):
             process_button.callback = process_button_callback
             view.add_item(process_button)
 
+            # --- Create and send the initial response ---
+            uploader_base_url = UPLOADER_URL
+            # Pass multiple upload URLs as JSON array
+            params = {"upload_urls": json.dumps(upload_urls)}
+            uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
+
             # Add upload link as a button (presigned URLs are too long for embed fields)
             upload_button = discord.ui.Button(
                 label="📤 Open Uploader",
@@ -282,12 +288,6 @@ def register_upload_command(bot: "commands.Bot"):
                 style=discord.ButtonStyle.link,
             )
             view.add_item(upload_button)
-
-            # --- Create and send the initial response ---
-            uploader_base_url = UPLOADER_URL
-            # Pass multiple upload URLs as JSON array
-            params = {"upload_urls": json.dumps(upload_urls)}
-            uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
 
             # Determine user tier for display
             is_supporter = bool(set(user_role_ids) & SUPPORTER_ROLE_IDS) if SUPPORTER_ROLE_IDS else False
