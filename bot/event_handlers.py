@@ -463,6 +463,10 @@ def register_events(bot: "commands.Bot"):
         if payload.member and payload.member.bot:
             return
 
+        # Additional safety: Check if reaction is from bot itself
+        if payload.user_id == bot.user.id:
+            return
+
         # Rate limit check
         if rate_limiter.is_rate_limited(payload.user_id):
             logger.warning("Rate limit exceeded for user %s", payload.user_id)
