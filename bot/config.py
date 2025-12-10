@@ -179,6 +179,16 @@ R2_ENABLED = all([
 ])
 R2_UPLOAD_EXPIRATION = config.get("R2_UPLOAD_EXPIRATION", 3600)  # Pre-signed URL expiry in seconds
 
+# Ko-fi supporter role IDs for increased upload limits
+# Can be comma-separated list in env: SUPPORTER_ROLE_IDS=123,456,789
+SUPPORTER_ROLE_IDS = parse_id_list("SUPPORTER_ROLE_IDS", "SUPPORTER_ROLE_IDS")
+
+# Backward compatibility: also check old KOFI_SUPPORTER_ROLE_ID config
+if not SUPPORTER_ROLE_IDS and "KOFI_SUPPORTER_ROLE_ID" in config:
+    kofi_role = config.get("KOFI_SUPPORTER_ROLE_ID", 0)
+    if kofi_role:
+        SUPPORTER_ROLE_IDS = {kofi_role}
+
 # ============================================================================
 # SECURITY CONFIGURATION
 # ============================================================================
