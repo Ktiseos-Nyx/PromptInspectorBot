@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 # Global state for rate limiting
 user_upload_timestamps = {}  # {user_id: [timestamp1, timestamp2, ...]}
 
+# Global cache for upload sessions (key -> upload URLs)
+UPLOAD_CACHE = {}  # {uuid_key: {"urls": [url1, url2, ...], "user_id": int, "timestamp": float}}
+
 # Rate limit constants
 MAX_UPLOADS_PER_MINUTE = 10  # Burst protection (DDoS prevention)
 MAX_UPLOADS_PER_DAY_FREE = 100  # Free tier (generous!)
@@ -276,9 +279,20 @@ def register_upload_command(bot: "commands.Bot"):
             view.add_item(process_button)
 
             # --- Create and send the initial response ---
+            # Generate a short UUID key for this upload session
+            upload_key = str(uuid.uuid4())
+
+            # Store upload URLs in cache with the key
+            global UPLOAD_CACHE
+            UPLOAD_CACHE[upload_key] = {
+                "urls": upload_urls,
+                "user_id": interaction.user.id,
+                "timestamp": time.time(),
+            }
+
+            # Create short URL with only the key (< 512 chars for Discord button limit)
             uploader_base_url = UPLOADER_URL
-            # Pass multiple upload URLs as JSON array
-            params = {"upload_urls": json.dumps(upload_urls)}
+            params = {"key": upload_key}
             uploader_link = f"{uploader_base_url}?{urllib.parse.urlencode(params)}"
 
             # Add upload link as a button (presigned URLs are too long for embed fields)
