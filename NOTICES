@@ -1,0 +1,101 @@
+THIRD-PARTY NOTICES AND ATTRIBUTIONS
+=====================================
+
+PromptInspectorBot uses the following third-party libraries and services:
+
+## Python Libraries
+
+### Discord.py
+- Copyright (c) 2015-2024 Rapptz and contributors
+- License: MIT License
+- https://github.com/Rapptz/discord.py
+
+### Anthropic SDK (Claude AI)
+- Copyright (c) 2023 Anthropic, PBC
+- License: MIT License
+- https://github.com/anthropics/anthropic-sdk-python
+
+### Google Generative AI SDK (Gemini)
+- Copyright (c) 2023 Google LLC
+- License: Apache License 2.0
+- https://github.com/google/generative-ai-python
+
+### Pillow (PIL Fork)
+- Copyright (c) 1997-2011 by Secret Labs AB
+- Copyright (c) 1995-2011 by Fredrik Lundh
+- License: HPND License
+- https://github.com/python-pillow/Pillow
+
+### piexif
+- Copyright (c) 2014 hMatoba
+- License: MIT License
+- https://github.com/hMatoba/Piexif
+
+### aiohttp
+- Copyright (c) 2013-2024 aiohttp maintainers
+- License: Apache License 2.0
+- https://github.com/aio-libs/aiohttp
+
+### boto3 (AWS SDK for Python)
+- Copyright Amazon.com, Inc. or its affiliates
+- License: Apache License 2.0
+- https://github.com/boto/boto3
+
+### python-dotenv
+- Copyright (c) 2014, Saurabh Kumar
+- License: BSD-3-Clause
+- https://github.com/theskumar/python-dotenv
+
+### toml
+- Copyright (c) 2013-2019 William Pearson
+- License: MIT License
+- https://github.com/uiri/toml
+
+## Services & APIs
+
+### Cloudflare R2
+- Storage service for image uploads
+- https://www.cloudflare.com/products/r2/
+
+### PluralKit API
+- Used for system member avatar fetching in /interact command
+- https://pluralkit.me/api/
+
+### Tenor GIF API
+- GIF URLs used in /goodnight and /interact commands
+- https://tenor.com/
+
+## Metadata Format Standards
+
+### PNG Specification
+- Used for parsing PNG tEXt/iTXt chunks
+- https://www.w3.org/TR/PNG/
+
+### EXIF Specification
+- Used for JPEG metadata parsing
+- https://www.exif.org/
+
+### ComfyUI, Automatic1111, Forge Metadata Formats
+- Community-defined formats for AI image generation metadata
+- No formal specification, reverse-engineered for compatibility
+
+## Emoji & Icons
+
+Emoji used throughout the bot are from Unicode Standard:
+- Unicode® is a registered trademark of Unicode, Inc.
+- https://unicode.org/emoji/
+
+## Development Tools
+
+### Ruff
+- Copyright (c) 2022 Charlie Marsh
+- License: MIT License
+- https://github.com/astral-sh/ruff
+
+---
+
+For full license texts, see the respective project repositories.
+For issues or questions about third-party components, contact the respective maintainers.
+
+PromptInspectorBot itself is licensed under the MIT License (see LICENSE file).
+Developed by Ktiseos Nyx (Duskfall Crew) - https://beacons.ai/duskfallcrew

@@ -49,13 +49,41 @@ Inspect AI image generation metadata from Discord uploads. Enhanced fork with po
 
 ## Screenshots & Examples
 
-| Feature | Description |
-|---|---|
-| ![The /ask command in action](images/ask-command.jpg) | The `/ask` command allows users to have a conversation with an AI. |
-| ![The /coding command in action](images/coding-command.jpg) | The `/coding` command for generating and assisting with code. |
-| ![Forge UI Metadata example](images/forge-ui-metadata.jpg) | An example of metadata extracted from an image generated with Forge UI. |
-| ![A humorous take on security functions](images/security-function-lulz.jpg) | A meme about security functions that always return true, highlighting the bot's more robust security. |
-| ![The selection UI for the bot](images/selection-ui.jpg) | The UI for selecting which image's metadata to inspect. |
+### Bot in Action
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="images/Screenshot 2025-12-10 at 13.04.39.jpg" alt="Metadata extraction and display">
+      <b>Metadata Extraction</b><br>
+      View comprehensive metadata from AI-generated images with clean embeds
+    </td>
+    <td width="50%">
+      <img src="images/Screenshot 2025-12-10 at 13.04.54.jpg" alt="Settings management">
+      <b>Per-Server Settings</b><br>
+      Configure features per-server with an intuitive settings UI
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="images/Screenshot 2025-12-10 at 13.05.21.jpg" alt="Fun commands">
+      <b>Fun Commands</b><br>
+      Interactive commands like /goodnight with random GIFs and messages
+    </td>
+    <td width="50%">
+      <img src="images/Screenshot 2025-12-10 at 13.05.34.jpg" alt="AI commands">
+      <b>AI-Powered Commands</b><br>
+      /describe, /ask, /coder, /techsupport with Gemini + Claude integration
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="images/Screenshot 2025-12-10 at 13.05.43.jpg" alt="Context menus and reactions" width="50%">
+      <br><b>Multiple Interaction Styles</b><br>
+      Use emoji reactions, slash commands, or right-click context menus
+    </td>
+  </tr>
+</table>
 
 ## Quick Start
 
@@ -74,8 +102,8 @@ pip install -r requirements.txt
 cp config.example.toml config.toml
 # Edit config.toml with your settings
 
-# Run
-python3 bot_enhanced.py
+# Run (new modular version)
+python3 main.py
 ```
 
 </details>
