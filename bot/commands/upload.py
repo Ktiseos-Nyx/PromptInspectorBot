@@ -275,6 +275,14 @@ def register_upload_command(bot: "commands.Bot"):
             process_button.callback = process_button_callback
             view.add_item(process_button)
 
+            # Add upload link as a button (presigned URLs are too long for embed fields)
+            upload_button = discord.ui.Button(
+                label="📤 Open Uploader",
+                url=uploader_link,
+                style=discord.ButtonStyle.link,
+            )
+            view.add_item(upload_button)
+
             # --- Create and send the initial response ---
             uploader_base_url = UPLOADER_URL
             # Pass multiple upload URLs as JSON array
@@ -297,7 +305,7 @@ def register_upload_command(bot: "commands.Bot"):
                 ),
                 color=discord.Color.blue(),
             )
-            embed.add_field(name="= Upload Link", value=f"[Click here to upload]({uploader_link})", inline=False)
+            # Upload link moved to button below (presigned URLs too long for embed fields)
             embed.add_field(
                 name="9 Info",
                 value=(
