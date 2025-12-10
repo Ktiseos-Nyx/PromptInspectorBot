@@ -29,4 +29,4 @@ RUN pip install --no-cache /app/wheels/*
 COPY . .
 
 # Set the command to run the bot
-CMD ["python3", "bot_enhanced.py"]
+CMD ["python3", "main.py"]
