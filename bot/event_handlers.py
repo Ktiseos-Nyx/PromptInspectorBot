@@ -78,22 +78,27 @@ def register_events(bot: "commands.Bot"):
 
         # 1. IGNORE BOTS (Unless it's a webhook which might be PluralKit)
         if message.author.bot and not message.webhook_id:
+            # Extra check: make sure bot isn't processing its own messages
+            if message.author.id == bot.user.id:
+                return
             return
 
-        # 2. GUILD vs DM Check - Handle guild messages and DMs separately
-        if message.guild:
-            # This is a GUILD message - skip to guild processing
-            # DO NOT send DM response to guild channels
-            pass
-        else:
+        # 2. RELIABLE DM CHECK - Use explicit channel type check
+        # Check explicitly if the channel is a DMChannel
+        if isinstance(message.channel, discord.DMChannel):
             # This is a DM - handle DM logic
             if message.author.id not in DM_ALLOWED_USER_IDS:
                 try:
                     await message.channel.send(DM_RESPONSE_MESSAGE)
                 except discord.Forbidden:
+                    # User has DMs blocked
                     pass
                 return
             # Allow whitelisted DMs to proceed to metadata processing
+
+        # 3. GUILD MESSAGE PROCESSING
+        # If code reaches here, it's a message in a guild channel
+        # (TextChannel, Thread, Announcement, etc.)
 
         # 4. CHANNEL/FEATURE CHECKS
         # Check if this channel or category is monitored
