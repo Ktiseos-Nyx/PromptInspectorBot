@@ -80,21 +80,20 @@ def register_events(bot: "commands.Bot"):
         if message.author.bot and not message.webhook_id:
             return
 
-        # 2. DM Handling - Explicitly check for DM channels
-        if isinstance(message.channel, discord.DMChannel):
+        # 2. GUILD vs DM Check - Handle guild messages and DMs separately
+        if message.guild:
+            # This is a GUILD message - skip to guild processing
+            # DO NOT send DM response to guild channels
+            pass
+        else:
+            # This is a DM - handle DM logic
             if message.author.id not in DM_ALLOWED_USER_IDS:
                 try:
                     await message.channel.send(DM_RESPONSE_MESSAGE)
                 except discord.Forbidden:
                     pass
                 return
-            # Allow whitelisted DMs to proceed
-            # DMs can continue to metadata processing if whitelisted
-
-        # 3. GUILD CHANNEL CHECKS - Only process guild messages beyond this point
-        if not message.guild:
-            # Not a DM and no guild? Shouldn't happen, but skip to be safe
-            return
+            # Allow whitelisted DMs to proceed to metadata processing
 
         # 4. CHANNEL/FEATURE CHECKS
         # Check if this channel or category is monitored
