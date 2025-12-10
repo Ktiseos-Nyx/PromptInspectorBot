@@ -80,8 +80,8 @@ def register_events(bot: "commands.Bot"):
         if message.author.bot and not message.webhook_id:
             return
 
-        # 2. DM Handling
-        if not message.guild:
+        # 2. DM Handling - Explicitly check for DM channels
+        if isinstance(message.channel, discord.DMChannel):
             if message.author.id not in DM_ALLOWED_USER_IDS:
                 try:
                     await message.channel.send(DM_RESPONSE_MESSAGE)
@@ -89,23 +89,25 @@ def register_events(bot: "commands.Bot"):
                     pass
                 return
             # Allow whitelisted DMs to proceed
+            # DMs can continue to metadata processing if whitelisted
 
-        # 3. CHANNEL/FEATURE CHECKS (Move this UP!)
-        # Determine which feature flags to check.
-        # If it's a DM, we generally allow basic features if whitelisted.
-        if message.guild:
-            # Check if this channel or category is monitored
-            # For threads/forums, check parent
-            channel_id = message.channel.parent_id if hasattr(message.channel, "parent_id") and message.channel.parent_id else message.channel.id
+        # 3. GUILD CHANNEL CHECKS - Only process guild messages beyond this point
+        if not message.guild:
+            # Not a DM and no guild? Shouldn't happen, but skip to be safe
+            return
 
-            # If MONITORED_CHANNEL_IDS is set, and this channel isn't in it, STOP HERE.
-            if MONITORED_CHANNEL_IDS and channel_id not in MONITORED_CHANNEL_IDS:
-                return
+        # 4. CHANNEL/FEATURE CHECKS
+        # Check if this channel or category is monitored
+        # For threads/forums, check parent
+        channel_id = message.channel.parent_id if hasattr(message.channel, "parent_id") and message.channel.parent_id else message.channel.id
 
-            # Check if metadata/security is enabled for this server
-            # You can add a specific "security" flag in settings later if you want
-            if not get_guild_setting(message.guild.id, "metadata", default=True):
-                return
+        # If MONITORED_CHANNEL_IDS is set, and this channel isn't in it, STOP HERE.
+        if MONITORED_CHANNEL_IDS and channel_id not in MONITORED_CHANNEL_IDS:
+            return
+
+        # Check if metadata/security is enabled for this server
+        if not get_guild_setting(message.guild.id, "metadata", default=True):
+            return
 
         # ============================================================================
         # SECURITY CHECKS - Run BEFORE processing to catch scammers early
