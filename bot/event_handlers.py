@@ -78,9 +78,16 @@ def register_events(bot: "commands.Bot"):
 
         # 1. IGNORE BOTS (Unless it's a webhook which might be PluralKit)
         if message.author.bot and not message.webhook_id:
+            logger.debug(f"🤖 Bot message ignored: {message.author} (webhook={message.webhook_id})")
             # Extra check: make sure bot isn't processing its own messages
             if message.author.id == bot.user.id:
+                logger.debug(f"🛑 Bot's own message ignored")
                 return
+            return
+
+        # Additional safety: Check if author is the bot itself
+        if message.author.id == bot.user.id:
+            logger.warning(f"⚠️ BOT MESSAGE BYPASSED THE BOT CHECK! Author: {message.author}, Bot: {bot.user.id}")
             return
 
         # 2. RELIABLE DM CHECK - Use explicit channel type check
