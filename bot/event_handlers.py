@@ -87,7 +87,13 @@ def register_events(bot: "commands.Bot"):
         # Check explicitly if the channel is a DMChannel
         if isinstance(message.channel, discord.DMChannel):
             # This is a DM - handle DM logic
+            logger.warning(
+                f"🔍 DM DETECTED | User: {message.author} | "
+                f"Channel Type: {type(message.channel).__name__} | "
+                f"Content: '{message.content[:100] if message.content else 'NO CONTENT'}'"
+            )
             if message.author.id not in DM_ALLOWED_USER_IDS:
+                logger.warning(f"⚠️ SENDING DM_RESPONSE_MESSAGE to {message.author}")
                 try:
                     await message.channel.send(DM_RESPONSE_MESSAGE)
                 except discord.Forbidden:

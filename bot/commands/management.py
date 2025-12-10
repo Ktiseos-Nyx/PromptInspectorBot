@@ -32,6 +32,7 @@ def register_management_commands(bot: "commands.Bot"):
 
         Only server administrators can use this command.
         """
+        logger.info(f"🔧 /settings called by {interaction.user} in guild {interaction.guild.name if interaction.guild else 'DM'}")
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
             return
