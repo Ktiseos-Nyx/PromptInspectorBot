@@ -22,24 +22,40 @@ Inspect AI image generation metadata from Discord uploads. Enhanced fork with po
 ## Features
 
 ### Core Features
-- 🔍 **Comprehensive Metadata Parsing** - Supports 200+ ComfyUI nodes (FLUX, PixArt, Griptape, etc.)
+
+- 🔍 **Comprehensive Metadata Parsing** - Supports Forge/A111, 200+ ComfyUI nodes (FLUX, PixArt, Griptape, etc.) as well as SwarmUI etc.
+- ✨ **JPG Upload Support** Where Discord fails, there is a R2 bucketing support for Jpeg/WebP Upload/Processing support.
 - 1️⃣2️⃣3️⃣ **Multiple Interaction Styles** - Numbered emoji reactions, slash commands, or context menus
 - 📦 **Batch Processing** - Handle 6+ images with a single reaction
 - 👥 **PluralKit Support** - Automatically resolves proxied messages
 - 💾 **Lightweight** - Runs metadata parser in separate process (~100MB RAM)
 
 ### AI Features
+
 - ✨ **`/describe`** - Generate AI descriptions (Danbooru tags or natural language)
 - 💬 **`/ask`** - Conversational AI with context memory
+- 💬 **`/coder`** - Coding Help with AI context.
+- 💬 **`/techsupport`** - Will ask you if you turned it off and on again.
 - 🔄 **Multi-Provider** - Gemini + Claude with automatic fallback
 
 ### Security Features
+
 - 🛡️ **Anti-Scam Detection** - Behavior-based crypto/wallet spam detection
 - 🚫 **Cross-Posting Protection** - Instant ban for spam across multiple channels
 - 🔒 **Malware Prevention** - Magic bytes check on attachments and embeds
 - 📊 **Smart Scoring** - Context-aware detection (allows emotional spam from trusted users)
 
 ---
+
+## Screenshots & Examples
+
+| Feature | Description |
+|---|---|
+| ![The /ask command in action](images/ask-command.jpg) | The `/ask` command allows users to have a conversation with an AI. |
+| ![The /coding command in action](images/coding-command.jpg) | The `/coding` command for generating and assisting with code. |
+| ![Forge UI Metadata example](images/forge-ui-metadata.jpg) | An example of metadata extracted from an image generated with Forge UI. |
+| ![A humorous take on security functions](images/security-function-lulz.jpg) | A meme about security functions that always return true, highlighting the bot's more robust security. |
+| ![The selection UI for the bot](images/selection-ui.jpg) | The UI for selecting which image's metadata to inspect. |
 
 ## Quick Start
 
@@ -119,23 +135,26 @@ ANTHROPIC_API_KEY=your_claude_key
 ### What It Detects
 
 **Type 1: Wallet Scammers**
+
 - Currency symbols in username (£, €, ¥, ₿)
 - Hoisting characters (=, !, #)
 - ALL CAPS crypto spam
 - Keywords: WALLET, SOL, PAY, DEAD TOKENS
 
 **Type 2: Screenshot Spammers**
+
 - 4+ images cross-posted to multiple channels
 - Gibberish text or empty messages
 - Auto-generated usernames (word.word1234_5678)
 
 ### How It Works
 
-| Score | Action |
-|-------|--------|
-| 100+ | **Instant Ban** - User banned, all messages deleted |
+
+| Score | Action                                                |
+| ------- | ------------------------------------------------------- |
+| 100+  | **Instant Ban** - User banned, all messages deleted   |
 | 75-99 | **Delete + Alert** - Message removed, admins notified |
-| 50-74 | **Watchlist** - Logged for monitoring |
+| 50-74 | **Watchlist** - Logged for monitoring                 |
 
 ### Detection Methods
 
@@ -155,6 +174,7 @@ ADMIN_CHANNEL_ID = 1234567890          # Ban notification channel
 ```
 
 **Automatic Bypasses:**
+
 - ✅ Server owners
 - ✅ Trusted users (configured above)
 
@@ -189,11 +209,12 @@ GEMINI_FALLBACK_MODELS=gemini-flash-latest,gemini-2.5-pro,gemini-2.5-flash
 
 **Model Recommendations:**
 
-| Model | Speed | Quality | Free Tier | Best For |
-|-------|-------|---------|-----------|----------|
-| `gemini-flash-latest` | ⚡⚡⚡ | Good | 15/min | **Recommended** |
-| `gemini-2.5-pro` | ⚡ | Excellent | 2/min | Complex tasks |
-| `gemini-2.5-flash` | ⚡⚡⚡ | Good | 15/min | ⚠️ Overly strict |
+
+| Model                 | Speed  | Quality   | Free Tier | Best For           |
+| ----------------------- | -------- | ----------- | ----------- | -------------------- |
+| `gemini-flash-latest` | ⚡⚡⚡ | Good      | 15/min    | **Recommended**    |
+| `gemini-2.5-pro`      | ⚡     | Excellent | 2/min     | Complex tasks      |
+| `gemini-2.5-flash`    | ⚡⚡⚡ | Good      | 15/min    | ⚠️ Overly strict |
 
 ### Claude Configuration
 
@@ -203,10 +224,11 @@ CLAUDE_PRIMARY_MODEL=claude-3-5-haiku-20241022
 
 **Model Recommendations:**
 
-| Model | Speed | Cost (per 1M tokens) | Best For |
-|-------|-------|---------------------|----------|
-| `claude-3-5-haiku-20241022` | ⚡⚡⚡ | $0.25 / $1.25 | **Recommended** |
-| `claude-3-5-sonnet-20241022` | ⚡⚡ | $3 / $15 | Higher quality |
+
+| Model                        | Speed  | Cost (per 1M tokens) | Best For        |
+| ------------------------------ | -------- | ---------------------- | ----------------- |
+| `claude-3-5-haiku-20241022`  | ⚡⚡⚡ | $0.25 / $1.25        | **Recommended** |
+| `claude-3-5-sonnet-20241022` | ⚡⚡   | $3 / $15             | Higher quality  |
 
 **Budget tip:** $5 starter credit = ~1,500 image descriptions with Haiku!
 
@@ -233,10 +255,9 @@ Upload JPEG/WebP files to extract metadata without Discord stripping it.
 
 ### Features
 
-- 🔒 **Rate Limited** - 5 uploads per user per day
+- 🔒 **Rate Limited** - Generous rate limiting to prevent CPU overload.
 - 🗑️ **Auto-Delete** - 30-day retention
-- 📏 **Size Limited** - 10MB max
-- ⚠️ **Security Warnings** - "Not 100% secure" notices
+- 📏 **Size Limited** - 10MB max to keep to Non-Nitro.
 
 ### Setup
 
@@ -321,6 +342,7 @@ ADMIN_CHANNEL_ID = 0
 ## Permissions
 
 ### Core Permissions (Required)
+
 - ✅ Read Messages/View Channel
 - ✅ Send Messages
 - ✅ Read Message History
@@ -328,6 +350,7 @@ ADMIN_CHANNEL_ID = 0
 - ✅ Attach Files
 
 ### Security Permissions (Optional)
+
 - 🛡️ **Ban Members** - Auto-ban scammers
 - 🛡️ **Manage Messages** - Delete spam
 
@@ -339,21 +362,25 @@ ADMIN_CHANNEL_ID = 0
 <summary><b>Common Issues</b></summary>
 
 **Bot not responding:**
+
 - Check bot is online
 - Verify permissions (see above)
 - Check logs for errors
 
 **Describe feature not working:**
+
 - Ensure `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` is set
 - Check API quotas
 - Review logs for API errors
 
 **Images not processed:**
+
 - Check file format (PNG, JPEG, WebP)
 - Verify size is under `SCAN_LIMIT_BYTES`
 - Ensure channel is in `MONITORED_CHANNEL_IDS` (if configured)
 
 **Security system banning legit users:**
+
 - Add user ID to `TRUSTED_USER_IDS`
 - Server owners are automatically trusted
 - Users with roles can post emotional spam ("AAAA")
@@ -372,15 +399,16 @@ If you're forking this bot for your own use, please update the following:
 ### Required Changes
 
 1. **Ko-fi Links** - Replace with your own:   - `uploader.html`: Lines 112, 114
+
    - `bot_enhanced.py`: Search for `ko-fi.com/OTNAngel` and `ko-fi.com/duskfallcrew`
    - Update to your Ko-fi/donation links
-
 2. **Discord Invite** - Replace with your server:
+
    - `uploader.html`: Line 117 - `discord.gg/HhBSvM9gBY`
    - `bot_enhanced.py`: Search for `discord.gg/HhBSvM9gBY`
    - Update to your support server invite
-
 3. **Ko-fi Role ID** - Set your role ID:
+
    - `config.toml`: Add `KOFI_SUPPORTER_ROLE_ID = your_role_id`
    - Get from Discord → Server Settings → Roles → Right-click role → Copy ID
 
@@ -393,6 +421,7 @@ If you're forking this bot for your own use, please update the following:
 ### Rate Limits (Configurable)
 
 You can adjust these in `bot_enhanced.py`:
+
 ```python
 MAX_UPLOADS_PER_MINUTE = 10  # Burst protection
 MAX_UPLOADS_PER_DAY_FREE = 100  # Free users
@@ -409,17 +438,11 @@ MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters
 - 📜 **[Terms of Service](TERMS_OF_SERVICE.md)** - The rules
 
 **Quick Summary:**
+
 - ✅ Extract metadata, send to you
 - ✅ Delete images immediately after processing
 - ❌ Don't store images or metadata
 - ❌ Don't track or sell data
-
----
-
-## Examples
-
-![Example 1](images/2023-03-09_00-14.png)
-![Example 2](images/2023-03-09_00-14_1.png)
 
 ---
 
