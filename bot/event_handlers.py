@@ -289,10 +289,10 @@ def register_events(bot: "commands.Bot"):
                 return
         # If it IS a webhook, process immediately (it's the proxied version)
 
-        # Only process messages with PNG/JPEG/WebP attachments
+        # Only process messages with PNG attachments (Discord strips metadata from JPEG/WebP)
         attachments = [
             a for a in message.attachments
-            if a.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and a.size < SCAN_LIMIT_BYTES
+            if a.filename.lower().endswith(".png") and a.size < SCAN_LIMIT_BYTES
         ]
 
         if not attachments:
@@ -314,18 +314,6 @@ def register_events(bot: "commands.Bot"):
         logger.info("Scanning message from %s with %s images", message.author, len(attachments))
 
         try:
-            # IMPORTANT: Discord strips JPEG/WebP metadata during processing!
-            # If we scan too fast, we'll see metadata that gets deleted moments later.
-            # Wait for Discord to finish processing before scanning.
-            has_jpeg_or_webp = any(
-                a.filename.lower().endswith((".jpg", ".jpeg", ".webp"))
-                for a in attachments
-            )
-            if has_jpeg_or_webp:
-                # Give Discord time to strip metadata from JPEGs/WebP
-                await asyncio.sleep(2.0)
-                logger.debug("Waited for Discord to process JPEG/WebP files")
-
             # Scan ALL images for metadata
             # Use semaphore to process one image at a time (prevents CPU spikes & RAM overflow)
             images_with_metadata = []
@@ -346,30 +334,16 @@ def register_events(bot: "commands.Bot"):
                         logger.info("L No metadata found in %s", attachment.filename)
 
             if not images_with_metadata:
-                # No metadata in any image
-                # Check if images are JPG/WebP (Discord strips metadata from these)
+                # No metadata in any PNG image
                 first_image = attachments[0]
-                is_jpg_or_webp = first_image.filename.lower().endswith((".jpg", ".jpeg", ".webp"))
 
-                # Only react with � for PNG files with no metadata
-                # JPEG/WebP never have metadata anyway, so don't spam reactions
-                if REACT_ON_NO_METADATA and not is_jpg_or_webp:
+                # React with emoji for PNG files with no metadata
+                if REACT_ON_NO_METADATA:
                     await message.add_reaction(EMOJI_NOT_FOUND)
                     logger.info("L No metadata in PNG image")
 
-                # Customize message based on file type
-                if is_jpg_or_webp:
-                    no_metadata_msg = (
-                        "=� **JPEG/WebP detected!**\n"
-                        "Discord strips metadata from these formats when uploaded.\n\n"
-                        "=� **Options:**\n"
-                        "• Use `/describe` to generate AI tags\n"
-                        "• Re-upload as PNG to preserve metadata\n"
-                        "• Add details manually below"
-                    )
-                else:
-                    no_metadata_msg = "9 No metadata found in these images. Would you like to add details manually?"
-
+                # Show generic no metadata message
+                no_metadata_msg = "9 No metadata found in these images. Would you like to add details manually?"
                 # Offer manual entry for first image
                 view = ManualEntryPromptView(message, first_image)
                 try:
@@ -396,26 +370,8 @@ def register_events(bot: "commands.Bot"):
                 for key in oldest_keys:
                     del message_metadata_cache[key]
 
-            # Check if all images are JPEG/WebP (likely false positives due to Discord race condition)
-            all_stripped_formats = all(
-                img["attachment"].filename.lower().endswith((".jpg", ".jpeg", ".webp"))
-                for img in images_with_metadata
-            )
 
-            if all_stripped_formats:
-                # Don't add emoji reactions for JPEG/WebP - Discord strips metadata anyway
-                # Any "metadata" found is likely a race condition before Discord finishes processing
-                logger.info("� Skipping emoji reactions for JPEG/WebP (Discord strips metadata)")
-                # Show helpful message instead
-                await message.reply(
-                    "=� **JPEG/WebP detected!**\n"
-                    "These formats lose metadata on Discord.\n\n"
-                    "=� Use `/describe` to generate AI tags for these images!",
-                    mention_author=False,
-                )
-                return
-
-            # Decide reaction strategy based on count (PNG files only at this point)
+            # Decide reaction strategy based on count
             num_images = len(images_with_metadata)
 
             if num_images <= 5:
