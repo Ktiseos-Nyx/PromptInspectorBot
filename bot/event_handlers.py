@@ -376,13 +376,13 @@ def register_events(bot: "commands.Bot"):
 
             if num_images <= 5:
                 # 1-5 images: Add numbered reactions
-                number_emojis = ["1�", "2�", "3�", "4�", "5�"]
+                number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
                 for i in range(num_images):
                     await message.add_reaction(number_emojis[i])
                 logger.info(" Added %d numbered reactions for individual inspection", num_images)
             else:
                 # 6+ images: Add single reaction for batch download
-                await message.add_reaction("=�")
+                await message.add_reaction("📦")
                 logger.info(" Added batch reaction for %d images", num_images)
 
         except discord.HTTPException as e:
@@ -430,10 +430,10 @@ def register_events(bot: "commands.Bot"):
 
         # Check which emoji was clicked
         emoji_name = payload.emoji.name
-        number_emojis = ["1�", "2�", "3�", "4�", "5�"]
+        number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
 
         # Only respond to our special emojis
-        if emoji_name not in number_emojis and emoji_name != "=�":
+        if emoji_name not in number_emojis and emoji_name != "📦":
             return
 
         try:
