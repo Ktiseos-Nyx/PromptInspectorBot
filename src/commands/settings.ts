@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import { getAllGuildSettings, setGuildSetting } from '../lib/guild-settings';
 
 const FEATURES = [
@@ -32,10 +32,10 @@ export const settingsCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
+    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', flags: MessageFlags.Ephemeral });
 
     const isAdmin = (interaction.member?.permissions as any)?.has(PermissionFlagsBits.ManageGuild);
-    if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+    if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
     const sub = interaction.options.getSubcommand();
 
@@ -48,7 +48,7 @@ export const settingsCommand = {
           .setColor(Colors.Blurple)
           .setTitle(`⚙️ Settings — ${interaction.guild.name}`)
           .setDescription(lines.join('\n'))],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -61,7 +61,7 @@ export const settingsCommand = {
 
       await interaction.reply({
         content: `✅ **${label}** ${enabled ? 'enabled' : 'disabled'}.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

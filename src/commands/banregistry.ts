@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import { isUserBanned, recordBan, removeBan, listBans, listPatterns, removePattern, getStats, recordPattern, addWordPattern, removeWordPattern, listWordPatterns, WordPatternAction } from '../lib/ban-registry';
 
 export const banregistryCommand = {
@@ -61,10 +61,10 @@ export const banregistryCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
+    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', flags: MessageFlags.Ephemeral });
 
     const isAdmin = (interaction.member?.permissions as any)?.has(PermissionFlagsBits.ManageGuild);
-    if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+    if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
     const sub = interaction.options.getSubcommand();
 
@@ -91,7 +91,7 @@ export const banregistryCommand = {
             { name: `🔍 Patterns (${stats.patterns} total) — last 5`, value: patternLines.join('\n'), inline: false },
           )
           .setFooter({ text: 'Patterns auto-learn from bans. Use addpattern to seed manually.' })],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -100,21 +100,21 @@ export const banregistryCommand = {
       const userId = interaction.options.getString('userid', true);
       const reason = interaction.options.getString('reason', true);
       recordBan(userId, interaction.guildId!, reason, interaction.user.id);
-      await interaction.reply({ content: `✅ User \`${userId}\` added to registry.`, ephemeral: true });
+      await interaction.reply({ content: `✅ User \`${userId}\` added to registry.`, flags: MessageFlags.Ephemeral });
     }
 
     // ── removeuser ────────────────────────────────────────────────────────────
     else if (sub === 'removeuser') {
       const userId = interaction.options.getString('userid', true);
       const removed = removeBan(userId);
-      await interaction.reply({ content: removed ? `✅ Removed \`${userId}\` from registry.` : '❌ User not found.', ephemeral: true });
+      await interaction.reply({ content: removed ? `✅ Removed \`${userId}\` from registry.` : '❌ User not found.', flags: MessageFlags.Ephemeral });
     }
 
     // ── check ─────────────────────────────────────────────────────────────────
     else if (sub === 'check') {
       const userId = interaction.options.getString('userid', true);
       const entry = isUserBanned(userId);
-      if (!entry) return interaction.reply({ content: `✅ \`${userId}\` is not in the registry.`, ephemeral: true });
+      if (!entry) return interaction.reply({ content: `✅ \`${userId}\` is not in the registry.`, flags: MessageFlags.Ephemeral });
 
       await interaction.reply({
         embeds: [new EmbedBuilder()
@@ -126,7 +126,7 @@ export const banregistryCommand = {
             { name: 'Banned',   value: new Date(entry.bannedAt).toUTCString(),      inline: true },
             { name: 'By',       value: entry.bannedBy === 'auto' ? 'Auto-ban' : `<@${entry.bannedBy}>`, inline: true },
           )],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -135,14 +135,14 @@ export const banregistryCommand = {
       const text = interaction.options.getString('text', true);
       const reason = interaction.options.getString('reason', true);
       recordPattern(text, reason);
-      await interaction.reply({ content: '✅ Pattern fingerprinted and added to registry.', ephemeral: true });
+      await interaction.reply({ content: '✅ Pattern fingerprinted and added to registry.', flags: MessageFlags.Ephemeral });
     }
 
     // ── removepattern ─────────────────────────────────────────────────────────
     else if (sub === 'removepattern') {
       const fp = interaction.options.getString('fingerprint', true);
       const removed = removePattern(fp);
-      await interaction.reply({ content: removed ? `✅ Pattern \`${fp}\` removed.` : '❌ Pattern not found.', ephemeral: true });
+      await interaction.reply({ content: removed ? `✅ Pattern \`${fp}\` removed.` : '❌ Pattern not found.', flags: MessageFlags.Ephemeral });
     }
 
     // ── addword ───────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ export const banregistryCommand = {
       const actionLabel = { warn: '⚠️ Warn', delete: '🗑️ Delete', ban: '🔨 Ban' }[action];
       await interaction.reply({
         content: `✅ Word pattern added.\n\`${wp.id}\` — \`${pattern}\` → ${actionLabel} — *${reason}*`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -163,13 +163,13 @@ export const banregistryCommand = {
     else if (sub === 'removeword') {
       const id = interaction.options.getString('id', true);
       const removed = removeWordPattern(id);
-      await interaction.reply({ content: removed ? `✅ Word pattern \`${id}\` removed.` : '❌ Pattern not found.', ephemeral: true });
+      await interaction.reply({ content: removed ? `✅ Word pattern \`${id}\` removed.` : '❌ Pattern not found.', flags: MessageFlags.Ephemeral });
     }
 
     // ── words ─────────────────────────────────────────────────────────────────
     else if (sub === 'words') {
       const words = listWordPatterns();
-      if (!words.length) return interaction.reply({ content: 'No word patterns configured.', ephemeral: true });
+      if (!words.length) return interaction.reply({ content: 'No word patterns configured.', flags: MessageFlags.Ephemeral });
 
       const ACTION_ICON = { warn: '⚠️', delete: '🗑️', ban: '🔨' };
       const lines = words.map(wp =>
@@ -182,7 +182,7 @@ export const banregistryCommand = {
           .setTitle(`🔤 Word Patterns (${words.length})`)
           .setDescription(lines.join('\n'))
           .setFooter({ text: 'Prefix "regex:" to use a regular expression' })],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

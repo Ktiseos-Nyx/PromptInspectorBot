@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { formatMetadataEmbed } from '../lib/format';
 import { rateLimiter, SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS } from '../lib/config';
@@ -15,22 +15,22 @@ export const metadataCommand = {
   async execute(interaction: ChatInputCommandInteraction) {
     // DM check
     if (!interaction.guild && !DM_ALLOWED_USER_IDS.has(interaction.user.id)) {
-      return interaction.reply({ content: '❌ This command can only be used in servers.', ephemeral: true });
+      return interaction.reply({ content: '❌ This command can only be used in servers.', flags: MessageFlags.Ephemeral });
     }
 
     if (interaction.guild && !getGuildSetting(interaction.guildId!, 'metadata', true)) {
-      return interaction.reply({ content: '❌ Metadata extraction is not enabled in this server.', ephemeral: true });
+      return interaction.reply({ content: '❌ Metadata extraction is not enabled in this server.', flags: MessageFlags.Ephemeral });
     }
 
     if (rateLimiter.isRateLimited(interaction.user.id)) {
-      return interaction.reply({ content: '⏰ Too many requests — please wait a moment.', ephemeral: true });
+      return interaction.reply({ content: '⏰ Too many requests — please wait a moment.', flags: MessageFlags.Ephemeral });
     }
 
     const image = interaction.options.getAttachment('image', true);
 
     if (image.size > SCAN_LIMIT_BYTES) {
       const mb = (image.size / 1024 / 1024).toFixed(1);
-      return interaction.reply({ content: `❌ File too large (${mb}MB, max ${SCAN_LIMIT_BYTES / 1024 / 1024}MB).`, ephemeral: true });
+      return interaction.reply({ content: `❌ File too large (${mb}MB, max ${SCAN_LIMIT_BYTES / 1024 / 1024}MB).`, flags: MessageFlags.Ephemeral });
     }
 
     await interaction.deferReply();

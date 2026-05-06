@@ -1,4 +1,4 @@
-import { ApplicationCommandType, ContextMenuCommandBuilder, MessageContextMenuCommandInteraction } from 'discord.js';
+import { ApplicationCommandType, ContextMenuCommandBuilder, MessageContextMenuCommandInteraction,  MessageFlags} from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { formatMetadataEmbed } from '../lib/format';
 import { SCAN_LIMIT_BYTES } from '../lib/config';
@@ -16,10 +16,10 @@ export const viewPromptCommand = {
     );
 
     if (!pngAttachments.length) {
-      return interaction.reply({ content: '❌ No PNG images found in that message.', ephemeral: true });
+      return interaction.reply({ content: '❌ No PNG images found in that message.', flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const embeds = [];
@@ -35,12 +35,12 @@ export const viewPromptCommand = {
       }
 
       if (!embeds.length) {
-        return interaction.followUp({ content: '❌ No metadata found in the images.', ephemeral: true });
+        return interaction.followUp({ content: '❌ No metadata found in the images.', flags: MessageFlags.Ephemeral });
       }
 
-      await interaction.followUp({ embeds, ephemeral: true });
+      await interaction.followUp({ embeds, flags: MessageFlags.Ephemeral });
     } catch (e) {
-      await interaction.followUp({ content: `❌ Error parsing metadata: ${e}`, ephemeral: true });
+      await interaction.followUp({ content: `❌ Error parsing metadata: ${e}`, flags: MessageFlags.Ephemeral });
     }
   },
 };

@@ -47,13 +47,13 @@ export const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? '';
 export const GEMINI_PRIMARY_MODEL = cfg('GEMINI_PRIMARY_MODEL', 'GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash');
 export const GEMINI_FALLBACK_MODELS: string[] = process.env.GEMINI_FALLBACK_MODELS
   ? process.env.GEMINI_FALLBACK_MODELS.split(',').map(s => s.trim())
-  : (fileConfig['GEMINI_FALLBACK_MODELS'] as string[] | undefined) ?? ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-pro'];
+  : (fileConfig['GEMINI_FALLBACK_MODELS'] as string[] | undefined) ?? ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'];
 export const GEMINI_MAX_RETRIES = parseInt(cfg('GEMINI_MAX_RETRIES', 'GEMINI_MAX_RETRIES', '3'));
 export const GEMINI_RETRY_DELAY = parseFloat(cfg('GEMINI_RETRY_DELAY', 'GEMINI_RETRY_DELAY', '1.0'));
 
 // ── Claude ────────────────────────────────────────────────────────────────────
 export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
-export const CLAUDE_PRIMARY_MODEL = cfg('CLAUDE_PRIMARY_MODEL', 'CLAUDE_PRIMARY_MODEL', 'claude-3-5-haiku-20241022');
+export const CLAUDE_PRIMARY_MODEL = cfg('CLAUDE_PRIMARY_MODEL', 'CLAUDE_PRIMARY_MODEL', 'claude-haiku-4-5-20251001');
 
 // ── LLM provider selection ────────────────────────────────────────────────────
 export const NSFW_PROVIDER_OVERRIDE = process.env.NSFW_PROVIDER_OVERRIDE ?? fileConfig['NSFW_PROVIDER_OVERRIDE'] ?? '';
