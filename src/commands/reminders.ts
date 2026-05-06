@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder,  MessageFlags} from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder, ChannelType, MessageFlags } from 'discord.js';
 import { addReminder, deleteReminder, getReminders, parseInterval, formatInterval } from '../lib/scheduler';
 
 export const remindCommand = {
@@ -11,7 +11,7 @@ export const remindCommand = {
         .addStringOption(o => o.setName('message').setDescription('What to remind').setRequired(true))
         .addStringOption(o => o.setName('in').setDescription('Fire once after this time, e.g. 30m, 2h'))
         .addStringOption(o => o.setName('every').setDescription('Repeat on this interval, e.g. 1h, 24h, 7d'))
-        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in (defaults to current)'))
+        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in (defaults to current)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
     )
     .addSubcommand(s =>
       s.setName('list')
@@ -33,7 +33,11 @@ export const remindCommand = {
       const message = interaction.options.getString('message', true);
       const inStr   = interaction.options.getString('in');
       const everyStr = interaction.options.getString('every');
-      const channel = interaction.options.getChannel('channel') ?? interaction.channel!;
+      const rawChannel = interaction.options.getChannel('channel');
+      if (rawChannel && rawChannel.type !== ChannelType.GuildText && rawChannel.type !== ChannelType.GuildAnnouncement) {
+        return interaction.reply({ content: '❌ Please select a text channel.', flags: MessageFlags.Ephemeral });
+      }
+      const channel = rawChannel ?? interaction.channel!;
 
       if (!inStr && !everyStr) {
         return interaction.reply({ content: '❌ Provide either `in` (one-time) or `every` (repeating).', flags: MessageFlags.Ephemeral });

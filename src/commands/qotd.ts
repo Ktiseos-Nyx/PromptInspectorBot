@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder, TextChannel,  MessageFlags} from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder, TextChannel, ChannelType, MessageFlags } from 'discord.js';
 import { getQotdConfig, setQotdConfig, addQotdQuestion, parseInterval, formatInterval } from '../lib/scheduler';
 
 export const qotdCommand = {
@@ -9,7 +9,7 @@ export const qotdCommand = {
     .addSubcommand(s =>
       s.setName('setup')
         .setDescription('Set up QOTD for this server (admin only)')
-        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in').setRequired(true))
+        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
         .addStringOption(o => o.setName('interval').setDescription('How often to post, e.g. 24h, 12h, 6h').setRequired(true))
     )
     .addSubcommand(s =>
@@ -51,6 +51,13 @@ export const qotdCommand = {
 
       if (!intervalMs) return interaction.reply({ content: '❌ Invalid interval. Use formats like `24h`, `6h`, `30m`, `2d`.', flags: MessageFlags.Ephemeral });
       if (intervalMs < 60_000) return interaction.reply({ content: '❌ Minimum interval is 1 minute.', flags: MessageFlags.Ephemeral });
+      if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) {
+        return interaction.reply({ content: '❌ Please select a text channel.', flags: MessageFlags.Ephemeral });
+      }
+      const botPerms = interaction.guild.members.me?.permissionsIn(channel.id);
+      if (!botPerms?.has(PermissionFlagsBits.SendMessages)) {
+        return interaction.reply({ content: "❌ I don't have permission to send messages in that channel.", flags: MessageFlags.Ephemeral });
+      }
 
       setQotdConfig(interaction.guildId!, { channelId: channel.id, intervalMs, enabled: true, lastPosted: 0 });
 

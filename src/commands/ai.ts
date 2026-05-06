@@ -83,8 +83,13 @@ export const askCommand = {
     if (question.length > 2000) return interaction.reply({ content: '❌ Question too long (max 2000 chars).', flags: MessageFlags.Ephemeral });
 
     await interaction.deferReply();
-    const response = await askGemini(interaction.user.id, interaction.user.displayName, question);
-    await sendLong(interaction, response, 'response.txt');
+    try {
+      const response = await askGemini(interaction.user.id, interaction.user.displayName, question);
+      await sendLong(interaction, response, 'response.txt');
+    } catch (e) {
+      console.error('askCommand error:', e);
+      await interaction.followUp('❌ Something went wrong. Please try again.');
+    }
   },
 };
 
@@ -155,7 +160,7 @@ export const describeCommand = {
           { name: 'Natural Language', value: 'natural' },
         )
     )
-    .addAttachmentOption(o => o.setName('image').setDescription('Image to describe'))
+    .addAttachmentOption(o => o.setName('image').setDescription('Image to describe').setRequired(true))
     .addBooleanOption(o => o.setName('private').setDescription('Only you can see the response')),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -237,6 +242,9 @@ export const promptSupportCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
+    if (interaction.guild && !getGuildSetting(interaction.guildId!, 'promptsupport', true)) {
+      return interaction.reply({ content: '❌ `/promptsupport` is not enabled in this server.', flags: MessageFlags.Ephemeral });
+    }
     if (geminiRateLimiter.isRateLimited(interaction.user.id)) {
       return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', flags: MessageFlags.Ephemeral });
     }

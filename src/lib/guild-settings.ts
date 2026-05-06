@@ -8,6 +8,7 @@ const DEFAULTS: Record<string, boolean> = {
   describe: true,
   techsupport: false,
   coder: false,
+  promptsupport: true,
   fun_commands: true,
   qotd: false,
   interact: true,

@@ -43,10 +43,12 @@ client.on(Events.ShardReconnecting, (shardId) => {
 
 process.on('unhandledRejection', (reason) => {
   console.error('[process] unhandled rejection:', reason);
+  process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
   console.error('[process] uncaught exception:', err);
+  process.exit(1);
 });
 
 client.login(token).catch((err) => {
