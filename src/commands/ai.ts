@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, AttachmentBuilder, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, AttachmentBuilder, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import { geminiRateLimiter, LLM_PROVIDER_PRIORITY, AVAILABLE_PROVIDERS, NSFW_PROVIDER_OVERRIDE, SCAN_LIMIT_BYTES } from '../lib/config';
 import { getGuildSetting } from '../lib/guild-settings';
 import { askGemini, describeWithGemini, describeWithClaude, generateGemini } from '../lib/ai-providers';
@@ -73,14 +73,14 @@ export const askCommand = {
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.guild && !getGuildSetting(interaction.guildId!, 'ask')) {
-      return interaction.reply({ content: '❌ `/ask` is not enabled in this server.', ephemeral: true });
+      return interaction.reply({ content: '❌ `/ask` is not enabled in this server.', flags: MessageFlags.Ephemeral });
     }
     if (geminiRateLimiter.isRateLimited(interaction.user.id)) {
-      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', ephemeral: true });
+      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', flags: MessageFlags.Ephemeral });
     }
 
     const question = interaction.options.getString('question', true);
-    if (question.length > 2000) return interaction.reply({ content: '❌ Question too long (max 2000 chars).', ephemeral: true });
+    if (question.length > 2000) return interaction.reply({ content: '❌ Question too long (max 2000 chars).', flags: MessageFlags.Ephemeral });
 
     await interaction.deferReply();
     const response = await askGemini(interaction.user.id, interaction.user.displayName, question);
@@ -96,14 +96,14 @@ export const techsupportCommand = {
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.guild && !getGuildSetting(interaction.guildId!, 'techsupport')) {
-      return interaction.reply({ content: '❌ `/techsupport` is not enabled in this server.', ephemeral: true });
+      return interaction.reply({ content: '❌ `/techsupport` is not enabled in this server.', flags: MessageFlags.Ephemeral });
     }
     if (geminiRateLimiter.isRateLimited(interaction.user.id)) {
-      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', ephemeral: true });
+      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', flags: MessageFlags.Ephemeral });
     }
 
     const issue = interaction.options.getString('issue', true);
-    if (issue.length > 2000) return interaction.reply({ content: '❌ Issue description too long.', ephemeral: true });
+    if (issue.length > 2000) return interaction.reply({ content: '❌ Issue description too long.', flags: MessageFlags.Ephemeral });
 
     await interaction.deferReply();
     try {
@@ -123,14 +123,14 @@ export const coderCommand = {
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.guild && !getGuildSetting(interaction.guildId!, 'coder')) {
-      return interaction.reply({ content: '❌ `/coder` is not enabled in this server.', ephemeral: true });
+      return interaction.reply({ content: '❌ `/coder` is not enabled in this server.', flags: MessageFlags.Ephemeral });
     }
     if (geminiRateLimiter.isRateLimited(interaction.user.id)) {
-      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', ephemeral: true });
+      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', flags: MessageFlags.Ephemeral });
     }
 
     const question = interaction.options.getString('question', true);
-    if (question.length > 2000) return interaction.reply({ content: '❌ Question too long.', ephemeral: true });
+    if (question.length > 2000) return interaction.reply({ content: '❌ Question too long.', flags: MessageFlags.Ephemeral });
 
     await interaction.deferReply();
     try {
@@ -160,21 +160,21 @@ export const describeCommand = {
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.guild && !getGuildSetting(interaction.guildId!, 'describe', true)) {
-      return interaction.reply({ content: '❌ `/describe` is not enabled in this server.', ephemeral: true });
+      return interaction.reply({ content: '❌ `/describe` is not enabled in this server.', flags: MessageFlags.Ephemeral });
     }
     if (geminiRateLimiter.isRateLimited(interaction.user.id)) {
-      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', ephemeral: true });
+      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', flags: MessageFlags.Ephemeral });
     }
 
     const style = interaction.options.getString('style', true);
     const image = interaction.options.getAttachment('image');
     const ephemeral = interaction.options.getBoolean('private') ?? false;
 
-    if (!image) return interaction.reply({ content: '❌ Please attach an image.', ephemeral: true });
-    if (!image.contentType?.startsWith('image/')) return interaction.reply({ content: '❌ Please provide a valid image file.', ephemeral: true });
-    if (image.size > SCAN_LIMIT_BYTES) return interaction.reply({ content: `❌ File too large (max ${SCAN_LIMIT_BYTES / 1024 / 1024}MB).`, ephemeral: true });
+    if (!image) return interaction.reply({ content: '❌ Please attach an image.', flags: MessageFlags.Ephemeral });
+    if (!image.contentType?.startsWith('image/')) return interaction.reply({ content: '❌ Please provide a valid image file.', flags: MessageFlags.Ephemeral });
+    if (image.size > SCAN_LIMIT_BYTES) return interaction.reply({ content: `❌ File too large (max ${SCAN_LIMIT_BYTES / 1024 / 1024}MB).`, flags: MessageFlags.Ephemeral });
 
-    await interaction.deferReply({ ephemeral });
+    await interaction.deferReply({ flags: ephemeral ? MessageFlags.Ephemeral : undefined });
 
     const prompt = style === 'danbooru'
       ? "Describe this image using Danbooru-style tags in comma-separated format. Output ONLY the tags separated by commas, no explanations. Focus on character, clothing, pose, background, and art style. Exclude quality meta-tags."
@@ -238,14 +238,14 @@ export const promptSupportCommand = {
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (geminiRateLimiter.isRateLimited(interaction.user.id)) {
-      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', ephemeral: true });
+      return interaction.reply({ content: '⏰ Slow down! 1 request per 10 seconds.', flags: MessageFlags.Ephemeral });
     }
 
     const style = interaction.options.getString('style', true);
     const description = interaction.options.getString('description', true);
 
     if (description.length > 2000) {
-      return interaction.reply({ content: '❌ Description too long (max 2000 characters).', ephemeral: true });
+      return interaction.reply({ content: '❌ Description too long (max 2000 characters).', flags: MessageFlags.Ephemeral });
     }
 
     await interaction.deferReply();

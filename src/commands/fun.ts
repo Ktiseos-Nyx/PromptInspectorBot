@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import fs from 'fs';
 import { getGuildSetting } from '../lib/guild-settings';
 
@@ -43,11 +43,11 @@ export const decideCommand = {
     .addStringOption(o => o.setName('choices').setDescription('Comma-separated options').setRequired(true)),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', ephemeral: true });
+    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', flags: MessageFlags.Ephemeral });
 
     const options = interaction.options.getString('choices', true).split(',').map(s => s.trim()).filter(Boolean);
-    if (options.length < 2) return interaction.reply({ content: '❌ Provide at least 2 choices separated by commas.', ephemeral: true });
-    if (options.length > 20) return interaction.reply({ content: '❌ Maximum 20 choices.', ephemeral: true });
+    if (options.length < 2) return interaction.reply({ content: '❌ Provide at least 2 choices separated by commas.', flags: MessageFlags.Ephemeral });
+    if (options.length > 20) return interaction.reply({ content: '❌ Maximum 20 choices.', flags: MessageFlags.Ephemeral });
 
     const chosen = pick(options);
     const embed = new EmbedBuilder()
@@ -76,7 +76,7 @@ export const pollCommand = {
     .addStringOption(o => o.setName('option_b').setDescription('Option B (for A/B polls)')),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', ephemeral: true });
+    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', flags: MessageFlags.Ephemeral });
 
     const question = interaction.options.getString('question', true);
     const type = interaction.options.getString('type', true);
@@ -84,7 +84,7 @@ export const pollCommand = {
     const optB = interaction.options.getString('option_b');
 
     if (type === 'ab' && (!optA || !optB)) {
-      return interaction.reply({ content: '❌ A/B polls require both option_a and option_b.', ephemeral: true });
+      return interaction.reply({ content: '❌ A/B polls require both option_a and option_b.', flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder().setColor(Colors.Blue).setTitle('📊 Poll').setDescription(`**${question}**`);
@@ -108,10 +108,10 @@ export const wildcardCommand = {
     .setDescription('Generate a random art prompt'),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', ephemeral: true });
+    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', flags: MessageFlags.Ephemeral });
 
     if (!fs.existsSync('wildcards.json')) {
-      return interaction.reply({ content: '❌ Wildcards file not found.', ephemeral: true });
+      return interaction.reply({ content: '❌ Wildcards file not found.', flags: MessageFlags.Ephemeral });
     }
 
     const w = JSON.parse(fs.readFileSync('wildcards.json', 'utf8'));
@@ -164,11 +164,11 @@ export const interactCommand = {
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (interaction.guild && !getGuildSetting(interaction.guildId!, 'interact', true)) {
-      return interaction.reply({ content: '❌ /interact is not enabled on this server.', ephemeral: true });
+      return interaction.reply({ content: '❌ /interact is not enabled on this server.', flags: MessageFlags.Ephemeral });
     }
 
     if (!fs.existsSync('interactions.json')) {
-      return interaction.reply({ content: '❌ Interactions file not found.', ephemeral: true });
+      return interaction.reply({ content: '❌ Interactions file not found.', flags: MessageFlags.Ephemeral });
     }
 
     const action = interaction.options.getString('action', true);
@@ -176,7 +176,7 @@ export const interactCommand = {
     const sysMember = interaction.options.getString('system_member');
     const data = JSON.parse(fs.readFileSync('interactions.json', 'utf8'));
     const actionData = data[action];
-    if (!actionData) return interaction.reply({ content: '❌ Unknown action.', ephemeral: true });
+    if (!actionData) return interaction.reply({ content: '❌ Unknown action.', flags: MessageFlags.Ephemeral });
 
     let message: string;
     if (target.id === interaction.user.id) {
@@ -217,7 +217,7 @@ export const goodnightCommand = {
     .addStringOption(o => o.setName('message').setDescription('Custom goodnight message')),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', ephemeral: true });
+    if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', flags: MessageFlags.Ephemeral });
 
     const target = interaction.options.getUser('user');
     const custom = interaction.options.getString('message');
