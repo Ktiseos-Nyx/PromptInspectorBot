@@ -1,7 +1,7 @@
 import { Events, Message, DMChannel, type Client } from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
-import { SCAN_LIMIT_BYTES, MONITORED_CHANNEL_IDS, TRUSTED_USER_IDS, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, rateLimiter } from '../lib/config';
+import { SCAN_LIMIT_BYTES, MONITORED_CHANNEL_IDS, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE } from '../lib/config';
 import { getGuildSetting } from '../lib/guild-settings';
 import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
@@ -73,7 +73,7 @@ export function registerMessageEvents(client: Client): void {
         }
       }
 
-      await trackMessage(message);
+      trackMessage(message);
 
       const userHasRoles = (message.member?.roles.cache.size ?? 1) > 1;
       const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));

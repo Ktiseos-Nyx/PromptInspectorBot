@@ -796,7 +796,7 @@ function extractComfyUIParams(
         queue.push(...nextQueue);
       }
 
-      if (isNegative && text) {
+      if (isNegative) {
         extracted.negative_prompt = text;
         break; // Found it
       }
@@ -1357,12 +1357,8 @@ function extractUserCommentFromTIFF(segData: Buffer): string | null {
       const byteCount = read32(entryOff + 4);
       if (byteCount < 8) return null;
 
-      let dataStart: number;
-      if (byteCount <= 4) {
-        dataStart = entryOff + 8; // inline
-      } else {
-        dataStart = read32(entryOff + 8); // offset from TIFF header
-      }
+      // byteCount >= 8 guaranteed by guard above, so value is never inline
+      const dataStart = read32(entryOff + 8); // offset from TIFF header
 
       if (dataStart + byteCount > tiffData.length) return null;
       return tiffData.slice(dataStart, dataStart + byteCount);
