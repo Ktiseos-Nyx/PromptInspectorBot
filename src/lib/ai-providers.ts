@@ -63,6 +63,7 @@ export async function askGemini(userId: string, displayName: string, question: s
     return response.text ?? '❌ No response text.';
   } catch (e) {
     console.error('askGemini error:', e);
+    sessions.delete(userId);
     return `❌ Error generating response: ${e}`;
   }
 }
