@@ -54,3 +54,7 @@ __pycache__/
 *.swp
 *.swo
 logs/
+
+# Build output & dependencies
+dist/
+node_modules/
