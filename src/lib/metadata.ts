@@ -1,6 +1,7 @@
 ﻿// @ts-expect-error — exif-parser has no type declarations
 import exifParser from 'exif-parser';
 import iconv from 'iconv-lite';
+import zlib from 'zlib';
 import { classifyNodes, type NodeLookupResult } from './comfyui-node-registry';
 
 /**
@@ -137,22 +138,38 @@ function parsePNGChunks(buffer: Buffer): Record<string, any> {
       const nullIndex = data.indexOf(0);
       if (nullIndex !== -1) {
         const key = data.toString('latin1', 0, nullIndex);
-        // Skip compression flag, compression method, language tag, translated keyword
         let textStart = nullIndex + 1;
         const compressionFlag = data[textStart++];
         const compressionMethod = data[textStart++];
-
         // Skip language tag (null-terminated)
         while (textStart < data.length && data[textStart] !== 0) textStart++;
-        textStart++; // Skip null
-
+        textStart++;
         // Skip translated keyword (null-terminated)
         while (textStart < data.length && data[textStart] !== 0) textStart++;
-        textStart++; // Skip null
-
-        const value = data.toString('utf8', textStart);
-        chunks[key] = value;
+        textStart++;
+        if (compressionFlag === 1 && compressionMethod === 0) {
+          try {
+            const decompressed = zlib.inflateSync(data.slice(textStart));
+            chunks[key] = decompressed.toString('utf8');
+          } catch { /* skip invalid compressed data */ }
+        } else {
+          chunks[key] = data.toString('utf8', textStart);
+        }
       }
+    } else if (type === 'zTXt') {
+      const nullIndex = data.indexOf(0);
+      if (nullIndex !== -1 && data[nullIndex + 1] === 0) {
+        const key = data.toString('latin1', 0, nullIndex);
+        try {
+          const decompressed = zlib.inflateSync(data.slice(nullIndex + 2));
+          chunks[key] = decompressed.toString('utf8');
+        } catch { /* skip invalid compressed data */ }
+      }
+    } else if (type === 'eXIf') {
+      // Raw TIFF data — prepend the "Exif\0\0" header the parser expects
+      const withHeader = Buffer.concat([Buffer.from('Exif\0\0'), data]);
+      const uc = extractUserCommentFromTIFF(withHeader);
+      if (uc) chunks['_exif_usercomment'] = uc;
     }
 
     offset += 12 + length; // length + type + data + CRC
@@ -570,15 +587,12 @@ function extractComfyUIParams(
           extracted.seed = String(inputs[seedKey]);
           break;
         }
-        // Follow ref for seed
+        // Follow ref for seed — look for named seed fields, not just large numbers
         const seedSource = followRef(workflow, inputs[seedKey]);
         if (seedSource) {
-          for (const val of Object.values(seedSource.node.inputs || {})) {
-            if (typeof val === 'number' && val > 1000) { // seeds are large numbers
-              extracted.seed = String(val);
-              break;
-            }
-          }
+          const si = seedSource.node.inputs || {};
+          const seedVal = si.seed ?? si.noise_seed ?? si.value;
+          if (typeof seedVal === 'number') extracted.seed = String(seedVal);
         }
         if (extracted.seed) break;
       }
@@ -720,17 +734,24 @@ function extractComfyUIParams(
   }
 
   // ========================================================================
-  // PHASE 4: ControlNet detection
+  // PHASE 4: ControlNet detection + model extraction
   // ========================================================================
-  for (const [nodeId, nodeData] of Object.entries(workflow)) {
+  const controlnetModels: string[] = [];
+  for (const [, nodeData] of Object.entries(workflow)) {
     const node = nodeData as any;
-    if (mutedNodeIds.has(nodeId)) continue;
+    if (mutedNodeIds.has(node?.id ?? '')) continue;
     const ct = (node.class_type || '').toLowerCase();
+    const inputs = node.inputs || {};
     if (ct.includes('controlnet') || ct.includes('control_net')) {
       extracted.uses_controlnet = true;
-      break;
+      const modelName = inputs.control_net_name ?? inputs.controlnet_model ?? inputs.ckpt_name;
+      if (typeof modelName === 'string' && modelName !== 'None') {
+        const strength = typeof inputs.strength === 'number' ? ` (${inputs.strength})` : '';
+        controlnetModels.push(`${modelName}${strength}`);
+      }
     }
   }
+  if (controlnetModels.length > 0) extracted.controlnet_models = controlnetModels;
 
   // ========================================================================
   // PHASE 5: Forward conditioning trace (when backward trace was ambiguous)
@@ -873,9 +894,10 @@ async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<stri
   }
 
   // --- A1111-family + JSON-format parameters (parameters PNG chunk / EXIF text) ---
+  // Skip if ComfyUI workflow chunks are present — those parsers handle everything.
   // Some tools (smZ CLIPTextEncode, etc.) write 'Parameters' with a capital P
   const parametersChunk = chunks.parameters ?? chunks.Parameters;
-  if (!aiData.workflow_type && parametersChunk) {
+  if (!aiData.workflow_type && parametersChunk && !chunks.prompt && !chunks.workflow) {
     const params = String(parametersChunk);
 
     // JSON-format parameters: SwarmUI and EasyDiffusion embed JSON here
@@ -1114,6 +1136,8 @@ async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<stri
           const weirdMatch = paramSection.match(/--weird\s+(\d+)/);
           const qualMatch = paramSection.match(/--quality\s+([\d.]+)|--q\s+([\d.]+)/);
           const styleMatch = paramSection.match(/--style\s+(\S+)/);
+          const iwMatch = paramSection.match(/--iw\s+([\d.]+)/);
+          const preferMatch = paramSection.match(/--prefer\s+(\S+)/);
 
           if (arMatch) aiData.aspect_ratio = arMatch[1];
           // --niji overrides --v if both present (they're mutually exclusive MJ model families)
@@ -1126,6 +1150,12 @@ async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<stri
           if (weirdMatch) aiData.weird = weirdMatch[1];
           if (qualMatch) aiData.quality = qualMatch[1] || qualMatch[2];
           if (styleMatch) aiData.style = styleMatch[1];
+          if (iwMatch) aiData.image_weight = iwMatch[1];
+          if (preferMatch) aiData.prefer = preferMatch[1];
+          if (/--turbo\b/.test(paramSection)) aiData.speed = 'turbo';
+          else if (/--fast\b/.test(paramSection)) aiData.speed = 'fast';
+          else if (/--relax\b/.test(paramSection)) aiData.speed = 'relax';
+          if (/--remix\b/.test(paramSection)) aiData.remix = true;
         } else {
           // No params, whole thing is the prompt (minus Job ID)
           aiData.prompt = commentText.replace(/\s*Job ID:.*$/, '').trim();
@@ -1137,6 +1167,15 @@ async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<stri
   // Also check "Author" PNG chunk (MJ stores the username there)
   if (chunks.Author && aiData.workflow_type === 'Midjourney') {
     aiData.author = chunks.Author;
+  }
+
+  // PNG eXIf UserComment — treat same as JPEG UserComment
+  if (!aiData.workflow_type && chunks._exif_usercomment) {
+    const uc = String(chunks._exif_usercomment);
+    const ucParsed = await parseAIMetadata(
+      uc.trim().startsWith('{') ? { prompt: uc } : { parameters: uc }
+    );
+    Object.assign(aiData, ucParsed);
   }
 
   return aiData;
@@ -1667,6 +1706,29 @@ function detectMimeFromMagic(buffer: Buffer): string | null {
   return null;
 }
 
+// Parse RIFF/WebP container chunks to extract an EXIF chunk if present.
+function parseWebPExif(buffer: Buffer): string | null {
+  if (buffer.length < 12) return null;
+  if (buffer.toString('ascii', 0, 4) !== 'RIFF') return null;
+  if (buffer.toString('ascii', 8, 12) !== 'WEBP') return null;
+
+  let offset = 12;
+  while (offset + 8 <= buffer.length) {
+    const tag = buffer.toString('ascii', offset, offset + 4);
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    if (offset + 8 + chunkSize > buffer.length) break;
+    const chunkData = buffer.slice(offset + 8, offset + 8 + chunkSize);
+
+    if (tag === 'EXIF') {
+      const withHeader = Buffer.concat([Buffer.from('Exif\0\0'), chunkData]);
+      return extractUserCommentFromTIFF(withHeader);
+    }
+
+    offset += 8 + chunkSize + (chunkSize % 2); // chunks are padded to even byte boundary
+  }
+  return null;
+}
+
 // Shared extraction function used by both GET (path-based) and POST (file upload)
 export async function extractMetadataFromBuffer(
   buffer: Buffer,
@@ -1696,6 +1758,13 @@ export async function extractMetadataFromBuffer(
   if (effectiveMime === 'image/png') {
     const chunks = parsePNGChunks(buffer);
     aiData = await parseAIMetadata(chunks);
+  } else if (effectiveMime === 'image/webp') {
+    const webpComment = parseWebPExif(buffer);
+    if (webpComment) {
+      aiData = await parseAIMetadata(
+        webpComment.trim().startsWith('{') ? { prompt: webpComment } : { parameters: webpComment }
+      );
+    }
   } else if (effectiveMime === 'image/jpeg') {
     let userComment = parseJPEGUserComment(buffer);
 

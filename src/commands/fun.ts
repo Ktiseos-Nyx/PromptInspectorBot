@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder } from 'discord.js';
 import fs from 'fs';
+import path from 'path';
 import { getGuildSetting } from '../lib/guild-settings';
 
 const GOODNIGHT_GENERIC = [
@@ -110,11 +111,12 @@ export const wildcardCommand = {
   async execute(interaction: ChatInputCommandInteraction) {
     if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', ephemeral: true });
 
-    if (!fs.existsSync('wildcards.json')) {
+    const wildcardsPath = path.resolve(__dirname, '../wildcards.json');
+    if (!fs.existsSync(wildcardsPath)) {
       return interaction.reply({ content: '❌ Wildcards file not found.', ephemeral: true });
     }
 
-    const w = JSON.parse(fs.readFileSync('wildcards.json', 'utf8'));
+    const w = JSON.parse(fs.readFileSync(wildcardsPath, 'utf8'));
     const subject = pick(w.subjects);
     const style   = pick(w.styles);
     const setting = pick(w.settings);
@@ -167,14 +169,15 @@ export const interactCommand = {
       return interaction.reply({ content: '❌ /interact is not enabled on this server.', ephemeral: true });
     }
 
-    if (!fs.existsSync('interactions.json')) {
+    const interactionsPath = path.resolve(__dirname, '../interactions.json');
+    if (!fs.existsSync(interactionsPath)) {
       return interaction.reply({ content: '❌ Interactions file not found.', ephemeral: true });
     }
 
     const action = interaction.options.getString('action', true);
     const target = interaction.options.getUser('user', true);
     const sysMember = interaction.options.getString('system_member');
-    const data = JSON.parse(fs.readFileSync('interactions.json', 'utf8'));
+    const data = JSON.parse(fs.readFileSync(interactionsPath, 'utf8'));
     const actionData = data[action];
     if (!actionData) return interaction.reply({ content: '❌ Unknown action.', ephemeral: true });
 
