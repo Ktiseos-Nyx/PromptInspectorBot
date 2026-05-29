@@ -1,4 +1,4 @@
-import { AttachmentBuilder, Events, TextChannel, type Client } from 'discord.js';
+import { AttachmentBuilder, Events, GuildTextBasedChannel, type Client } from 'discord.js';
 import { getFromCache } from '../lib/cache';
 import { formatMetadataEmbed } from '../lib/format';
 
@@ -8,7 +8,7 @@ function workflowAttachment(meta: Record<string, any>, imageName: string): Attac
   const wf = meta.ai?.comfyui_workflow;
   if (!wf) return null;
   const json = JSON.stringify(wf, null, 2);
-  const name = imageName.replace(/\.png$/i, '_workflow.json');
+  const name = imageName.replace(/\.[^.]+$/i, '_workflow.json');
   return new AttachmentBuilder(Buffer.from(json, 'utf8'), { name });
 }
 
@@ -35,7 +35,7 @@ export function registerReactionEvents(client: Client): void {
       const firstFiles = workflows.slice(0, 10);
       await reaction.message.reply({ embeds: first, files: firstFiles, allowedMentions: { repliedUser: false } });
 
-      const channel = reaction.message.channel as TextChannel;
+      const channel = reaction.message.channel as GuildTextBasedChannel;
       for (let i = 10; i < Math.max(embeds.length, workflows.length); i += 10) {
         const batchEmbeds = embeds.slice(i, i + 10);
         const batchFiles = workflows.slice(i, i + 10);

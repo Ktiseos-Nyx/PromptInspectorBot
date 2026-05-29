@@ -1,6 +1,6 @@
 import {
   ChatInputCommandInteraction, Colors, EmbedBuilder,
-  GuildMember, PermissionFlagsBits, SlashCommandBuilder, TextChannel,
+  GuildMember, PermissionFlagsBits, SlashCommandBuilder, TextChannel, User,
 } from 'discord.js';
 import {
   addReport, clearReports, getReports, hasRecentReport, uniqueReporterCount,
@@ -21,9 +21,14 @@ function isMod(member: GuildMember | null): boolean {
   return !!member?.permissions.has(PermissionFlagsBits.ManageGuild);
 }
 
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max - 1) + '…';
+}
+
+// Accept User so this fires even when the member has left the server
 async function notifyAdmins(
   interaction: ChatInputCommandInteraction,
-  reportedMember: GuildMember,
+  reportedUser: User,
   reason: string,
   details: string,
   messageLink: string | null,
@@ -33,27 +38,26 @@ async function notifyAdmins(
   if (!ADMIN_CHANNEL_IDS.size || !interaction.guild) return;
 
   const reporterTag = interaction.user.tag;
-  const reportedTag = reportedMember.user.tag;
   const label = REASONS.find(r => r.value === reason)?.name ?? reason;
 
   const embed = new EmbedBuilder()
     .setColor(autoTimedOut ? Colors.Orange : Colors.Yellow)
     .setTitle(autoTimedOut ? '⚠️ User Auto-Timed Out (Reports)' : '📋 New User Report')
-    .setThumbnail(reportedMember.user.displayAvatarURL())
+    .setThumbnail(reportedUser.displayAvatarURL())
     .addFields(
-      { name: 'Reported User',  value: `${reportedTag} (<@${reportedMember.id}>)`, inline: true },
-      { name: 'Reporter',       value: `${reporterTag} (<@${interaction.user.id}>)`,  inline: true },
-      { name: 'Reason',         value: label,                                          inline: true },
-      { name: 'Total Reports',  value: String(totalReports),                           inline: true },
-      { name: 'Channel',        value: `<#${interaction.channelId}>`,                  inline: true },
+      { name: 'Reported User',  value: `${reportedUser.tag} (<@${reportedUser.id}>)`,     inline: true },
+      { name: 'Reporter',       value: `${reporterTag} (<@${interaction.user.id}>)`,       inline: true },
+      { name: 'Reason',         value: label,                                               inline: true },
+      { name: 'Total Reports',  value: String(totalReports),                                inline: true },
+      { name: 'Channel',        value: `<#${interaction.channelId}>`,                       inline: true },
     )
     .setTimestamp();
 
-  if (details) embed.addFields({ name: 'Details', value: details });
+  if (details) embed.addFields({ name: 'Details', value: truncate(details, 1024) });
   if (messageLink) embed.addFields({ name: 'Message Link', value: messageLink });
   if (autoTimedOut) {
-    embed.addFields({ name: 'Action Taken', value: `Auto-timed out for 1 hour pending mod review` });
-    embed.setFooter({ text: `Threshold: ${REPORT_THRESHOLD} unique reporters in 7 days` });
+    embed.addFields({ name: 'Action Taken', value: 'Auto-timed out for 1 hour pending mod review' });
+    embed.setFooter({ text: `Threshold: ${REPORT_THRESHOLD} unique reporters in ${Math.round(REPORT_WINDOW_MS / 86_400_000)} days` });
   }
 
   for (const channelId of ADMIN_CHANNEL_IDS) {
@@ -74,7 +78,9 @@ export const reportCommand = {
           o.setName('reason').setDescription('Reason for the report').setRequired(true)
             .addChoices(...REASONS)
         )
-        .addStringOption(o => o.setName('details').setDescription('Additional details (optional)'))
+        .addStringOption(o =>
+          o.setName('details').setDescription('Additional details (optional)').setMaxLength(1000)
+        )
         .addStringOption(o => o.setName('message_link').setDescription('Link to the offending message (optional)'))
     )
     .addSubcommand(s =>
@@ -108,6 +114,7 @@ export const reportCommand = {
       const details = interaction.options.getString('details') ?? '';
       const messageLink = interaction.options.getString('message_link') ?? null;
 
+      // Synchronous checks first — reply immediately before deferring
       if (target.id === interaction.user.id) {
         return interaction.reply({ content: "❌ You can't report yourself.", ephemeral: true });
       }
@@ -115,20 +122,18 @@ export const reportCommand = {
         return interaction.reply({ content: "❌ You can't report a bot.", ephemeral: true });
       }
 
+      // Defer now — member.fetch and channel notifications can take >3 s
+      await interaction.deferReply({ ephemeral: true });
+
       const targetMember = await interaction.guild.members.fetch(target.id).catch(() => null);
       if (targetMember && isMod(targetMember)) {
-        return interaction.reply({
-          content: "❌ You can't report a moderator through this command. Contact a server admin directly.",
-          ephemeral: true,
-        });
+        return interaction.editReply(
+          "❌ You can't report a moderator through this command. Contact a server admin directly."
+        );
       }
 
-      // Rate-limit: one report per target per 24h per reporter
       if (hasRecentReport(interaction.guildId!, interaction.user.id, target.id)) {
-        return interaction.reply({
-          content: '❌ You already filed a report against this user in the last 24 hours.',
-          ephemeral: true,
-        });
+        return interaction.editReply('❌ You already filed a report against this user in the last 24 hours.');
       }
 
       addReport({
@@ -159,10 +164,12 @@ export const reportCommand = {
         } catch { /* bot may lack permission — notify admins regardless */ }
       }
 
-      // Notify admin channel on every report
-      if (targetMember) {
-        await notifyAdmins(interaction, targetMember, reason, details, messageLink, reportCount, autoTimedOut);
-      }
+      // Always notify — fires even if the member has left the server
+      await notifyAdmins(
+        interaction,
+        targetMember?.user ?? target,
+        reason, details, messageLink, reportCount, autoTimedOut
+      );
 
       const label = REASONS.find(r => r.value === reason)?.name ?? reason;
       const replyLines = [
@@ -170,10 +177,10 @@ export const reportCommand = {
         `The moderation team has been notified.`,
       ];
       if (autoTimedOut) {
-        replyLines.push(`⚠️ This user has been automatically timed out for 1 hour pending mod review.`);
+        replyLines.push('⚠️ This user has been automatically timed out for 1 hour pending mod review.');
       }
 
-      return interaction.reply({ content: replyLines.join('\n'), ephemeral: true });
+      return interaction.editReply(replyLines.join('\n'));
     }
 
     // All subcommands below are mod-only
@@ -183,7 +190,6 @@ export const reportCommand = {
 
     // ── /report list ─────────────────────────────────────────────────────────
     if (sub === 'list') {
-      const page = (interaction.options.getInteger('page') ?? 1) - 1;
       const PAGE_SIZE = 10;
       const all = getReports(interaction.guildId!).sort((a, b) => b.timestamp - a.timestamp);
 
@@ -191,9 +197,11 @@ export const reportCommand = {
         return interaction.reply({ content: '📋 No reports on record for this server.', ephemeral: true });
       }
 
-      const slice = all.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
       const totalPages = Math.ceil(all.length / PAGE_SIZE);
+      // Clamp to valid range so the embed description is never empty
+      const pageIdx = Math.max(0, Math.min((interaction.options.getInteger('page') ?? 1) - 1, totalPages - 1));
 
+      const slice = all.slice(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE);
       const lines = slice.map(r => {
         const label = REASONS.find(x => x.value === r.reason)?.name ?? r.reason;
         const date = new Date(r.timestamp).toLocaleDateString();
@@ -202,7 +210,7 @@ export const reportCommand = {
 
       const embed = new EmbedBuilder()
         .setColor(Colors.Yellow)
-        .setTitle(`📋 Reports — Page ${page + 1}/${totalPages} (${all.length} total)`)
+        .setTitle(`📋 Reports — Page ${pageIdx + 1}/${totalPages} (${all.length} total)`)
         .setDescription(lines.join('\n'));
 
       return interaction.reply({ embeds: [embed], ephemeral: true });

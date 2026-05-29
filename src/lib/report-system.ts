@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const FILE = path.resolve(__dirname, '../reports.json');
+const FILE = process.env.REPORTS_PATH ?? path.resolve(__dirname, '../reports.json');
 
 export interface Report {
   id: string;

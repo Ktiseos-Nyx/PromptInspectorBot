@@ -737,11 +737,11 @@ function extractComfyUIParams(
   // PHASE 4: ControlNet detection + model extraction
   // ========================================================================
   const controlnetModels: string[] = [];
-  for (const [, nodeData] of Object.entries(workflow)) {
+  for (const [nodeId, nodeData] of Object.entries(workflow)) {
     const node = nodeData as any;
-    if (mutedNodeIds.has(node?.id ?? '')) continue;
+    if (!node?.inputs || mutedNodeIds.has(nodeId)) continue;
     const ct = (node.class_type || '').toLowerCase();
-    const inputs = node.inputs || {};
+    const inputs = node.inputs;
     if (ct.includes('controlnet') || ct.includes('control_net')) {
       extracted.uses_controlnet = true;
       const modelName = inputs.control_net_name ?? inputs.controlnet_model ?? inputs.ckpt_name;
@@ -1720,8 +1720,11 @@ function parseWebPExif(buffer: Buffer): string | null {
     const chunkData = buffer.slice(offset + 8, offset + 8 + chunkSize);
 
     if (tag === 'EXIF') {
-      const withHeader = Buffer.concat([Buffer.from('Exif\0\0'), chunkData]);
-      return extractUserCommentFromTIFF(withHeader);
+      // WebP EXIF payload starts at the TIFF header — no "Exif\0\0" prefix.
+      // Some encoders write it anyway, so check before prepending to avoid doubling it.
+      const hasExifHeader = chunkData.length >= 4 && chunkData.toString('ascii', 0, 4) === 'Exif';
+      const tiffData = hasExifHeader ? chunkData : Buffer.concat([Buffer.from('Exif\0\0'), chunkData]);
+      return extractUserCommentFromTIFF(tiffData);
     }
 
     offset += 8 + chunkSize + (chunkSize % 2); // chunks are padded to even byte boundary
