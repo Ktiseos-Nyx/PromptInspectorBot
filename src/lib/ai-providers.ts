@@ -1,7 +1,11 @@
-import { geminiClient, claudeClient, GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODELS, GEMINI_MAX_RETRIES, GEMINI_RETRY_DELAY, CLAUDE_PRIMARY_MODEL } from './config';
+import { geminiClient, claudeClient, groqClient, GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODELS, GEMINI_MAX_RETRIES, GEMINI_RETRY_DELAY, CLAUDE_PRIMARY_MODEL, GROQ_PRIMARY_MODEL, GROQ_FALLBACK_MODEL } from './config';
 
 // ── Conversation sessions (per user) ─────────────────────────────────────────
 const sessions = new Map<string, any>();
+
+// Groq doesn't have a stateful chat object — maintain history manually
+type GroqMessage = { role: 'user' | 'assistant' | 'system'; content: string };
+const groqSessions = new Map<string, GroqMessage[]>();
 
 // ── Gemini retry/fallback wrapper ─────────────────────────────────────────────
 
@@ -112,6 +116,66 @@ export async function describeWithClaude(imageData: Buffer, mimeType: string, pr
   });
 
   return (response.content[0] as any).text ?? '';
+}
+
+// ── Groq: chat with history ───────────────────────────────────────────────────
+
+export async function askGroq(userId: string, displayName: string, question: string): Promise<string> {
+  if (!groqClient) return '❌ Groq API key is not configured.';
+
+  if (!groqSessions.has(userId)) {
+    groqSessions.set(userId, [{
+      role: 'system',
+      content: `You are a helpful assistant talking to ${displayName}. Address them by name when appropriate.`,
+    }]);
+  }
+
+  const history = groqSessions.get(userId)!;
+  history.push({ role: 'user', content: question });
+
+  try {
+    const response = await groqClient.chat.completions.create({
+      model: GROQ_PRIMARY_MODEL,
+      messages: history,
+    });
+    const reply = response.choices[0]?.message?.content ?? '❌ No response.';
+    history.push({ role: 'assistant', content: reply });
+    // Keep history from growing unbounded (last 20 messages + system prompt)
+    if (history.length > 21) history.splice(1, history.length - 21);
+    return reply;
+  } catch (e: any) {
+    // Try fallback model once
+    try {
+      const response = await groqClient.chat.completions.create({
+        model: GROQ_FALLBACK_MODEL,
+        messages: history.slice(0, -1), // exclude the message that failed
+      });
+      const reply = response.choices[0]?.message?.content ?? '❌ No response.';
+      history.push({ role: 'assistant', content: reply });
+      return reply;
+    } catch {
+      history.pop(); // remove the unanswered user message
+      console.error('askGroq error:', e);
+      return `❌ Error generating response: ${e}`;
+    }
+  }
+}
+
+// ── Groq: single text generation (no history) ────────────────────────────────
+
+export async function generateGroq(prompt: string, systemInstruction: string, temperature = 0.7): Promise<string> {
+  if (!groqClient) throw new Error('Groq not configured');
+
+  const response = await groqClient.chat.completions.create({
+    model: GROQ_PRIMARY_MODEL,
+    temperature,
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user',   content: prompt },
+    ],
+  });
+
+  return response.choices[0]?.message?.content ?? '';
 }
 
 // ── Generic text generation ───────────────────────────────────────────────────
