@@ -9,21 +9,21 @@
     "dev": "ts-node src/bot.ts"
   },
   "dependencies": {
-    "discord.js": "^14.16.0",
     "@anthropic-ai/sdk": "^0.39.0",
-    "@google/genai": "^1.0.0",
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "@google/genai": "^2.7.0",
+    "discord.js": "^14.16.0",
     "dotenv": "^16.0.0",
-    "toml": "^3.0.0",
     "exif-parser": "^0.1.12",
     "iconv-lite": "^0.6.3",
-    "mime-types": "^2.1.35"
+    "mime-types": "^2.1.35",
+    "toml": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "@types/mime-types": "^2.1.4",
-    "typescript": "^5.0.0",
-    "ts-node": "^10.9.0"
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
   }
 }
