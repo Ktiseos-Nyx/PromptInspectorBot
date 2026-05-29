@@ -50,25 +50,24 @@ export async function callGeminiWithRetry(
 // ── Ask (chat with memory) ────────────────────────────────────────────────────
 
 export async function askGemini(userId: string, displayName: string, question: string): Promise<string> {
-  if (!geminiClient) return '❌ Gemini API key is not configured.';
+  if (!geminiClient) throw new Error('Gemini not configured');
+
+  if (!sessions.has(userId)) {
+    sessions.set(userId, geminiClient.chats.create({
+      model: GEMINI_PRIMARY_MODEL,
+      config: {
+        systemInstruction: `You are a helpful assistant talking to ${displayName}. Address them by name when appropriate.`,
+      },
+    }));
+  }
 
   try {
-    if (!sessions.has(userId)) {
-      sessions.set(userId, geminiClient.chats.create({
-        model: GEMINI_PRIMARY_MODEL,
-        config: {
-          systemInstruction: `You are a helpful assistant talking to ${displayName}. Address them by name when appropriate.`,
-        },
-      }));
-    }
-
     const chat = sessions.get(userId);
     const response = await chat.sendMessage({ message: question });
-    return response.text ?? '❌ No response text.';
+    return response.text ?? '';
   } catch (e) {
-    console.error('askGemini error:', e);
-    sessions.delete(userId);
-    return `❌ Error generating response: ${e}`;
+    sessions.delete(userId); // clear broken session so next call starts fresh
+    throw e;
   }
 }
 
@@ -122,7 +121,7 @@ export async function describeWithClaude(imageData: Buffer, mimeType: string, pr
 // ── Groq: chat with history ───────────────────────────────────────────────────
 
 export async function askGroq(userId: string, displayName: string, question: string): Promise<string> {
-  if (!groqClient) return '❌ Groq API key is not configured.';
+  if (!groqClient) throw new Error('Groq not configured');
 
   if (!groqSessions.has(userId)) {
     groqSessions.set(userId, [{
@@ -134,32 +133,74 @@ export async function askGroq(userId: string, displayName: string, question: str
   const history = groqSessions.get(userId)!;
   history.push({ role: 'user', content: question });
 
+  const trim = () => { if (history.length > 21) history.splice(1, history.length - 21); };
+
   try {
-    const response = await groqClient.chat.completions.create({
-      model: GROQ_PRIMARY_MODEL,
-      messages: history,
-    });
-    const reply = response.choices[0]?.message?.content ?? '❌ No response.';
+    const response = await groqClient.chat.completions.create({ model: GROQ_PRIMARY_MODEL, messages: history });
+    const reply = response.choices[0]?.message?.content ?? '';
     history.push({ role: 'assistant', content: reply });
-    // Keep history from growing unbounded (last 20 messages + system prompt)
-    if (history.length > 21) history.splice(1, history.length - 21);
+    trim();
     return reply;
-  } catch (e: any) {
-    // Try fallback model once
+  } catch {
+    // Try fallback model once before giving up
     try {
       const response = await groqClient.chat.completions.create({
         model: GROQ_FALLBACK_MODEL,
-        messages: history.slice(0, -1), // exclude the message that failed
+        messages: history.slice(0, -1),
       });
-      const reply = response.choices[0]?.message?.content ?? '❌ No response.';
+      const reply = response.choices[0]?.message?.content ?? '';
       history.push({ role: 'assistant', content: reply });
+      trim();
       return reply;
-    } catch {
+    } catch (e) {
       history.pop(); // remove the unanswered user message
-      console.error('askGroq error:', e);
-      return `❌ Error generating response: ${e}`;
+      throw e;      // let askWithPriority try the next provider
     }
   }
+}
+
+// ── Claude: chat with history ─────────────────────────────────────────────────
+
+type ClaudeMessage = { role: 'user' | 'assistant'; content: string };
+const claudeSessions = new Map<string, ClaudeMessage[]>();
+
+export async function askClaude(userId: string, displayName: string, question: string): Promise<string> {
+  if (!claudeClient) throw new Error('Claude not configured');
+
+  if (!claudeSessions.has(userId)) claudeSessions.set(userId, []);
+  const history = claudeSessions.get(userId)!;
+  history.push({ role: 'user', content: question });
+
+  try {
+    const response = await claudeClient.messages.create({
+      model: CLAUDE_PRIMARY_MODEL,
+      max_tokens: 1024,
+      system: `You are a helpful assistant talking to ${displayName}. Address them by name when appropriate.`,
+      messages: history,
+    });
+    const reply = (response.content[0] as any).text ?? '';
+    history.push({ role: 'assistant', content: reply });
+    if (history.length > 20) history.splice(0, history.length - 20);
+    return reply;
+  } catch (e) {
+    history.pop();
+    throw e;
+  }
+}
+
+// ── Claude: single text generation ───────────────────────────────────────────
+
+export async function generateClaude(prompt: string, systemInstruction: string): Promise<string> {
+  if (!claudeClient) throw new Error('Claude not configured');
+
+  const response = await claudeClient.messages.create({
+    model: CLAUDE_PRIMARY_MODEL,
+    max_tokens: 2048,
+    system: systemInstruction,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return (response.content[0] as any).text ?? '';
 }
 
 // ── Groq: single text generation (no history) ────────────────────────────────

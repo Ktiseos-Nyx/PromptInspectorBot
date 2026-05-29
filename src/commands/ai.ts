@@ -1,13 +1,14 @@
 import { ChatInputCommandInteraction, AttachmentBuilder, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import { geminiRateLimiter, LLM_PROVIDER_PRIORITY, AVAILABLE_PROVIDERS, NSFW_PROVIDER_OVERRIDE, SCAN_LIMIT_BYTES } from '../lib/config';
 import { getGuildSetting } from '../lib/guild-settings';
-import { askGemini, askGroq, describeWithGemini, describeWithClaude, generateGemini, generateGroq } from '../lib/ai-providers';
+import { askGemini, askGroq, askClaude, describeWithGemini, describeWithClaude, generateGemini, generateGroq, generateClaude } from '../lib/ai-providers';
 
 // Try each provider in priority order for chat (stateful per-user session)
 async function askWithPriority(userId: string, displayName: string, question: string): Promise<string> {
   for (const provider of LLM_PROVIDER_PRIORITY) {
     try {
       if (provider === 'groq')   return await askGroq(userId, displayName, question);
+      if (provider === 'claude') return await askClaude(userId, displayName, question);
       if (provider === 'gemini') return await askGemini(userId, displayName, question);
     } catch (e) {
       console.warn(`${provider} failed for /ask:`, e);
@@ -21,6 +22,7 @@ async function generateWithPriority(prompt: string, system: string, temperature 
   for (const provider of LLM_PROVIDER_PRIORITY) {
     try {
       if (provider === 'groq')   return await generateGroq(prompt, system, temperature);
+      if (provider === 'claude') return await generateClaude(prompt, system);
       if (provider === 'gemini') return await generateGemini(prompt, system, temperature);
     } catch (e) {
       console.warn(`${provider} failed for text generation:`, e);
