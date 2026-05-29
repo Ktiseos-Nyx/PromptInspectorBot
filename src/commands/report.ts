@@ -244,7 +244,7 @@ export const reportCommand = {
         .setDescription(lines.join('\n'))
         .setThumbnail(target.displayAvatarURL())
         .addFields({
-          name: 'Unique reporters (last 7 days)',
+          name: `Unique reporters (last ${Math.round(REPORT_WINDOW_MS / 86_400_000)}d)`,
           value: `${windowCount} / ${REPORT_THRESHOLD} (threshold for auto-timeout)`,
           inline: true,
         })
