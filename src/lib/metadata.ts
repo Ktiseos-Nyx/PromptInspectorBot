@@ -1537,7 +1537,7 @@ function parseXMP(xmpString: string): Record<string, any> {
     const itemsRaw = block[3];
     // Use [\s\S]*? to match ANY content inside rdf:li, including newlines, JSON, XML entities
     const items = [...itemsRaw.matchAll(/<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/g)]
-      .map(m => m[1].trim().replace(/&#xA;/g, '\n').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'))
+      .map(m => m[1].trim().replace(/&#xA;/g, '\n').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&'))
       .filter(Boolean);
     if (items.length > 0) {
       xmp[`${ns}:${key}`] = items.length === 1 ? items[0] : items;

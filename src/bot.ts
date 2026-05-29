@@ -29,4 +29,29 @@ client.once(Events.ClientReady, (c) => {
   startScheduler(client);
 });
 
-client.login(token);
+client.on(Events.Error, (err) => {
+  console.error('[discord] client error:', err);
+});
+
+client.on(Events.ShardDisconnect, (event, shardId) => {
+  console.warn(`[discord] shard ${shardId} disconnected (code ${event.code}) — reconnecting...`);
+});
+
+client.on(Events.ShardReconnecting, (shardId) => {
+  console.log(`[discord] shard ${shardId} reconnecting`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[process] unhandled rejection:', reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[process] uncaught exception:', err);
+  process.exit(1);
+});
+
+client.login(token).catch((err) => {
+  console.error('[discord] login failed:', err);
+  process.exit(1);
+});

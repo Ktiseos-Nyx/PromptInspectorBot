@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder, TextChannel } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder, TextChannel, ChannelType, MessageFlags } from 'discord.js';
 import { getQotdConfig, setQotdConfig, addQotdQuestion, parseInterval, formatInterval } from '../lib/scheduler';
 
 export const qotdCommand = {
@@ -10,7 +10,7 @@ export const qotdCommand = {
     .addSubcommand(s =>
       s.setName('setup')
         .setDescription('Set up QOTD for this server (admin only)')
-        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in').setRequired(true))
+        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
         .addStringOption(o => o.setName('interval').setDescription('How often to post, e.g. 24h, 12h, 6h').setRequired(true))
     )
     .addSubcommand(s =>
@@ -37,21 +37,28 @@ export const qotdCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
+    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', flags: MessageFlags.Ephemeral });
 
     const sub = interaction.options.getSubcommand();
     const isAdmin = (interaction.member?.permissions as any)?.has(PermissionFlagsBits.ManageGuild);
 
     // ── setup ────────────────────────────────────────────────────────────────
     if (sub === 'setup') {
-      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
       const channel = interaction.options.getChannel('channel', true);
       const intervalStr = interaction.options.getString('interval', true);
       const intervalMs = parseInterval(intervalStr);
 
-      if (!intervalMs) return interaction.reply({ content: '❌ Invalid interval. Use formats like `24h`, `6h`, `30m`, `2d`.', ephemeral: true });
-      if (intervalMs < 60_000) return interaction.reply({ content: '❌ Minimum interval is 1 minute.', ephemeral: true });
+      if (!intervalMs) return interaction.reply({ content: '❌ Invalid interval. Use formats like `24h`, `6h`, `30m`, `2d`.', flags: MessageFlags.Ephemeral });
+      if (intervalMs < 60_000) return interaction.reply({ content: '❌ Minimum interval is 1 minute.', flags: MessageFlags.Ephemeral });
+      if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) {
+        return interaction.reply({ content: '❌ Please select a text channel.', flags: MessageFlags.Ephemeral });
+      }
+      const botPerms = interaction.guild.members.me?.permissionsIn(channel.id);
+      if (!botPerms?.has(PermissionFlagsBits.SendMessages)) {
+        return interaction.reply({ content: "❌ I don't have permission to send messages in that channel.", flags: MessageFlags.Ephemeral });
+      }
 
       setQotdConfig(interaction.guildId!, { channelId: channel.id, intervalMs, enabled: true, lastPosted: 0 });
 
@@ -65,10 +72,10 @@ export const qotdCommand = {
 
     // ── add ──────────────────────────────────────────────────────────────────
     else if (sub === 'add') {
-      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
       const cfg = getQotdConfig(interaction.guildId!);
-      if (!cfg) return interaction.reply({ content: '❌ QOTD not set up yet. Use `/qotd setup` first.', ephemeral: true });
+      if (!cfg) return interaction.reply({ content: '❌ QOTD not set up yet. Use `/qotd setup` first.', flags: MessageFlags.Ephemeral });
 
       const question = interaction.options.getString('question', true);
       const added = addQotdQuestion(interaction.guildId!, question);
@@ -77,14 +84,14 @@ export const qotdCommand = {
         content: added
           ? `✅ Question added! Pool now has **${cfg.questions.length + 1}** questions.`
           : '❌ That question is already in the pool.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     // ── status ───────────────────────────────────────────────────────────────
     else if (sub === 'status') {
       const cfg = getQotdConfig(interaction.guildId!);
-      if (!cfg) return interaction.reply({ content: '❌ QOTD is not set up on this server.', ephemeral: true });
+      if (!cfg) return interaction.reply({ content: '❌ QOTD is not set up on this server.', flags: MessageFlags.Ephemeral });
 
       const remaining = cfg.questions.filter(q => !cfg.usedQuestions.includes(q)).length;
       const nextPost = cfg.lastPosted + cfg.intervalMs;
@@ -108,10 +115,10 @@ export const qotdCommand = {
 
     // ── post ─────────────────────────────────────────────────────────────────
     else if (sub === 'post') {
-      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
       const cfg = getQotdConfig(interaction.guildId!);
-      if (!cfg || !cfg.questions.length) return interaction.reply({ content: '❌ No questions in pool.', ephemeral: true });
+      if (!cfg || !cfg.questions.length) return interaction.reply({ content: '❌ No questions in pool.', flags: MessageFlags.Ephemeral });
 
       const unused = cfg.questions.filter(q => !cfg.usedQuestions.includes(q));
       const pool = unused.length ? unused : cfg.questions;
@@ -126,19 +133,19 @@ export const qotdCommand = {
       const channel = interaction.client.channels.cache.get(cfg.channelId) as TextChannel | undefined;
       if (channel) await channel.send(`💬 **Question of the Day**\n\n${question}`);
 
-      await interaction.reply({ content: '✅ Posted!', ephemeral: true });
+      await interaction.reply({ content: '✅ Posted!', flags: MessageFlags.Ephemeral });
     }
 
     // ── import ───────────────────────────────────────────────────────────────
     else if (sub === 'import') {
-      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
       const cfg = getQotdConfig(interaction.guildId!);
-      if (!cfg) return interaction.reply({ content: '❌ Run `/qotd setup` first.', ephemeral: true });
+      if (!cfg) return interaction.reply({ content: '❌ Run `/qotd setup` first.', flags: MessageFlags.Ephemeral });
 
       const qotdPath = path.resolve(__dirname, '../qotd-questions.json');
       if (!fs.existsSync(qotdPath)) {
-        return interaction.reply({ content: '❌ `qotd-questions.json` not found.', ephemeral: true });
+        return interaction.reply({ content: '❌ `qotd-questions.json` not found.', flags: MessageFlags.Ephemeral });
       }
 
       const questions: string[] = JSON.parse(fs.readFileSync(qotdPath, 'utf8'));
@@ -149,20 +156,20 @@ export const qotdCommand = {
 
       await interaction.reply({
         content: `✅ Imported **${added}** new questions (${questions.length - added} already existed). Pool now has **${cfg.questions.length + added}** questions.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     // ── toggle ───────────────────────────────────────────────────────────────
     else if (sub === 'toggle') {
-      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', ephemeral: true });
+      if (!isAdmin) return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
 
       const enabled = interaction.options.getBoolean('enabled', true);
       const cfg = getQotdConfig(interaction.guildId!);
-      if (!cfg) return interaction.reply({ content: '❌ QOTD not set up yet.', ephemeral: true });
+      if (!cfg) return interaction.reply({ content: '❌ QOTD not set up yet.', flags: MessageFlags.Ephemeral });
 
       setQotdConfig(interaction.guildId!, { enabled });
-      await interaction.reply({ content: `✅ QOTD ${enabled ? 'enabled' : 'disabled'}.`, ephemeral: true });
+      await interaction.reply({ content: `✅ QOTD ${enabled ? 'enabled' : 'disabled'}.`, flags: MessageFlags.Ephemeral });
     }
   },
 };

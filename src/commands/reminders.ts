@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder, ChannelType, MessageFlags } from 'discord.js';
 import { addReminder, deleteReminder, getReminders, parseInterval, formatInterval } from '../lib/scheduler';
 
 export const remindCommand = {
@@ -11,7 +11,7 @@ export const remindCommand = {
         .addStringOption(o => o.setName('message').setDescription('What to remind').setRequired(true))
         .addStringOption(o => o.setName('in').setDescription('Fire once after this time, e.g. 30m, 2h'))
         .addStringOption(o => o.setName('every').setDescription('Repeat on this interval, e.g. 1h, 24h, 7d'))
-        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in (defaults to current)'))
+        .addChannelOption(o => o.setName('channel').setDescription('Channel to post in (defaults to current)').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
     )
     .addSubcommand(s =>
       s.setName('list')
@@ -24,7 +24,7 @@ export const remindCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
+    if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', flags: MessageFlags.Ephemeral });
 
     const sub = interaction.options.getSubcommand();
 
@@ -33,19 +33,23 @@ export const remindCommand = {
       const message = interaction.options.getString('message', true);
       const inStr   = interaction.options.getString('in');
       const everyStr = interaction.options.getString('every');
-      const channel = interaction.options.getChannel('channel') ?? interaction.channel!;
+      const rawChannel = interaction.options.getChannel('channel');
+      if (rawChannel && rawChannel.type !== ChannelType.GuildText && rawChannel.type !== ChannelType.GuildAnnouncement) {
+        return interaction.reply({ content: '❌ Please select a text channel.', flags: MessageFlags.Ephemeral });
+      }
+      const channel = rawChannel ?? interaction.channel!;
 
       if (!inStr && !everyStr) {
-        return interaction.reply({ content: '❌ Provide either `in` (one-time) or `every` (repeating).', ephemeral: true });
+        return interaction.reply({ content: '❌ Provide either `in` (one-time) or `every` (repeating).', flags: MessageFlags.Ephemeral });
       }
       if (inStr && everyStr) {
-        return interaction.reply({ content: '❌ Use `in` for one-time or `every` for repeating — not both.', ephemeral: true });
+        return interaction.reply({ content: '❌ Use `in` for one-time or `every` for repeating — not both.', flags: MessageFlags.Ephemeral });
       }
 
       const delayStr = inStr ?? everyStr!;
       const ms = parseInterval(delayStr);
-      if (!ms) return interaction.reply({ content: '❌ Invalid time format. Use e.g. `30m`, `2h`, `1d`.', ephemeral: true });
-      if (ms < 60_000) return interaction.reply({ content: '❌ Minimum is 1 minute.', ephemeral: true });
+      if (!ms) return interaction.reply({ content: '❌ Invalid time format. Use e.g. `30m`, `2h`, `1d`.', flags: MessageFlags.Ephemeral });
+      if (ms < 60_000) return interaction.reply({ content: '❌ Minimum is 1 minute.', flags: MessageFlags.Ephemeral });
 
       const reminder = addReminder({
         guildId: interaction.guildId!,
@@ -64,7 +68,7 @@ export const remindCommand = {
           .setTitle('⏰ Reminder Set')
           .setDescription(`**${message}**\n\nFiring ${type} in <#${channel.id}>`)
           .setFooter({ text: `ID: ${reminder.id}` })],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -73,7 +77,7 @@ export const remindCommand = {
       const reminders = getReminders(interaction.guildId!);
 
       if (!reminders.length) {
-        return interaction.reply({ content: 'No active reminders in this server.', ephemeral: true });
+        return interaction.reply({ content: 'No active reminders in this server.', flags: MessageFlags.Ephemeral });
       }
 
       const lines = reminders.map(r => {
@@ -87,7 +91,7 @@ export const remindCommand = {
           .setColor(Colors.Blue)
           .setTitle(`⏰ Reminders (${reminders.length})`)
           .setDescription(lines.join('\n'))],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -97,7 +101,7 @@ export const remindCommand = {
       const deleted = deleteReminder(id, interaction.guildId!);
       await interaction.reply({
         content: deleted ? `✅ Reminder \`${id}\` deleted.` : '❌ Reminder not found.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },
