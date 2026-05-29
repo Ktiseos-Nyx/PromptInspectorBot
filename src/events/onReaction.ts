@@ -1,8 +1,16 @@
-import { Events, type Client } from 'discord.js';
+import { AttachmentBuilder, Events, GuildTextBasedChannel, type Client } from 'discord.js';
 import { getFromCache } from '../lib/cache';
 import { formatMetadataEmbed } from '../lib/format';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+
+function workflowAttachment(meta: Record<string, any>, imageName: string): AttachmentBuilder | null {
+  const wf = meta.ai?.comfyui_workflow;
+  if (!wf) return null;
+  const json = JSON.stringify(wf, null, 2);
+  const name = imageName.replace(/\.[^.]+$/i, '_workflow.json');
+  return new AttachmentBuilder(Buffer.from(json, 'utf8'), { name });
+}
 
 export function registerReactionEvents(client: Client): void {
   client.on(Events.MessageReactionAdd, async (reaction, user) => {
@@ -17,8 +25,25 @@ export function registerReactionEvents(client: Client): void {
     if (!images) return;
 
     if (isBatch) {
-      const lines = images.map((img, i) => `**${i + 1}.** ${img.name}`).join('\n');
-      await reaction.message.reply({ content: `📦 **Batch metadata (${images.length} images)**\n${lines}`, allowedMentions: { repliedUser: false } });
+      const embeds = images.map((img, i) => formatMetadataEmbed(img.meta, img.name, i + 1, images.length));
+      const workflows = images
+        .map(img => workflowAttachment(img.meta, img.name))
+        .filter((a): a is AttachmentBuilder => a !== null);
+
+      // Discord allows max 10 embeds and 10 files per message
+      const first = embeds.slice(0, 10);
+      const firstFiles = workflows.slice(0, 10);
+      await reaction.message.reply({ embeds: first, files: firstFiles, allowedMentions: { repliedUser: false } });
+
+      const channel = reaction.message.channel as GuildTextBasedChannel;
+      for (let i = 10; i < Math.max(embeds.length, workflows.length); i += 10) {
+        const batchEmbeds = embeds.slice(i, i + 10);
+        const batchFiles = workflows.slice(i, i + 10);
+        await channel.send({
+          ...(batchEmbeds.length ? { embeds: batchEmbeds } : {}),
+          ...(batchFiles.length ? { files: batchFiles } : {}),
+        });
+      }
       return;
     }
 
@@ -27,6 +52,11 @@ export function registerReactionEvents(client: Client): void {
 
     const img = images[index];
     const embed = formatMetadataEmbed(img.meta, img.name, index + 1, images.length);
-    await reaction.message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
+    const attachment = workflowAttachment(img.meta, img.name);
+    await reaction.message.reply({
+      embeds: [embed],
+      ...(attachment ? { files: [attachment] } : {}),
+      allowedMentions: { repliedUser: false },
+    });
   });
 }

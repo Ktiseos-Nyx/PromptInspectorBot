@@ -55,17 +55,23 @@ export const GEMINI_RETRY_DELAY = parseFloat(cfg('GEMINI_RETRY_DELAY', 'GEMINI_R
 export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
 export const CLAUDE_PRIMARY_MODEL = cfg('CLAUDE_PRIMARY_MODEL', 'CLAUDE_PRIMARY_MODEL', 'claude-haiku-4-5-20251001');
 
+// ── Groq ──────────────────────────────────────────────────────────────────────
+export const GROQ_API_KEY = process.env.GROQ_API_KEY ?? '';
+export const GROQ_PRIMARY_MODEL = cfg('GROQ_PRIMARY_MODEL', 'GROQ_PRIMARY_MODEL', 'llama-3.3-70b-versatile');
+export const GROQ_FALLBACK_MODEL = cfg('GROQ_FALLBACK_MODEL', 'GROQ_FALLBACK_MODEL', 'llama-3.1-8b-instant');
+
 // ── LLM provider selection ────────────────────────────────────────────────────
 export const NSFW_PROVIDER_OVERRIDE = process.env.NSFW_PROVIDER_OVERRIDE ?? fileConfig['NSFW_PROVIDER_OVERRIDE'] ?? '';
 
 const priorityEnv = process.env.LLM_PROVIDER_PRIORITY;
 const rawPriority: string[] = priorityEnv
   ? priorityEnv.split(',').map(s => s.trim())
-  : (fileConfig['LLM_PROVIDER_PRIORITY'] as string[] | undefined) ?? ['gemini', 'claude'];
+  : (fileConfig['LLM_PROVIDER_PRIORITY'] as string[] | undefined) ?? ['groq', 'claude', 'gemini'];
 
 export const AVAILABLE_PROVIDERS: string[] = [];
-if (GEMINI_API_KEY) AVAILABLE_PROVIDERS.push('gemini');
+if (GROQ_API_KEY) AVAILABLE_PROVIDERS.push('groq');
 if (ANTHROPIC_API_KEY) AVAILABLE_PROVIDERS.push('claude');
+if (GEMINI_API_KEY) AVAILABLE_PROVIDERS.push('gemini');
 
 export const LLM_PROVIDER_PRIORITY = rawPriority.filter(p => AVAILABLE_PROVIDERS.includes(p));
 
@@ -81,9 +87,11 @@ export const SUPPORTER_ROLE_IDS = parseIdList(process.env.SUPPORTER_ROLE_IDS);
 // ── Clients ───────────────────────────────────────────────────────────────────
 import { GoogleGenAI } from '@google/genai';
 import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 
 export const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 export const claudeClient = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
+export const groqClient   = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
 // ── Rate limiters ─────────────────────────────────────────────────────────────
 export const rateLimiter = new RateLimiter(5, 30);

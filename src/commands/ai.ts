@@ -1,7 +1,35 @@
 import { ChatInputCommandInteraction, AttachmentBuilder, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import { geminiRateLimiter, LLM_PROVIDER_PRIORITY, AVAILABLE_PROVIDERS, NSFW_PROVIDER_OVERRIDE, SCAN_LIMIT_BYTES } from '../lib/config';
 import { getGuildSetting } from '../lib/guild-settings';
-import { askGemini, describeWithGemini, describeWithClaude, generateGemini } from '../lib/ai-providers';
+import { askGemini, askGroq, askClaude, describeWithGemini, describeWithClaude, generateGemini, generateGroq, generateClaude } from '../lib/ai-providers';
+
+// Try each provider in priority order for chat (stateful per-user session)
+async function askWithPriority(userId: string, displayName: string, question: string): Promise<string> {
+  for (const provider of LLM_PROVIDER_PRIORITY) {
+    try {
+      if (provider === 'groq')   return await askGroq(userId, displayName, question);
+      if (provider === 'claude') return await askClaude(userId, displayName, question);
+      if (provider === 'gemini') return await askGemini(userId, displayName, question);
+    } catch (e) {
+      console.warn(`${provider} failed for /ask:`, e);
+    }
+  }
+  return '❌ All AI providers failed. Try again in a moment.';
+}
+
+// Try each provider in priority order for single-shot text generation
+async function generateWithPriority(prompt: string, system: string, temperature = 0.7): Promise<string> {
+  for (const provider of LLM_PROVIDER_PRIORITY) {
+    try {
+      if (provider === 'groq')   return await generateGroq(prompt, system, temperature);
+      if (provider === 'claude') return await generateClaude(prompt, system);
+      if (provider === 'gemini') return await generateGemini(prompt, system, temperature);
+    } catch (e) {
+      console.warn(`${provider} failed for text generation:`, e);
+    }
+  }
+  throw new Error('All AI providers failed');
+}
 
 const TECHSUPPORT_PROMPT = `You are a friendly and knowledgeable IT support assistant. Your goal is to help people solve their tech problems clearly and without judgment.
 
@@ -84,7 +112,7 @@ export const askCommand = {
 
     await interaction.deferReply();
     try {
-      const response = await askGemini(interaction.user.id, interaction.user.displayName, question);
+      const response = await askWithPriority(interaction.user.id, interaction.user.displayName, question);
       await sendLong(interaction, response, 'response.txt');
     } catch (e) {
       console.error('askCommand error:', e);
@@ -112,7 +140,7 @@ export const techsupportCommand = {
 
     await interaction.deferReply();
     try {
-      const response = await generateGemini(issue, TECHSUPPORT_PROMPT, 0.8);
+      const response = await generateWithPriority(issue, TECHSUPPORT_PROMPT, 0.8);
       await sendLong(interaction, `🛠️ **Tech Support:**\n\n${response}`, 'techsupport.txt');
     } catch (e) {
       await interaction.followUp('❌ My troubleshooting brain just crashed. Try again in a sec.');
@@ -139,7 +167,7 @@ export const coderCommand = {
 
     await interaction.deferReply();
     try {
-      const response = await generateGemini(question, CODER_PROMPT, 0.7);
+      const response = await generateWithPriority(question, CODER_PROMPT, 0.7);
       await sendLong(interaction, `💻 **Coding Help:**\n\n${response}`, 'coder.txt');
     } catch (e) {
       await interaction.followUp('❌ Error generating code solution. Please try again.');
@@ -262,7 +290,7 @@ export const promptSupportCommand = {
       const systemPrompt = style === 'danbooru' ? PROMPT_SUPPORT_DANBOORU : PROMPT_SUPPORT_NATURAL;
       const styleName = style === 'danbooru' ? 'Danbooru Tags' : 'Natural Language';
 
-      const result = await generateGemini(description, systemPrompt, 0.8);
+      const result = await generateWithPriority(description, systemPrompt, 0.8);
       const content = `✨ **Prompt Suggestion (${styleName})**\n\n${result}`;
       await sendLong(interaction, content, 'prompt.txt');
     } catch (e) {

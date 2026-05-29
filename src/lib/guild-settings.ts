@@ -1,6 +1,7 @@
 import fs from 'fs';
+import path from 'path';
 
-const FILE = 'guild_settings.json';
+const FILE = path.resolve(__dirname, '../guild_settings.json');
 
 const DEFAULTS: Record<string, boolean> = {
   ask: false,
