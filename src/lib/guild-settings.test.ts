@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { migrateGuildEntry } from './guild-settings';
+import { migrateGuildEntry, resolveModeration } from './guild-settings';
+import type { EnvModDefaults } from './settings-types';
 
 describe('migrateGuildEntry', () => {
   it('passes through an already-structured entry', () => {
@@ -28,5 +29,39 @@ describe('migrateGuildEntry', () => {
 
   it('returns empty structure for an empty object', () => {
     expect(migrateGuildEntry({})).toEqual({ toggles: {}, moderation: {} });
+  });
+});
+
+const ENV: EnvModDefaults = {
+  alertChannelIds: new Set(['env-alert']),
+  trustedRoleIds: new Set(['env-role']),
+  trustedUserIds: new Set(['env-user']),
+  monitoredChannelIds: new Set(['env-chan']),
+  catcherRoleId: 'env-catcher',
+};
+
+describe('resolveModeration', () => {
+  it('falls back to env when guild moderation is empty', () => {
+    const r = resolveModeration({}, ENV);
+    expect([...r.alertChannelIds]).toEqual(['env-alert']);
+    expect([...r.trustedUserIds]).toEqual(['env-user']);
+    expect([...r.monitoredChannelIds]).toEqual(['env-chan']);
+    expect(r.catcherRoleId).toBe('env-catcher');
+  });
+
+  it('uses the per-guild alert channel when set', () => {
+    const r = resolveModeration({ alertChannelId: 'guild-alert' }, ENV);
+    expect([...r.alertChannelIds]).toEqual(['guild-alert']);
+  });
+
+  it('treats an explicit empty monitored array as "monitor all" (no env fallback)', () => {
+    const r = resolveModeration({ monitoredChannelIds: [] }, ENV);
+    expect(r.monitoredChannelIds.size).toBe(0);
+  });
+
+  it('merges per-guild trusted roles/users as provided', () => {
+    const r = resolveModeration({ trustedRoleIds: ['a', 'b'], trustedUserIds: [] }, ENV);
+    expect([...r.trustedRoleIds]).toEqual(['a', 'b']);
+    expect(r.trustedUserIds.size).toBe(0);
   });
 });

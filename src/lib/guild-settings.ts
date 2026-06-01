@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { GuildEntry } from './settings-types';
+import type { GuildEntry, GuildModeration, ResolvedModConfig, EnvModDefaults } from './settings-types';
 
 const FILE = path.resolve(__dirname, '../guild_settings.json');
 
@@ -67,4 +67,22 @@ export function migrateGuildEntry(raw: unknown): GuildEntry {
     }
   }
   return { toggles, moderation: {} };
+}
+
+export function resolveModeration(
+  mod: Partial<GuildModeration> | undefined,
+  env: EnvModDefaults,
+): ResolvedModConfig {
+  const m = mod ?? {};
+  return {
+    alertChannelIds:
+      m.alertChannelId != null ? new Set([m.alertChannelId]) : new Set(env.alertChannelIds),
+    trustedRoleIds:
+      m.trustedRoleIds != null ? new Set(m.trustedRoleIds) : new Set(env.trustedRoleIds),
+    trustedUserIds:
+      m.trustedUserIds != null ? new Set(m.trustedUserIds) : new Set(env.trustedUserIds),
+    monitoredChannelIds:
+      m.monitoredChannelIds != null ? new Set(m.monitoredChannelIds) : new Set(env.monitoredChannelIds),
+    catcherRoleId: m.catcherRoleId != null ? m.catcherRoleId : env.catcherRoleId,
+  };
 }
