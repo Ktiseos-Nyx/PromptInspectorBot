@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { GuildEntry } from './settings-types';
 
 const FILE = path.resolve(__dirname, '../guild_settings.json');
 
@@ -49,4 +50,21 @@ export function setGuildSetting(guildId: string, setting: string, value: boolean
 export function getAllGuildSettings(guildId: string): Record<string, boolean> {
   const settings = load();
   return { ...DEFAULTS, ...(settings['_defaults'] ?? {}), ...(settings[guildId] ?? {}) };
+}
+
+export function migrateGuildEntry(raw: unknown): GuildEntry {
+  if (raw && typeof raw === 'object' && 'toggles' in raw) {
+    const r = raw as { toggles?: Record<string, boolean>; moderation?: Record<string, unknown> };
+    return {
+      toggles: { ...(r.toggles ?? {}) },
+      moderation: { ...(r.moderation ?? {}) } as GuildEntry['moderation'],
+    };
+  }
+  const toggles: Record<string, boolean> = {};
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'boolean') toggles[k] = v;
+    }
+  }
+  return { toggles, moderation: {} };
 }
