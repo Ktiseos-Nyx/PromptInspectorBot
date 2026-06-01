@@ -1,6 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { migrateGuildEntry, resolveModeration } from './guild-settings';
 import type { EnvModDefaults } from './settings-types';
+import {
+  getGuildSetting, setGuildSetting, getAllGuildSettings,
+  getGuildModeration, setModerationField,
+} from './guild-settings';
+
+let tmp: string;
+beforeEach(() => {
+  tmp = path.join(os.tmpdir(), `gs-${Date.now()}-${Math.random()}.json`);
+  process.env.GUILD_SETTINGS_PATH = tmp;
+});
+afterEach(() => {
+  delete process.env.GUILD_SETTINGS_PATH;
+  if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+});
 
 describe('migrateGuildEntry', () => {
   it('passes through an already-structured entry', () => {
@@ -63,5 +80,42 @@ describe('resolveModeration', () => {
     const r = resolveModeration({ trustedRoleIds: ['a', 'b'], trustedUserIds: [] }, ENV);
     expect([...r.trustedRoleIds]).toEqual(['a', 'b']);
     expect(r.trustedUserIds.size).toBe(0);
+  });
+});
+
+describe('toggle store', () => {
+  it('defaults security to true', () => {
+    expect(getGuildSetting('g1', 'security')).toBe(true);
+  });
+
+  it('persists a per-guild toggle and reads it back', () => {
+    setGuildSetting('g1', 'ask', true);
+    expect(getGuildSetting('g1', 'ask')).toBe(true);
+    expect(getGuildSetting('g2', 'ask')).toBe(false); // other guild unaffected
+  });
+
+  it('includes security in getAllGuildSettings', () => {
+    expect(getAllGuildSettings('g1').security).toBe(true);
+  });
+
+  it('migrates a legacy flat file on read', () => {
+    fs.writeFileSync(tmp, JSON.stringify({ g1: { ask: true } }));
+    expect(getGuildSetting('g1', 'ask')).toBe(true);
+  });
+});
+
+describe('moderation store', () => {
+  it('returns null/empty moderation for an unset guild', () => {
+    expect(getGuildModeration('g1')).toEqual({});
+  });
+
+  it('persists a moderation field and reads it back', () => {
+    setModerationField('g1', 'alertChannelId', 'chan-1');
+    expect(getGuildModeration('g1').alertChannelId).toBe('chan-1');
+  });
+
+  it('persists an array moderation field', () => {
+    setModerationField('g1', 'trustedRoleIds', ['r1', 'r2']);
+    expect(getGuildModeration('g1').trustedRoleIds).toEqual(['r1', 'r2']);
   });
 });

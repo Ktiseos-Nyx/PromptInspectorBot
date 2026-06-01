@@ -2,8 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import type { GuildEntry, GuildModeration, ResolvedModConfig, EnvModDefaults } from './settings-types';
 
-const FILE = path.resolve(__dirname, '../guild_settings.json');
-
 const DEFAULTS: Record<string, boolean> = {
   ask: false,
   metadata: true,
@@ -14,42 +12,86 @@ const DEFAULTS: Record<string, boolean> = {
   fun_commands: true,
   qotd: false,
   interact: true,
+  security: true,
 };
 
-type Settings = Record<string, Record<string, boolean>>;
+function filePath(): string {
+  return process.env.GUILD_SETTINGS_PATH ?? path.resolve(__dirname, '../guild_settings.json');
+}
 
-function load(): Settings {
-  if (!fs.existsSync(FILE)) return { _defaults: DEFAULTS };
+interface Store {
+  _defaults: Record<string, boolean>;
+  guilds: Record<string, GuildEntry>;
+}
+
+function load(): Store {
+  const file = filePath();
+  if (!fs.existsSync(file)) return { _defaults: { ...DEFAULTS }, guilds: {} };
   try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    const _defaults = { ...DEFAULTS, ...((raw._defaults as Record<string, boolean>) ?? {}) };
+    const guilds: Record<string, GuildEntry> = {};
+    for (const [key, val] of Object.entries(raw)) {
+      if (key === '_defaults' || key === '_comment' || key === 'guilds') continue;
+      guilds[key] = migrateGuildEntry(val);
+    }
+    if (raw.guilds && typeof raw.guilds === 'object') {
+      for (const [key, val] of Object.entries(raw.guilds as Record<string, unknown>)) {
+        guilds[key] = migrateGuildEntry(val);
+      }
+    }
+    return { _defaults, guilds };
   } catch {
-    return { _defaults: DEFAULTS };
+    return { _defaults: { ...DEFAULTS }, guilds: {} };
   }
 }
 
-function save(settings: Settings): void {
-  fs.writeFileSync(FILE, JSON.stringify(settings, null, 2));
+function save(store: Store): void {
+  const out = {
+    _comment: 'Per-server configuration. _defaults applies to all guilds; per-guild entries override.',
+    _defaults: store._defaults,
+    guilds: store.guilds,
+  };
+  fs.writeFileSync(filePath(), JSON.stringify(out, null, 2));
+}
+
+function entry(store: Store, guildId: string): GuildEntry {
+  if (!store.guilds[guildId]) store.guilds[guildId] = { toggles: {}, moderation: {} };
+  return store.guilds[guildId];
 }
 
 export function getGuildSetting(guildId: string, setting: string, fallback = false): boolean {
-  const settings = load();
-  const guild = settings[guildId];
-  if (guild && setting in guild) return guild[setting];
-  const defaults = settings['_defaults'] ?? DEFAULTS;
-  if (setting in defaults) return defaults[setting];
+  const store = load();
+  const g = store.guilds[guildId];
+  if (g && setting in g.toggles) return g.toggles[setting];
+  if (setting in store._defaults) return store._defaults[setting];
   return fallback;
 }
 
 export function setGuildSetting(guildId: string, setting: string, value: boolean): void {
-  const settings = load();
-  if (!settings[guildId]) settings[guildId] = {};
-  settings[guildId][setting] = value;
-  save(settings);
+  const store = load();
+  entry(store, guildId).toggles[setting] = value;
+  save(store);
 }
 
 export function getAllGuildSettings(guildId: string): Record<string, boolean> {
-  const settings = load();
-  return { ...DEFAULTS, ...(settings['_defaults'] ?? {}), ...(settings[guildId] ?? {}) };
+  const store = load();
+  return { ...DEFAULTS, ...store._defaults, ...(store.guilds[guildId]?.toggles ?? {}) };
+}
+
+export function getGuildModeration(guildId: string): Partial<GuildModeration> {
+  const store = load();
+  return { ...(store.guilds[guildId]?.moderation ?? {}) };
+}
+
+export function setModerationField<K extends keyof GuildModeration>(
+  guildId: string,
+  field: K,
+  value: GuildModeration[K],
+): void {
+  const store = load();
+  entry(store, guildId).moderation[field] = value;
+  save(store);
 }
 
 export function migrateGuildEntry(raw: unknown): GuildEntry {
