@@ -129,23 +129,31 @@ channel via the same resolver.
   (existing gate retained). Keep `view` / `set` subcommands as thin fallbacks or
   remove in favor of the panel (decision: keep a text `view` for accessibility; panel
   is the default `/settings` with no subcommand).
-- **Layout — two sections in one embed:**
+- **Three tiers** (metadata is AI-image metadata, so it groups with AI; Fun stands
+  alone):
   - **MODERATION** (primary): anti-scam on/off, alert channel, trusted roles,
     monitored channels.
-  - **AI & FUN** (secondary/optional): per-feature toggles for `ask`, `describe`,
-    `coder`, `techsupport`, `promptsupport`, `fun_commands`, `interact`, `qotd`.
-- **Components** (Discord 5-row limit):
-  - Row 1: toggle button — anti-scam ON/OFF (re-renders on click).
-  - Row 2: `ChannelSelectMenu` (single) — alert channel.
-  - Row 3: `RoleSelectMenu` (multi) — trusted roles.
-  - Row 4: `ChannelSelectMenu` (multi) — monitored channels (empty = all channels).
-  - Row 5: `StringSelectMenu` (multi) — AI/Fun feature toggles (compact; selected =
-    enabled).
+  - **AI & METADATA**: per-feature toggles for `metadata`, `ask`, `describe`,
+    `coder`, `techsupport`, `promptsupport`.
+  - **FUN**: per-feature toggles for `fun_commands`, `interact`, `qotd`.
+- **Paged layout (required by Discord's 5-action-row limit):** Moderation alone uses
+  4 component rows, so all three tiers cannot share one screen. The panel is paged:
+  - The **embed always shows a summary** of all three tiers' current state (so the
+    admin sees everything at a glance).
+  - A **navigation row** of buttons `[Moderation] [AI & Metadata] [Fun]` is always
+    present (row 1). Clicking one swaps the interactive controls below to that page
+    and re-renders.
+  - **Moderation page** (nav + 4 = 5 rows, at the limit): anti-scam ON/OFF toggle
+    button, `ChannelSelectMenu` (single) alert channel, `RoleSelectMenu` (multi)
+    trusted roles, `ChannelSelectMenu` (multi) monitored channels (empty = all).
+  - **AI & Metadata page** (nav + 1): `StringSelectMenu` (multi) — selected = enabled.
+  - **Fun page** (nav + 1): `StringSelectMenu` (multi) — selected = enabled.
 - **Interaction handling:** a **component collector** attached to the ephemeral reply,
   filtered to the invoking admin, ManageGuild-gated, ~5 min idle timeout. The global
   interaction router (`commands/index.ts`) is **not** modified — the collector is
   self-contained, avoiding stale `customId` routing. Each component interaction
-  mutates per-guild config and re-renders via `update()`.
+  (page switch or value change) mutates per-guild config and re-renders via
+  `update()`. The active page is tracked in collector-local state.
 - **Copy:** plain neutral labels — "Anti-scam protection", "Alert channel", "Trusted
   roles", "Monitored channels", "AI commands", "Fun commands". Factual descriptions,
   no marketing language.
@@ -179,9 +187,9 @@ message → onMessage
         → if security toggle: security checks use ModConfig (alert chan, trust, catcher)
         → if metadata toggle: metadata extraction  [independent of security]
 
-/settings → ephemeral panel (ManageGuild)
+/settings → ephemeral paged panel (ManageGuild): Moderation | AI & Metadata | Fun
           → component collector (invoker-filtered, 5 min)
-          → setters mutate guild_settings.json → re-render
+          → nav buttons switch page; setters mutate guild_settings.json → re-render
 
 bot added to guild → GuildCreate → not allowlisted? leave (if list non-empty)
 startup → sweep guilds → leave non-allowlisted (if list non-empty)
