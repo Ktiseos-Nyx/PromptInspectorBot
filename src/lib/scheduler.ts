@@ -1,7 +1,8 @@
 import fs from 'fs';
 import { Client, TextChannel } from 'discord.js';
+import { dataFile } from './paths';
 
-const FILE = 'schedules.json';
+const FILE = dataFile('schedules.json');
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import path from 'path';
+import { dataFile } from './paths';
 import type { GuildEntry, GuildModeration, ResolvedModConfig, EnvModDefaults } from './settings-types';
 
 const DEFAULTS: Record<string, boolean> = {
@@ -16,7 +16,7 @@ const DEFAULTS: Record<string, boolean> = {
 };
 
 function filePath(): string {
-  return process.env.GUILD_SETTINGS_PATH ?? path.resolve(__dirname, '../guild_settings.json');
+  return process.env.GUILD_SETTINGS_PATH ?? dataFile('guild_settings.json');
 }
 
 interface Store {
