@@ -1,8 +1,8 @@
 import { Events, Message, DMChannel, type Client } from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
-import { SCAN_LIMIT_BYTES, MONITORED_CHANNEL_IDS, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE } from '../lib/config';
-import { getGuildSetting } from '../lib/guild-settings';
+import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS } from '../lib/config';
+import { getGuildSetting, getModeration } from '../lib/guild-settings';
 import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
@@ -24,22 +24,23 @@ export function registerMessageEvents(client: Client): void {
 
     if (!message.guild) return;
 
-    // ── Channel filtering ────────────────────────────────────────────────────
+    // ── Resolve this guild's moderation config (per-guild value or env fallback) ──
+    const mod = getModeration(message.guildId!, ENV_MOD_DEFAULTS);
+
+    // ── Channel filtering (per-guild monitored channels; empty = all) ───────────
     const channelId = ('parentId' in message.channel && message.channel.parentId)
       ? message.channel.parentId
       : message.channelId;
+    if (mod.monitoredChannelIds.size && !mod.monitoredChannelIds.has(channelId)) return;
 
-    if (MONITORED_CHANNEL_IDS.size && !MONITORED_CHANNEL_IDS.has(channelId)) return;
-    if (!getGuildSetting(message.guildId!, 'metadata', true)) return;
-
-    // ── Security checks ──────────────────────────────────────────────────────
+    // ── Security checks (independent of the metadata toggle) ─────────────────────
     const securityEnabled = getGuildSetting(message.guildId!, 'security', true);
 
-    if (securityEnabled && !isTrusted(message)) {
+    if (securityEnabled && !isTrusted(message, mod)) {
       // ── Known banned user ──────────────────────────────────────────────────
       const knownBan = isUserBanned(message.author.id);
       if (knownBan) {
-        await instantBan(message, `Known banned user: ${knownBan.reason}`, ['In ban registry']);
+        await instantBan(message, `Known banned user: ${knownBan.reason}`, mod, ['In ban registry']);
         return;
       }
 
@@ -47,7 +48,7 @@ export function registerMessageEvents(client: Client): void {
       if (message.content) {
         const knownPattern = isPatternBanned(message.content);
         if (knownPattern) {
-          await instantBan(message, `Known banned pattern: ${knownPattern.reason}`, ['Pattern registry match']);
+          await instantBan(message, `Known banned pattern: ${knownPattern.reason}`, mod, ['Pattern registry match']);
           recordBan(message.author.id, message.guildId!, `Pattern match: ${knownPattern.reason}`);
           return;
         }
@@ -57,18 +58,18 @@ export function registerMessageEvents(client: Client): void {
         if (wordMatch) {
           if (wordMatch.action === 'ban') {
             recordBan(message.author.id, message.guildId!, `Word pattern: ${wordMatch.reason}`);
-            await instantBan(message, `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`]);
+            await instantBan(message, `Word pattern match: ${wordMatch.reason}`, mod, [`Pattern: ${wordMatch.pattern}`]);
             return;
           }
           if (wordMatch.action === 'delete') {
             await message.delete().catch(() => null);
             await alertAdmins(message.guild!, message.member ?? message.author as any,
-              `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`], 'DELETED');
+              `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`], 'DELETED', mod);
             return;
           }
           if (wordMatch.action === 'warn') {
             await alertAdmins(message.guild!, message.member ?? message.author as any,
-              `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`, `Message: ${message.content.slice(0, 100)}`], 'ALERT');
+              `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`, `Message: ${message.content.slice(0, 100)}`], 'ALERT', mod);
           }
         }
       }
@@ -87,7 +88,7 @@ export function registerMessageEvents(client: Client): void {
             const buf = Buffer.from(await res.arrayBuffer());
             const [safe, reason] = verifyImageSafety(buf, att.name);
             if (!safe) {
-              await instantBan(message, reason);
+              await instantBan(message, reason, mod);
               return;
             }
           } catch { /* skip on network error */ }
@@ -98,7 +99,7 @@ export function registerMessageEvents(client: Client): void {
       if (message.embeds.length > 0) {
         const embedReason = await checkEmbedImages(message);
         if (embedReason) {
-          await instantBan(message, `Malicious embed: ${embedReason}`);
+          await instantBan(message, `Malicious embed: ${embedReason}`, mod);
           return;
         }
       }
@@ -113,14 +114,14 @@ export function registerMessageEvents(client: Client): void {
           const reason = `Algo speak + cross-posting (algo score: ${algoScore}, channels: ${crossPosts})`;
           recordPattern(message.content, reason);
           recordBan(message.author.id, message.guildId!, reason);
-          await instantBan(message, reason, ['Obfuscated text', `${crossPosts} channels`, `Algo score: ${algoScore}`]);
+          await instantBan(message, reason, mod, ['Obfuscated text', `${crossPosts} channels`, `Algo score: ${algoScore}`]);
           return;
         }
         // High score alone (heavy zalgo/ZWC) — delete and alert without banning
         if (algoScore >= 100) {
           await message.delete().catch(() => null);
           await alertAdmins(message.guild, message.member ?? message.author as any,
-            `Heavy text obfuscation (score: ${algoScore})`, ['Possible evasion attempt'], 'ALERT');
+            `Heavy text obfuscation (score: ${algoScore})`, ['Possible evasion attempt'], 'ALERT', mod);
         }
       }
 
@@ -129,33 +130,34 @@ export function registerMessageEvents(client: Client): void {
         const crossPosts = checkCrossPosting(message);
         if (crossPosts >= 2) {
           await instantBan(message, `Screenshot spam (${imageAttachments.size} images, ${crossPosts} channels)`,
-            [`${imageAttachments.size} images`, `${crossPosts} channels`]);
+            mod, [`${imageAttachments.size} images`, `${crossPosts} channels`]);
           return;
         }
         if (!userHasRoles && isGibberish(message.content, false, hasImages)) {
           await instantBan(message, `Screenshot spam + gibberish`,
-            [`${imageAttachments.size} images`, 'No roles', 'Gibberish text']);
+            mod, [`${imageAttachments.size} images`, 'No roles', 'Gibberish text']);
           return;
         }
       }
 
       // ── Wallet scam scoring ────────────────────────────────────────────────
-      const [score, reasons] = calculateScamScore(message);
+      const [score, reasons] = calculateScamScore(message, mod);
       if (score >= 100) {
         recordPattern(message.content, `Wallet scam score ${score}`);
         recordBan(message.author.id, message.guildId!, `Wallet scam score ${score}`);
-        await instantBan(message, `Wallet scam (score: ${score})`, reasons);
+        await instantBan(message, `Wallet scam (score: ${score})`, mod, reasons);
         return;
       }
       if (score >= 75) {
         await message.delete().catch(() => null);
         await alertAdmins(message.guild, message.member ?? message.author as any,
-          `Suspicious message (score: ${score})`, reasons, 'DELETED');
+          `Suspicious message (score: ${score})`, reasons, 'DELETED', mod);
         return;
       }
     }
 
-    // ── PNG metadata processing ──────────────────────────────────────────────
+    // ── PNG metadata processing (independent of security) ───────────────────────
+    if (!getGuildSetting(message.guildId!, 'metadata', true)) return;
     const pngAttachments = message.attachments.filter(
       a => a.name.toLowerCase().endsWith('.png') && a.size < SCAN_LIMIT_BYTES
     );
