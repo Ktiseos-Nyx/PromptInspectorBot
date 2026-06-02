@@ -112,6 +112,7 @@ export function formatInterval(ms: number): string {
 let tickTimer: NodeJS.Timeout | null = null;
 
 export function startScheduler(client: Client): void {
+  if (tickTimer) clearInterval(tickTimer); // idempotent: never leak a duplicate interval
   tickTimer = setInterval(() => tick(client), 60_000);
   console.log('Scheduler started (60s tick)');
 }
