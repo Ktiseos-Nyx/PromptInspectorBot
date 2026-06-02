@@ -406,8 +406,8 @@ Automated moderation can delete messages and ban users. Optional AI commands sen
 to third-party providers (Groq / Claude / Gemini) only when a server has enabled them.
 
 **Support:**
-- AI-free space — Earth and Dusk: https://discord.gg/5t2kYxt7An
-- AI-friendly space — Ktiseos Nyx AI&ML: https://discord.gg/HhBSvM9gBY
+- AI-free space — Earth and Dusk: <https://discord.gg/5t2kYxt7An>
+- AI-friendly space — Ktiseos Nyx AI&ML: <https://discord.gg/HhBSvM9gBY>
 
 ---
 
