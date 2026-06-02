@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { migrateGuildEntry, resolveModeration } from './guild-settings';
+import { migrateGuildEntry, resolveModeration, getModeration } from './guild-settings';
 import type { EnvModDefaults } from './settings-types';
 import {
   getGuildSetting, setGuildSetting, getAllGuildSettings,
@@ -117,5 +117,21 @@ describe('moderation store', () => {
   it('persists an array moderation field', () => {
     setModerationField('g1', 'trustedRoleIds', ['r1', 'r2']);
     expect(getGuildModeration('g1').trustedRoleIds).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('getModeration', () => {
+  it('resolves per-guild value over env, falls back otherwise', () => {
+    const env: EnvModDefaults = {
+      alertChannelIds: new Set(['env-alert']),
+      trustedRoleIds: new Set(),
+      trustedUserIds: new Set(['env-user']),
+      monitoredChannelIds: new Set(),
+      catcherRoleId: null,
+    };
+    setModerationField('g1', 'alertChannelId', 'guild-alert');
+    const r = getModeration('g1', env);
+    expect([...r.alertChannelIds]).toEqual(['guild-alert']);
+    expect([...r.trustedUserIds]).toEqual(['env-user']); // fell back to env
   });
 });

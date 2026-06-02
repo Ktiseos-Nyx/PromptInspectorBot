@@ -128,3 +128,7 @@ export function resolveModeration(
     catcherRoleId: m.catcherRoleId != null ? m.catcherRoleId : env.catcherRoleId,
   };
 }
+
+export function getModeration(guildId: string, env: EnvModDefaults): ResolvedModConfig {
+  return resolveModeration(getGuildModeration(guildId), env);
+}
