@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors } from 'discord.js';
-import { CATCHER_ROLE_ID, TRUSTED_USER_IDS, ADMIN_CHANNEL_IDS } from './config';
+import type { ResolvedModConfig } from './settings-types';
 
 // ── Cross-post tracking ───────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ const SCAM_PATTERNS: [RegExp, number][] = [
   [/\bBUY\b.*\bWALLET\b/i, 40],
 ];
 
-export function calculateScamScore(message: Message): [number, string[]] {
+export function calculateScamScore(message: Message, cfg: ResolvedModConfig): [number, string[]] {
   let score = 0;
   const reasons: string[] = [];
   const name = (message.member?.displayName ?? message.author.username);
@@ -93,7 +93,7 @@ export function calculateScamScore(message: Message): [number, string[]] {
   const member = message.member;
   if (member) {
     const roles = member.roles.cache;
-    if (CATCHER_ROLE_ID && roles.size === 2 && roles.has(CATCHER_ROLE_ID)) {
+    if (cfg.catcherRoleId && roles.size === 2 && roles.has(cfg.catcherRoleId)) {
       score += 30; reasons.push('Only has CATCHER role');
     } else if (roles.size === 1) {
       score += 20; reasons.push('No roles (only @everyone)');
@@ -135,8 +135,9 @@ export async function alertAdmins(
   reason: string,
   details: string[],
   action: string,
+  cfg: ResolvedModConfig,
 ): Promise<void> {
-  if (!ADMIN_CHANNEL_IDS.size) return;
+  if (!cfg.alertChannelIds.size) return;
 
   const embed = new EmbedBuilder()
     .setColor(ACTION_COLORS[action] ?? Colors.Orange)
@@ -149,7 +150,7 @@ export async function alertAdmins(
   const avatar = typeof member.avatarURL === 'function' ? member.avatarURL() : null;
   if (avatar) embed.setThumbnail(avatar);
 
-  for (const channelId of ADMIN_CHANNEL_IDS) {
+  for (const channelId of cfg.alertChannelIds) {
     const channel = guild.channels.cache.get(channelId) as TextChannel | undefined;
     if (channel) await channel.send({ embeds: [embed] }).catch(() => null);
   }
@@ -157,7 +158,7 @@ export async function alertAdmins(
 
 // ── Instant ban ───────────────────────────────────────────────────────────────
 
-export async function instantBan(message: Message, reason: string, details: string[] = []): Promise<void> {
+export async function instantBan(message: Message, reason: string, cfg: ResolvedModConfig, details: string[] = []): Promise<void> {
   console.error(`🚨 BAN: ${message.author.tag} (${message.author.id}) — ${reason}`);
   if (!message.guild) return;
   try {
@@ -166,10 +167,10 @@ export async function instantBan(message: Message, reason: string, details: stri
       reason: `Auto-ban: ${reason} | ${details.slice(0, 3).join(', ')}`,
       deleteMessageSeconds: 300,
     });
-    await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'BANNED');
+    await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'BANNED', cfg);
   } catch (e) {
     console.error('Ban failed:', e);
-    if (message.guild) await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'FAILED');
+    if (message.guild) await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'FAILED', cfg);
   }
 }
 
@@ -228,8 +229,12 @@ export async function checkEmbedImages(message: Message): Promise<string | null>
 
 // ── Bypass checks ─────────────────────────────────────────────────────────────
 
-export function isTrusted(message: Message): boolean {
-  if (TRUSTED_USER_IDS.has(message.author.id)) return true;
+export function isTrusted(message: Message, cfg: ResolvedModConfig): boolean {
+  if (cfg.trustedUserIds.has(message.author.id)) return true;
   if (message.guild && message.author.id === message.guild.ownerId) return true;
+  const roles = message.member?.roles?.cache;
+  if (roles && cfg.trustedRoleIds.size) {
+    for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
+  }
   return false;
 }
