@@ -1,6 +1,6 @@
 # Terms of Service for PromptInspectorBot-Enhanced
 
-**Last Updated:** October 21, 2025
+**Last Updated:** June 2, 2026
 
 ## The Human-Readable Version
 
@@ -20,18 +20,30 @@ By using PromptInspectorBot-Enhanced ("the Bot"), you agree to these Terms of Se
 
 ## 2. What This Bot Does
 
-The Bot provides a service to extract and display metadata from AI-generated images posted in Discord channels. This includes:
+The Bot provides several services, which server admins can enable or disable **per
+server** via `/settings`:
 
+**Metadata extraction (default):**
 - Reading image files posted in monitored channels
 - Extracting AI generation metadata (prompts, settings, model information)
-- Sending you Direct Messages with the extracted information
-- Providing slash commands and context menus for metadata extraction
+- Showing you the results via clickable reactions, slash commands, and context menus
+
+**Automated moderation (anti-spam / anti-scam):**
+- Inspecting messages, senders, and attachments in monitored servers for known scam/spam
+  patterns
+- **Automatically deleting messages and/or banning users** that match
+- Maintaining a ban registry — shared across servers the same bot instance runs in — so
+  repeat offenders and known scam campaigns are caught again
+
+**Optional AI features (opt-in per server, off by default in most cases):**
+- Commands like `/describe`, `/ask`, `/coder`, and `/techsupport` use third-party AI
+  providers (Google Gemini, Anthropic Claude, and/or Groq). A server can run with none of
+  these enabled.
 
 **What the Bot does NOT do:**
-- Store your images
-- Store your metadata
+- Store your images, metadata, or prompts (see Privacy Policy)
 - Modify your images
-- Use your data for anything other than showing it to you
+- Sell or profile your data
 
 ## 3. Your Responsibilities
 
@@ -53,8 +65,13 @@ The Bot provides a service to extract and display metadata from AI-generated ima
 
 ### 3.4 Server Owner Responsibilities
 If you invite the Bot to your server:
-- You're responsible for configuring which channels it monitors
-- You should inform your server members that the Bot is active
+- You're responsible for configuring it via `/settings` — which channels it monitors,
+  whether automated moderation is on, who is trusted, where alerts go, and which (if any)
+  AI features are enabled
+- You should inform your server members that the Bot is active, that **automated
+  moderation may delete messages and ban users**, and that bans contribute to a
+  **registry shared across servers the bot runs in**
+- You are responsible for your own moderation configuration and decisions
 - You're responsible for compliance with applicable laws in your jurisdiction
 
 ## 4. What We're NOT Responsible For
@@ -108,14 +125,31 @@ If you invite the Bot to your server:
 - If metadata contains something problematic, that's an issue with whoever created the image, not the Bot
 
 ### 4.6 Third-Party Services
-- The Bot may use third-party services (like CivitAI's API for model lookups)
-- We're not responsible for those services
-- If CivitAI is down, the Bot's model lookup features won't work. Not our fault.
+- The Bot may use third-party services: CivitAI's API for model lookups, and — where a
+  server enables AI features — AI providers (Google Gemini, Anthropic Claude, Groq)
+- We're not responsible for those services or their availability, terms, or handling of
+  content sent to them
+- If a provider is down, the dependent features won't work. Not our fault.
 
-### 4.7 Data Loss
-- We don't store your data (see Privacy Policy)
+### 4.7 Automated Moderation (Anti-Spam / Anti-Scam)
+- The Bot's moderation is **automated and heuristic** — it scores messages for spam/scam
+  signals and may delete messages or ban users **without human review**
+- **False positives can happen.** We are not liable for legitimate users caught by
+  automated moderation
+- **Appeals and reversals are handled by the server's own admins/moderators**, who can
+  unban and manage entries via `/banregistry` — not by the Bot operator
+- Server admins choose whether moderation is enabled and how it's tuned; the Bot operator
+  is not responsible for an individual server's moderation choices or outcomes
+- The ban registry is **shared across servers** the same bot instance runs in; by using
+  the Bot, a server participates in this shared protection
+
+### 4.8 Data Loss
+- We don't store your images, metadata, or prompts (see Privacy Policy)
 - If you want to keep metadata, save it yourself
 - We're not responsible if you lose access to data the Bot sent you
+- Operational data the Bot does keep (ban registry, server settings) lives in files on
+  the host and may be lost on host/redeploy events if not persisted; we don't guarantee
+  its retention
 
 ## 5. Intellectual Property
 
@@ -216,6 +250,12 @@ If any part of these Terms is found invalid or unenforceable, the rest still app
 Questions about these Terms?
 - **GitHub Issues:** https://github.com/Ktiseos-Nyx/PromptInspectorBot/issues
 - **Repository:** https://github.com/Ktiseos-Nyx/PromptInspectorBot
+
+**Prefer Discord support?**
+- **AI-free space** (if you'd rather not be around AI discussion) — Earth and Dusk:
+  https://discord.gg/5t2kYxt7An
+- **AI-friendly space** — Ktiseos Nyx AI&ML:
+  https://discord.gg/HhBSvM9gBY
 
 ---
 

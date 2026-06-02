@@ -1,6 +1,7 @@
 import { Events, GuildMember, TextChannel, EmbedBuilder, Colors, type Client } from 'discord.js';
 import { isUserBanned } from '../lib/ban-registry';
-import { ADMIN_CHANNEL_IDS } from '../lib/config';
+import { ENV_MOD_DEFAULTS } from '../lib/config';
+import { getModeration } from '../lib/guild-settings';
 
 export function registerJoinEvents(client: Client): void {
   client.on(Events.GuildMemberAdd, async (member: GuildMember) => {
@@ -22,7 +23,8 @@ export function registerJoinEvents(client: Client): void {
       .setThumbnail(member.displayAvatarURL())
       .setFooter({ text: 'Use /banregistry view to manage the registry' });
 
-    for (const channelId of ADMIN_CHANNEL_IDS) {
+    const mod = getModeration(member.guild.id, ENV_MOD_DEFAULTS);
+    for (const channelId of mod.alertChannelIds) {
       const channel = member.guild.channels.cache.get(channelId) as TextChannel | undefined;
       if (channel) await channel.send({ embeds: [embed] }).catch(() => null);
     }

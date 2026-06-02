@@ -5,18 +5,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Run the bot
-python main.py
-
 # Install dependencies
-pip install -r requirements.txt
+npm install
 
-# Lint (uses ruff.toml config)
-ruff check .
-ruff format .
+# Run the bot (dev, via ts-node)
+npm run dev
+
+# Build (tsc → dist/) then run compiled
+npm run build
+npm start
+
+# Tests (vitest)
+npm test          # vitest run
+npm run test:watch
 ```
 
-There are no automated tests; validate behavior by running the bot and observing logs.
+Pure logic (guild settings, moderation resolution, allowlist, settings-panel render,
+security scorers) is unit-tested under vitest; Discord I/O (event handlers, the
+`/settings` collector, the allowlist `GuildCreate` handler) is validated by running the
+bot and observing logs.
+
+### Data persistence (`DATA_DIR`)
+
+The bot persists state in JSON files: `guild_settings.json` (per-server settings),
+`ban-registry.json` (cross-server ban/scam registry), `schedules.json` (reminders/QOTD),
+and `reports.json`. All four resolve via `src/lib/paths.ts::dataFile()`, rooted at
+`DATA_DIR` (defaults to `process.cwd()` = repo root in both dev and prod).
+
+**On ephemeral hosts (Railway), set `DATA_DIR` to a mounted volume path** (e.g.
+`/data`) or this state is wiped on every redeploy. `GUILD_SETTINGS_PATH` and
+`REPORTS_PATH` remain as per-file overrides (used by tests).
+
+> Note: the Architecture section below still describes the original Python layout
+> (`bot/`, `dataset_tools/`, `main.py`). The project has since been migrated to
+> TypeScript under `src/` (`src/bot.ts`, `src/commands/`, `src/events/`, `src/lib/`).
+> This section is pending a refresh.
 
 ## Architecture
 

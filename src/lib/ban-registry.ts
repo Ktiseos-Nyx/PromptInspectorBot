@@ -1,7 +1,8 @@
 import fs from 'fs';
 import crypto from 'crypto';
+import { dataFile } from './paths';
 
-const FILE = 'ban-registry.json';
+const FILE = dataFile('ban-registry.json');
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

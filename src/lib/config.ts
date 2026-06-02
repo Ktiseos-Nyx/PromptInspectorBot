@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import fs from 'fs';
+import type { EnvModDefaults } from './settings-types';
 import { RateLimiter } from './rate-limiter';
 
 function parseIdList(envVar: string | undefined): Set<string> {
@@ -41,6 +42,14 @@ export const TRUSTED_USER_IDS = parseIdList(process.env.TRUSTED_USER_IDS);
 export const ADMIN_CHANNEL_IDS = parseIdList(process.env.ADMIN_CHANNEL_IDS ?? process.env.ADMIN_CHANNEL_ID);
 export const DM_ALLOWED_USER_IDS = parseIdList(process.env.DM_ALLOWED_USER_IDS);
 export const DM_RESPONSE_MESSAGE = process.env.DM_RESPONSE_MESSAGE ?? '👋 This bot is configured for server use only.';
+
+export const ENV_MOD_DEFAULTS: EnvModDefaults = {
+  alertChannelIds: ADMIN_CHANNEL_IDS,
+  trustedRoleIds: new Set<string>(), // no env var for trusted roles — per-guild only
+  trustedUserIds: TRUSTED_USER_IDS,
+  monitoredChannelIds: MONITORED_CHANNEL_IDS,
+  catcherRoleId: CATCHER_ROLE_ID || null,
+};
 
 // ── Gemini ────────────────────────────────────────────────────────────────────
 export const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? '';

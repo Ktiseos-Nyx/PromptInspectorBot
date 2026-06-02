@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/bot.js",
-    "dev": "ts-node src/bot.ts"
+    "dev": "ts-node src/bot.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -25,6 +27,7 @@
     "@types/mime-types": "^2.1.4",
     "@types/node": "^22.0.0",
     "ts-node": "^10.9.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.8"
   }
 }

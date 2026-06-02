@@ -1,7 +1,8 @@
 import fs from 'fs';
 import { Client, TextChannel } from 'discord.js';
+import { dataFile } from './paths';
 
-const FILE = 'schedules.json';
+const FILE = dataFile('schedules.json');
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,9 +109,19 @@ export function formatInterval(ms: number): string {
 
 // ── Tick loop ─────────────────────────────────────────────────────────────────
 
+let tickTimer: NodeJS.Timeout | null = null;
+
 export function startScheduler(client: Client): void {
-  setInterval(() => tick(client), 60_000);
+  if (tickTimer) clearInterval(tickTimer); // idempotent: never leak a duplicate interval
+  tickTimer = setInterval(() => tick(client), 60_000);
   console.log('Scheduler started (60s tick)');
+}
+
+export function stopScheduler(): void {
+  if (tickTimer) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
 }
 
 async function tick(client: Client): Promise<void> {

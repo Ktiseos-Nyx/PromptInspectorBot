@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { registerEvents } from './events';
 import { registerCommands } from './commands';
-import { startScheduler } from './lib/scheduler';
+import { startScheduler, stopScheduler } from './lib/scheduler';
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -50,6 +50,29 @@ process.on('uncaughtException', (err) => {
   console.error('[process] uncaught exception:', err);
   process.exit(1);
 });
+
+// Graceful shutdown — Railway sends SIGTERM on redeploy/stop. Stop the scheduler and
+// close the Discord connection cleanly, then exit 0 so it isn't logged as a failure.
+// The durable JSON stores (guild settings, ban registry, schedules, reports) use
+// synchronous writes, so no in-flight write can be lost here. (The ComfyUI GitHub-node
+// cache writes asynchronously, but it's a regenerable cache — safe not to flush on exit.)
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[process] ${signal} received — shutting down gracefully`);
+  try {
+    stopScheduler();
+    await client.destroy();
+  } catch (err) {
+    console.error('[process] error during shutdown:', err);
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 client.login(token).catch((err) => {
   console.error('[discord] login failed:', err);
