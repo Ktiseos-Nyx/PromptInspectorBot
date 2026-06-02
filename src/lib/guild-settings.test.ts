@@ -102,6 +102,18 @@ describe('toggle store', () => {
     fs.writeFileSync(tmp, JSON.stringify({ g1: { ask: true } }));
     expect(getGuildSetting('g1', 'ask')).toBe(true);
   });
+
+  it('falls back to defaults (without throwing) on a corrupt file', () => {
+    fs.writeFileSync(tmp, '{ this is not valid json');
+    expect(() => getGuildSetting('g1', 'security')).not.toThrow();
+    expect(getGuildSetting('g1', 'security')).toBe(true);
+  });
+
+  it('writes atomically (no leftover temp file)', () => {
+    setGuildSetting('g1', 'ask', true);
+    expect(fs.existsSync(tmp)).toBe(true);
+    expect(fs.existsSync(`${tmp}.${process.pid}.tmp`)).toBe(false);
+  });
 });
 
 describe('moderation store', () => {

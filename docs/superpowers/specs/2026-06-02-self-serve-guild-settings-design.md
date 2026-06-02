@@ -181,7 +181,7 @@ channel via the same resolver.
 
 ## Data Flow (after change)
 
-```
+```text
 message → onMessage
         → getModeration(guildId)  [per-guild, env fallback]
         → if security toggle: security checks use ModConfig (alert chan, trust, catcher)
@@ -195,9 +195,12 @@ bot added to guild → GuildCreate → not allowlisted? leave (if list non-empty
 startup → sweep guilds → leave non-allowlisted (if list non-empty)
 ```
 
-## Testing / Validation (no automated test suite in repo)
+## Testing / Validation
 
-Validate by running the bot and observing behavior:
+The repo now includes a vitest suite (`npm test`) covering the pure logic (migration,
+env-fallback resolution, the store, security scorers, the allowlist guard, and
+settings-panel render). Validate the Discord-facing behavior by running the bot and
+observing:
 1. `/settings` opens the panel; toggles and select menus flip state and persist to
    `guild_settings.json`.
 2. Anti-scam still fires with the `metadata` toggle **off** (decoupling verified).
@@ -221,4 +224,3 @@ Validate by running the bot and observing behavior:
 - `src/events/index.ts` (or `bot.ts`) — `GuildCreate` handler + startup allowlist
   sweep.
 - `src/lib/config.ts` — no schema change; `ALLOWED_GUILD_IDS` now consumed.
-```

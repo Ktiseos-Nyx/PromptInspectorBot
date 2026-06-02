@@ -41,7 +41,10 @@ function load(): Store {
       }
     }
     return { _defaults, guilds };
-  } catch {
+  } catch (err) {
+    // Log rather than swallow: a parse failure here is how a corrupt file would silently
+    // become "empty guilds", which the next save() would then persist — wiping config.
+    console.error(`[guild-settings] failed to read/parse ${file} — falling back to defaults:`, err);
     return { _defaults: { ...DEFAULTS }, guilds: {} };
   }
 }
@@ -52,7 +55,12 @@ function save(store: Store): void {
     _defaults: store._defaults,
     guilds: store.guilds,
   };
-  fs.writeFileSync(filePath(), JSON.stringify(out, null, 2));
+  // Atomic write: write to a temp file then rename, so a crash mid-write can't leave a
+  // half-written (corrupt) file that load() would silently treat as empty.
+  const target = filePath();
+  const tmp = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(out, null, 2));
+  fs.renameSync(tmp, target);
 }
 
 function entry(store: Store, guildId: string): GuildEntry {

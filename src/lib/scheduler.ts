@@ -109,9 +109,18 @@ export function formatInterval(ms: number): string {
 
 // ── Tick loop ─────────────────────────────────────────────────────────────────
 
+let tickTimer: NodeJS.Timeout | null = null;
+
 export function startScheduler(client: Client): void {
-  setInterval(() => tick(client), 60_000);
+  tickTimer = setInterval(() => tick(client), 60_000);
   console.log('Scheduler started (60s tick)');
+}
+
+export function stopScheduler(): void {
+  if (tickTimer) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
 }
 
 async function tick(client: Client): Promise<void> {

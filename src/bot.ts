@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { registerEvents } from './events';
 import { registerCommands } from './commands';
-import { startScheduler } from './lib/scheduler';
+import { startScheduler, stopScheduler } from './lib/scheduler';
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -51,15 +51,18 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// Graceful shutdown — Railway sends SIGTERM on redeploy/stop. Close the Discord
-// connection cleanly and exit 0 so it isn't logged as a failure. (Persistent writes are
-// synchronous, so no in-flight data can be lost here.)
+// Graceful shutdown — Railway sends SIGTERM on redeploy/stop. Stop the scheduler and
+// close the Discord connection cleanly, then exit 0 so it isn't logged as a failure.
+// The durable JSON stores (guild settings, ban registry, schedules, reports) use
+// synchronous writes, so no in-flight write can be lost here. (The ComfyUI GitHub-node
+// cache writes asynchronously, but it's a regenerable cache — safe not to flush on exit.)
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`[process] ${signal} received — shutting down gracefully`);
   try {
+    stopScheduler();
     await client.destroy();
   } catch (err) {
     console.error('[process] error during shutdown:', err);

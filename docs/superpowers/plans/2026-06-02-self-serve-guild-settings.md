@@ -1360,4 +1360,3 @@ git commit -m "docs: document vitest workflow and per-guild settings"
 - **Spec coverage:** owner/admin boundary (Tasks 5–6, env fallback), per-guild store (Tasks 3–6), moderation wiring incl. trusted roles (Tasks 7–9), bug fixes — security/metadata decoupling + `security` default (Tasks 5, 8), paged panel (Tasks 11–12), allowlist gate block-new+leave-existing (Task 10). All covered.
 - **Operational caveat from spec** (both guilds must be in `ALLOWED_GUILD_IDS` before deploy) is reflected in Task 13 manual validation step 5–6.
 - **Type consistency:** `ResolvedModConfig`/`EnvModDefaults`/`GuildEntry`/`GuildModeration` defined once in `settings-types.ts` and reused; `getModeration(guildId, env)`, `setModerationField(guildId, field, value)`, `buildSettingsPanel(state, page)`, `applyToggleSelection(current, tier, selected)` signatures are consistent across tasks.
-```
