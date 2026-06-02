@@ -6,7 +6,8 @@ import {
   addReport, clearReports, getReports, hasRecentReport, uniqueReporterCount,
   AUTO_TIMEOUT_MS, REPORT_THRESHOLD, REPORT_WINDOW_MS,
 } from '../lib/report-system';
-import { ADMIN_CHANNEL_IDS } from '../lib/config';
+import { ENV_MOD_DEFAULTS } from '../lib/config';
+import { getModeration } from '../lib/guild-settings';
 
 const REASONS = [
   { name: 'Harassment / Bullying',    value: 'harassment' },
@@ -34,8 +35,10 @@ async function notifyAdmins(
   messageLink: string | null,
   totalReports: number,
   autoTimedOut: boolean,
-): Promise<void> {
-  if (!ADMIN_CHANNEL_IDS.size || !interaction.guild) return;
+): Promise<boolean> {
+  if (!interaction.guild) return false;
+  const mod = getModeration(interaction.guild.id, ENV_MOD_DEFAULTS);
+  if (!mod.alertChannelIds.size) return false;
 
   const reporterTag = interaction.user.tag;
   const label = REASONS.find(r => r.value === reason)?.name ?? reason;
@@ -60,10 +63,15 @@ async function notifyAdmins(
     embed.setFooter({ text: `Threshold: ${REPORT_THRESHOLD} unique reporters in ${Math.round(REPORT_WINDOW_MS / 86_400_000)} days` });
   }
 
-  for (const channelId of ADMIN_CHANNEL_IDS) {
+  let delivered = false;
+  for (const channelId of mod.alertChannelIds) {
     const ch = interaction.guild.channels.cache.get(channelId) as TextChannel | undefined;
-    if (ch) await ch.send({ embeds: [embed] }).catch(() => null);
+    if (ch) {
+      const ok = await ch.send({ embeds: [embed] }).then(() => true).catch(() => false);
+      delivered = delivered || ok;
+    }
   }
+  return delivered;
 }
 
 export const reportCommand = {
@@ -164,8 +172,8 @@ export const reportCommand = {
         } catch { /* bot may lack permission — notify admins regardless */ }
       }
 
-      // Always notify — fires even if the member has left the server
-      await notifyAdmins(
+      // Always attempt to notify — fires even if the member has left the server
+      const notified = await notifyAdmins(
         interaction,
         targetMember?.user ?? target,
         reason, details, messageLink, reportCount, autoTimedOut
@@ -174,7 +182,9 @@ export const reportCommand = {
       const label = REASONS.find(r => r.value === reason)?.name ?? reason;
       const replyLines = [
         `✅ Report filed against **${target.tag}** for **${label}**.`,
-        `The moderation team has been notified.`,
+        notified
+          ? 'The moderation team has been notified.'
+          : 'Note: no alert channel is configured, so mods were not auto-notified — they can still review it with `/report list`.',
       ];
       if (autoTimedOut) {
         replyLines.push('⚠️ This user has been automatically timed out for 1 hour pending mod review.');

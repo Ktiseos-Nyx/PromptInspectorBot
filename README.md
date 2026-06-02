@@ -1,274 +1,293 @@
 # Prompt Inspector 🔎
 
-Inspect AI image generation metadata from Discord uploads. Enhanced fork with powerful security features and streamlined setup.
+A Discord bot that extracts AI image-generation metadata (Forge/A1111, ComfyUI, SwarmUI, and more) **and** keeps servers safe with automated anti-spam/anti-scam moderation. Per-server configurable, with optional AI commands.
+
+> **Now written in TypeScript / Node.js.** (The original was Python — the codebase has since been fully rewritten.)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/OCA5uC?referralCode=EQxw4P&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 ## 📑 Table of Contents
 
 - [Features](#features)
+- [Screenshots](#screenshots)
 - [Quick Start](#quick-start)
+- [Data & Persistence](#data--persistence-important-for-hosted-deploys)
+- [Per-Server Settings](#per-server-settings)
 - [How to Use](#how-to-use)
 - [Security System](#security-system)
+- [Guild Allowlist](#guild-allowlist-owner-cost-control)
 - [AI Provider Setup](#ai-provider-setup)
 - [R2 Upload Feature](#r2-upload-feature-optional)
 - [Configuration](#configuration)
 - [Permissions](#permissions)
 - [Troubleshooting](#troubleshooting)
+- [Forking This Bot](#forking-this-bot)
 - [Legal](#legal)
+- [Credits](#credits)
 
 ---
 
 ## Features
 
-### Core Features
+### Core
 
-- 🔍 **Comprehensive Metadata Parsing** - Supports Forge/A111, 200+ ComfyUI nodes (FLUX, PixArt, Griptape, etc.) as well as SwarmUI etc.
-- ✨ **JPG Upload Support** Where Discord fails, there is a R2 bucketing support for Jpeg/WebP Upload/Processing support.
-- 1️⃣2️⃣3️⃣ **Multiple Interaction Styles** - Numbered emoji reactions, slash commands, or context menus
-- 📦 **Batch Processing** - Handle 6+ images with a single reaction
-- 👥 **PluralKit Support** - Automatically resolves proxied messages
-- 💾 **Lightweight** - Runs metadata parser in separate process (~100MB RAM)
+- 🔍 **Comprehensive metadata parsing** — Forge/A1111, 200+ ComfyUI nodes (FLUX, PixArt, Griptape, etc.), SwarmUI, NovelAI, InvokeAI, DrawThings, and more
+- 1️⃣2️⃣3️⃣ **Multiple interaction styles** — numbered emoji reactions, slash commands, or right-click context menus
+- 📦 **Batch handling** — 6+ images collapse to a single 📦 reaction
+- 👥 **PluralKit-aware** — recognises proxied messages (work in progress for some commands)
+- ✨ **JPEG/WebP support** — optional Cloudflare R2 flow for formats Discord strips metadata from
 
-### AI Features
+### Moderation (anti-spam / anti-scam)
 
-- ✨ **`/describe`** - Generate AI descriptions (Danbooru tags or natural language)
-- 💬 **`/ask`** - Conversational AI with context memory
-- 💬 **`/coder`** - Coding Help with AI context.
-- 💬 **`/techsupport`** - Will ask you if you turned it off and on again.
-- 🔄 **Multi-Provider** - Gemini + Claude with automatic fallback
+- 🛡️ **Behaviour-based scam detection** — crypto/wallet spam scoring
+- 🖼️ **Screenshot-spam protection** — 4+ images cross-posted across channels → ban
+- 🔣 **Obfuscation detection** — zero-width / zalgo / homoglyph "algo-speak" used to evade filters
+- 🔒 **Malware prevention** — magic-bytes check on attachments and embeds
+- 🗂️ **Cross-server ban registry** — known bad actors and scam fingerprints are remembered across servers the bot runs in
+- 🧰 **Admin tools** — `/report`, `/banregistry`, configurable word filters
 
-### Security Features
+### Per-server configuration
 
-- 🛡️ **Anti-Scam Detection** - Behavior-based crypto/wallet spam detection
-- 🚫 **Cross-Posting Protection** - Instant ban for spam across multiple channels
-- 🔒 **Malware Prevention** - Magic bytes check on attachments and embeds
-- 📊 **Smart Scoring** - Context-aware detection (allows emotional spam from trusted users)
+- ⚙️ **`/settings` panel** — admins toggle features and configure moderation routing per server, no bot-owner involvement
+- 🎛️ Set the alert channel, trusted roles/users, monitored channels, and catcher role — all per server
+
+### Optional AI (off by default in most cases, opt-in per server)
+
+- ✨ **`/describe`** — AI image descriptions (Danbooru tags or natural language)
+- 💬 **`/ask`** — conversational AI with per-user context
+- 💬 **`/coder`** / **`/techsupport`** / **`/promptsupport`** — focused assistants
+- 🔄 **Three providers** — Groq, Claude, and Gemini with automatic fallback
+
+### Fun & utility
+
+- 🎲 `/decide`, `/poll`, `/wildcard`, `/goodnight`, `/interact`
+- ⏰ `/remind` (one-time or recurring) and a Question-of-the-Day system
 
 ---
 
-## Screenshots & Examples
-
-### Bot in Action
+## Screenshots
 
 <table>
   <tr>
-    <td width="50%">
-      <img src="images/Screenshot 2025-12-10 at 13.04.39.jpg" alt="Metadata extraction and display">
-      <b>Metadata Extraction</b><br>
-      View comprehensive metadata from AI-generated images with clean embeds
-    </td>
-    <td width="50%">
-      <img src="images/Screenshot 2025-12-10 at 13.04.54.jpg" alt="Settings management">
-      <b>Per-Server Settings</b><br>
-      Configure features per-server with an intuitive settings UI
-    </td>
+    <td width="50%"><img src="images/forge-ui-metadata.jpg" alt="Metadata extraction"><br><b>Metadata extraction</b></td>
+    <td width="50%"><img src="images/selection-ui.jpg" alt="Reactions and selection UI"><br><b>Reactions &amp; selection</b></td>
   </tr>
   <tr>
-    <td width="50%">
-      <img src="images/Screenshot 2025-12-10 at 13.05.21.jpg" alt="Fun commands">
-      <b>Fun Commands</b><br>
-      Interactive commands like /goodnight with random GIFs and messages
-    </td>
-    <td width="50%">
-      <img src="images/Screenshot 2025-12-10 at 13.05.34.jpg" alt="AI commands">
-      <b>AI-Powered Commands</b><br>
-      /describe, /ask, /coder, /techsupport with Gemini + Claude integration
-    </td>
+    <td width="50%"><img src="images/ask-command.jpg" alt="/ask"><br><b>AI chat (/ask)</b></td>
+    <td width="50%"><img src="images/coding-command.jpg" alt="/coder"><br><b>Coding help (/coder)</b></td>
   </tr>
   <tr>
-    <td colspan="2" align="center">
-      <img src="images/Screenshot 2025-12-10 at 13.05.43.jpg" alt="Context menus and reactions" width="50%">
-      <br><b>Multiple Interaction Styles</b><br>
-      Use emoji reactions, slash commands, or right-click context menus
-    </td>
+    <td colspan="2" align="center"><img src="images/security-function-lulz.jpg" alt="Automated moderation" width="50%"><br><b>Automated moderation</b></td>
   </tr>
 </table>
 
+---
+
 ## Quick Start
+
+This is a **Node.js / TypeScript** project (Node 22+).
 
 <details>
 <summary><b>Local Setup</b></summary>
 
 ```bash
-# Clone and setup
+# Clone and install
 git clone https://github.com/Ktiseos-Nyx/PromptInspectorBot.git
 cd PromptInspectorBot
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+npm install
 
 # Configure
-cp config.example.toml config.toml
-# Edit config.toml with your settings
+cp config.example.toml config.toml   # optional; env vars take precedence
+# Put at least BOT_TOKEN in a .env file
 
-# Run (new modular version)
-python3 main.py
+# Run in dev (ts-node)
+npm run dev
+
+# Or build + run compiled
+npm run build
+npm start
+
+# Tests
+npm test
 ```
 
 </details>
 
 <details>
-<summary><b>Docker Deployment</b></summary>
+<summary><b>Docker</b></summary>
 
 ```bash
-# Build
 docker build -t prompt-inspector-bot .
 
-# Run with .env file
-docker run -d --env-file .env prompt-inspector-bot
+# Mount a volume so persistent data survives restarts (see Data & Persistence)
+docker run -d --env-file .env \
+  -e DATA_DIR=/data -v prompt-inspector-data:/data \
+  prompt-inspector-bot
 ```
 
 </details>
 
 <details>
-<summary><b>Environment Variables (Required)</b></summary>
+<summary><b>Railway</b></summary>
+
+1. Click the **Deploy on Railway** button above.
+2. Set `BOT_TOKEN` (and any optional keys) in the service variables.
+3. **Add a Volume**, mount it at `/data`, and set `DATA_DIR=/data` — otherwise settings and the ban registry reset on every redeploy (see [Data & Persistence](#data--persistence-important-for-hosted-deploys)).
+
+</details>
+
+<details>
+<summary><b>Environment Variables (minimum)</b></summary>
 
 ```env
 BOT_TOKEN=your_discord_bot_token
 
-# Optional but recommended
-GEMINI_API_KEY=your_gemini_key
+# Optional — enable AI features by adding any of these
+GROQ_API_KEY=your_groq_key
 ANTHROPIC_API_KEY=your_claude_key
+GEMINI_API_KEY=your_gemini_key
+
+# Recommended on hosted/ephemeral platforms
+DATA_DIR=/data
 ```
 
 </details>
 
 ---
 
+## Data & Persistence (important for hosted deploys)
+
+The bot stores state in JSON files: `guild_settings.json` (per-server settings),
+`ban-registry.json` (cross-server ban/scam registry), `schedules.json` (reminders / QOTD),
+and `reports.json`. All of these resolve under **`DATA_DIR`** (default: the working
+directory).
+
+> ⚠️ **On ephemeral hosts like Railway, the container disk is wiped on every redeploy.**
+> Mount a persistent **volume** and set `DATA_DIR` to it (e.g. `/data`), or per-server
+> settings and the ban registry will reset each deploy.
+
+What persists (and why): the moderation/safety record (banned user IDs, reasons, scam
+fingerprints), per-server configuration, and any reminders. See the
+[Privacy Policy](PRIVACY.md) for the full data story.
+
+---
+
+## Per-Server Settings
+
+Run **`/settings`** (requires **Manage Server**) to open an interactive panel. It's paged:
+
+| Page | What you configure |
+| ---- | ------------------ |
+| **Moderation** | Anti-scam on/off, alert channel, trusted roles, monitored channels |
+| **AI & Metadata** | Toggle metadata extraction and each AI command |
+| **Fun** | Toggle fun commands, `/interact`, QOTD |
+| **Advanced** | Catcher role (extra scam weight when it's a user's only role) |
+
+Everything is per server and persists immediately. Where a server hasn't set a value, the
+bot falls back to the global environment defaults.
+
+---
+
 ## How to Use
 
-### Metadata Inspection
+### Metadata inspection
 
-1. **Post an image** in a monitored channel
-2. **Click emoji reactions:**
-   - 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ - View individual image metadata (1-5 images)
-   - 📦 - Download all metadata as files (6+ images)
-3. **Or use commands:**
-   - `/metadata <image>` - Parse uploaded image
-   - Right-click image → "View Prompt"
+1. **Post an image** in a monitored channel.
+2. **Click the reactions** the bot adds — 1️⃣–5️⃣ for individual images, 📦 for 6+.
+3. **Or use:** `/metadata <image>`, or right-click an image → **Apps → View Prompt**.
 
-### AI Features
+### Moderation & reports
 
-- `/ask <question>` - Chat with AI (remembers context per user)
-- `/describe <image> <style>` - Generate AI tags/descriptions
+- Automated moderation runs in monitored servers when **Anti-scam** is enabled.
+- `/report file <user> <reason>` — members report bad actors; enough unique reports auto-times-out the target and alerts mods.
+- `/banregistry` — mods view/manage the cross-server ban + pattern registry.
+
+### AI (if enabled for the server)
+
+- `/ask <question>` — chat with per-user context
+- `/describe <image>` — AI tags/description
 
 ---
 
 ## Security System
 
 <details>
-<summary><b>🛡️ Anti-Scam Features</b></summary>
+<summary><b>🛡️ How moderation works</b></summary>
 
-### What It Detects
+### Scam scoring → action
 
-**Type 1: Wallet Scammers**
+| Score | Action |
+| ----- | ------ |
+| **100+** | Instant ban; message deleted, recent messages purged |
+| **75–99** | Message deleted + admins alerted |
 
-- Currency symbols in username (£, €, ¥, ₿)
-- Hoisting characters (=, !, #)
-- ALL CAPS crypto spam
-- Keywords: WALLET, SOL, PAY, DEAD TOKENS
+Signals include currency symbols / hoisting characters / auto-generated usernames, ALL-CAPS
+crypto spam, wallet/SOL/"dead tokens" keywords, missing avatar, and role shape (e.g. a user
+whose only role is the configured **catcher** role).
 
-**Type 2: Screenshot Spammers**
+### Other detections
 
-- 4+ images cross-posted to multiple channels
-- Gibberish text or empty messages
-- Auto-generated usernames (word.word1234_5678)
+- **Screenshot spam** — 4+ images cross-posted to 2+ channels → ban (or ban on no-roles + gibberish)
+- **Algo-speak / obfuscation** — zero-width, zalgo, and Cyrillic-homoglyph evasion; combined with cross-posting → ban
+- **Cross-posting** — the same message fingerprinted across 2+ channels
+- **Magic bytes** — executables disguised as images, in both attachments and embeds
+- **Word filters** — admin-defined patterns with `warn` / `delete` / `ban` actions
+- **Ban registry** — banned users and scam fingerprints are shared across every server the bot instance runs in; joins by known bad actors alert mods
 
-### How It Works
+### Automatic bypasses
 
-
-| Score | Action                                                |
-| ------- | ------------------------------------------------------- |
-| 100+  | **Instant Ban** - User banned, all messages deleted   |
-| 75-99 | **Delete + Alert** - Message removed, admins notified |
-| 50-74 | **Watchlist** - Logged for monitoring                 |
-
-### Detection Methods
-
-✅ **Magic Bytes Check** - Scans attachments AND embeds for malware
-✅ **Cross-Posting** - Same message in 2+ channels = ban
-✅ **Gibberish Detection** - Context-aware (allows "AAAA" from users with roles)
-✅ **Username Analysis** - Hoisting, currency symbols, auto-generated patterns
-✅ **Role Tracking** - CATCHER role exploitation detection
-
-### Configuration
-
-```toml
-# config.toml
-CATCHER_ROLE_ID = 1336289642789470228  # Self-assignable role scammers exploit
-TRUSTED_USER_IDS = [123456789]         # Bypass security (mods, bots)
-ADMIN_CHANNEL_ID = 1234567890          # Ban notification channel
-```
-
-**Automatic Bypasses:**
-
-- ✅ Server owners
-- ✅ Trusted users (configured above)
+- ✅ Server owner
+- ✅ Trusted users and **trusted roles** (set per server via `/settings`)
 
 </details>
+
+---
+
+## Guild Allowlist (owner cost control)
+
+Set **`ALLOWED_GUILD_IDS`** (comma-separated) to restrict where the bot will run. When the
+list is **non-empty**, the bot leaves any server that isn't on it — both on invite and via a
+startup sweep. When the list is **empty**, the bot runs anywhere (open mode). This is an
+owner/env setting, not something server admins can change.
+
+> Before deploying with an allowlist, make sure **every** server you want kept (including
+> your own) is in the list, or the startup sweep will leave it.
 
 ---
 
 ## AI Provider Setup
 
 <details>
-<summary><b>🤖 Multi-Provider System</b></summary>
+<summary><b>🤖 Groq + Claude + Gemini</b></summary>
 
-The bot supports **both Gemini and Claude** with automatic fallback!
-
-### Quick Setup
+Set keys for whichever providers you want; the bot auto-detects them and falls back in
+priority order.
 
 ```env
-# Set API keys for providers you want
-GEMINI_API_KEY=your_gemini_key
+GROQ_API_KEY=your_groq_key
 ANTHROPIC_API_KEY=your_claude_key
+GEMINI_API_KEY=your_gemini_key
 
-# Provider priority (tries first, falls back to next)
-LLM_PROVIDER_PRIORITY=claude,gemini
+# Try these in order; only available providers are used
+LLM_PROVIDER_PRIORITY=groq,claude,gemini
 ```
 
-### Gemini Configuration
+Defaults (override via env or `config.toml`):
 
 ```env
-GEMINI_PRIMARY_MODEL=gemini-flash-latest
-GEMINI_FALLBACK_MODELS=gemini-flash-latest,gemini-2.5-pro,gemini-2.5-flash
+GROQ_PRIMARY_MODEL=llama-3.3-70b-versatile
+CLAUDE_PRIMARY_MODEL=claude-haiku-4-5-20251001
+GEMINI_PRIMARY_MODEL=gemini-2.5-flash
 ```
 
-**Model Recommendations:**
+### Artistic / NSFW content
 
-
-| Model                 | Speed  | Quality   | Free Tier | Best For           |
-| ----------------------- | -------- | ----------- | ----------- | -------------------- |
-| `gemini-flash-latest` | ⚡⚡⚡ | Good      | 15/min    | **Recommended**    |
-| `gemini-2.5-pro`      | ⚡     | Excellent | 2/min     | Complex tasks      |
-| `gemini-2.5-flash`    | ⚡⚡⚡ | Good      | 15/min    | ⚠️ Overly strict |
-
-### Claude Configuration
-
-```env
-CLAUDE_PRIMARY_MODEL=claude-3-5-haiku-20241022
-```
-
-**Model Recommendations:**
-
-
-| Model                        | Speed  | Cost (per 1M tokens) | Best For        |
-| ------------------------------ | -------- | ---------------------- | ----------------- |
-| `claude-3-5-haiku-20241022`  | ⚡⚡⚡ | $0.25 / $1.25        | **Recommended** |
-| `claude-3-5-sonnet-20241022` | ⚡⚡   | $3 / $15             | Higher quality  |
-
-**Budget tip:** $5 starter credit = ~1,500 image descriptions with Haiku!
-
-### NSFW/Artistic Content Mode
-
-If Gemini blocks artistic content (PG-13/R-rated, not NC-17):
+If Gemini's safety filters block artistic (PG-13/R) descriptions, route `/describe` to
+Claude instead:
 
 ```env
 NSFW_PROVIDER_OVERRIDE=claude
 ```
-
-This skips Gemini entirely for `/describe` and uses only Claude.
 
 </details>
 
@@ -277,20 +296,10 @@ This skips Gemini entirely for `/describe` and uses only Claude.
 ## R2 Upload Feature (Optional)
 
 <details>
-<summary><b>📤 Cloudflare R2 Integration</b></summary>
+<summary><b>📤 Cloudflare R2 integration</b></summary>
 
-Upload JPEG/WebP files to extract metadata without Discord stripping it.
-
-### Features
-
-- 🔒 **Rate Limited** - Generous rate limiting to prevent CPU overload.
-- 🗑️ **Auto-Delete** - 30-day retention
-- 📏 **Size Limited** - 10MB max to keep to Non-Nitro.
-
-### Setup
-
-1. **Create R2 Bucket** in Cloudflare
-2. **Set environment variables:**
+Discord strips metadata from JPEG/WebP. The optional R2 flow lets users upload those
+formats so the bot can read the metadata server-side.
 
 ```env
 R2_ACCOUNT_ID=your_account_id
@@ -300,19 +309,11 @@ R2_BUCKET_NAME=your_bucket_name
 UPLOADER_URL=https://your-pages.pages.dev/uploader.html
 ```
 
-3. **Deploy `uploader.html`** to Cloudflare Pages
-4. **Set lifecycle rule** for 30-day auto-deletion:
-   - Prefix: `uploads/`
-   - Action: Delete object
-   - Days: 30
+1. Create an R2 bucket in Cloudflare.
+2. Deploy `uploader.html` to Cloudflare Pages and point `UPLOADER_URL` at it.
+3. Set a lifecycle rule (e.g. delete `uploads/` objects after 30 days).
 
-### Security
-
-- ✅ Rate limiting (5/day per user)
-- ✅ File validation (10MB, JPEG/WebP only)
-- ✅ Presigned URL expiry (1 hour)
-- ✅ Auto-deletion (30 days)
-- ⚠️ Users warned about security risks
+All five variables must be set for the feature to activate.
 
 </details>
 
@@ -321,46 +322,29 @@ UPLOADER_URL=https://your-pages.pages.dev/uploader.html
 ## Configuration
 
 <details>
-<summary><b>⚙️ Full Configuration Options</b></summary>
+<summary><b>⚙️ Environment variables</b></summary>
 
-### Server & Channel Configuration
+Resolution order: environment variable → `config.toml` → built-in default.
 
-```toml
-# Allowed servers (empty = all servers)
-ALLOWED_GUILD_IDS = [123456789, 987654321]
+```env
+# Discord
+BOT_TOKEN=...
+ALLOWED_GUILD_IDS=123,456          # empty = run anywhere
+MONITORED_CHANNEL_IDS=             # global fallback; prefer per-server /settings
+SCAN_LIMIT_BYTES=10485760          # 10 MB
 
-# Monitored channels (empty = all channels)
-MONITORED_CHANNEL_IDS = []
+# Moderation routing (global fallback; per-server values set via /settings win)
+ADMIN_CHANNEL_IDS=123,456          # where alerts go
+TRUSTED_USER_IDS=123,456
+CATCHER_ROLE_ID=...
 
-# Per-channel features
-[channel_features]
-1234567890 = ["metadata", "describe"]
-9876543210 = ["ask"]
-```
+# AI
+GROQ_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=
+LLM_PROVIDER_PRIORITY=groq,claude,gemini
+NSFW_PROVIDER_OVERRIDE=
 
-### Bot Behavior
-
-```toml
-REACT_ON_NO_METADATA = false
-EMOJI_METADATA_FOUND = "🔎"
-EMOJI_NO_METADATA = "⛔"
-SCAN_LIMIT_BYTES = 10485760  # 10MB
-```
-
-### AI Configuration
-
-```toml
-LLM_PROVIDER_PRIORITY = ["claude", "gemini"]
-GEMINI_PRIMARY_MODEL = "gemini-flash-latest"
-CLAUDE_PRIMARY_MODEL = "claude-3-5-haiku-20241022"
-```
-
-### Security Configuration
-
-```toml
-CATCHER_ROLE_ID = 1336289642789470228
-TRUSTED_USER_IDS = []
-ADMIN_CHANNEL_ID = 0
+# Persistence
+DATA_DIR=/data                     # set to a mounted volume on hosted deploys
 ```
 
 </details>
@@ -369,49 +353,22 @@ ADMIN_CHANNEL_ID = 0
 
 ## Permissions
 
-### Core Permissions (Required)
+**Required:** View Channel, Send Messages, Read Message History, Add Reactions, Attach Files.
 
-- ✅ Read Messages/View Channel
-- ✅ Send Messages
-- ✅ Read Message History
-- ✅ Add Reactions
-- ✅ Attach Files
-
-### Security Permissions (Optional)
-
-- 🛡️ **Ban Members** - Auto-ban scammers
-- 🛡️ **Manage Messages** - Delete spam
+**For moderation:** Ban Members, Moderate Members (timeouts), Manage Messages.
 
 ---
 
 ## Troubleshooting
 
 <details>
-<summary><b>Common Issues</b></summary>
+<summary><b>Common issues</b></summary>
 
-**Bot not responding:**
-
-- Check bot is online
-- Verify permissions (see above)
-- Check logs for errors
-
-**Describe feature not working:**
-
-- Ensure `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` is set
-- Check API quotas
-- Review logs for API errors
-
-**Images not processed:**
-
-- Check file format (PNG, JPEG, WebP)
-- Verify size is under `SCAN_LIMIT_BYTES`
-- Ensure channel is in `MONITORED_CHANNEL_IDS` (if configured)
-
-**Security system banning legit users:**
-
-- Add user ID to `TRUSTED_USER_IDS`
-- Server owners are automatically trusted
-- Users with roles can post emotional spam ("AAAA")
+- **Settings reset after a redeploy** → you're on an ephemeral host without a volume. Set `DATA_DIR` to a mounted volume (see [Data & Persistence](#data--persistence-important-for-hosted-deploys)).
+- **`/describe` or `/ask` not working** → set at least one of `GROQ_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`, and make sure the AI feature is enabled in `/settings`.
+- **Images not processed** → check the format/size, and whether the channel is in the server's monitored channels.
+- **Anti-scam catching a legit user** → add them to trusted users/roles via `/settings`; owners are always trusted.
+- **Alerts going nowhere** → set the alert channel in `/settings` (or `ADMIN_CHANNEL_IDS` as a global fallback).
 
 </details>
 
@@ -420,41 +377,18 @@ ADMIN_CHANNEL_ID = 0
 ## Forking This Bot
 
 <details>
-<summary><b>🍴 Important Notes for Forks</b></summary>
+<summary><b>🍴 Notes for forks</b></summary>
 
-If you're forking this bot for your own use, please update the following:
+If you fork this bot, update anything personal to the upstream project:
 
-### Required Changes
+- **Support / donation links** — search the codebase and `uploader.html` for our Discord
+  invites and Ko-fi links and replace them with your own.
+- **Bot identity** — the bot works under your own `BOT_TOKEN`; renaming the application or
+  bot user in the Discord Developer Portal does not require code changes.
+- **Persistence** — set `DATA_DIR` (and a volume) for your own deployment.
 
-1. **Ko-fi Links** - Replace with your own:   - `uploader.html`: Lines 112, 114
-
-   - `bot_enhanced.py`: Search for `ko-fi.com/OTNAngel` and `ko-fi.com/duskfallcrew`
-   - Update to your Ko-fi/donation links
-2. **Discord Invite** - Replace with your server:
-
-   - `uploader.html`: Line 117 - `discord.gg/HhBSvM9gBY`
-   - `bot_enhanced.py`: Search for `discord.gg/HhBSvM9gBY`
-   - Update to your support server invite
-3. **Ko-fi Role ID** - Set your role ID:
-
-   - `config.toml`: Add `KOFI_SUPPORTER_ROLE_ID = your_role_id`
-   - Get from Discord → Server Settings → Roles → Right-click role → Copy ID
-
-### Optional (But Appreciated)
-
-- Keep the Ko-fi link in `uploader.html` if you want to support the original developer
-- Credit this fork in your README
-- Share improvements back via pull requests!
-
-### Rate Limits (Configurable)
-
-You can adjust these in `bot_enhanced.py`:
-
-```python
-MAX_UPLOADS_PER_MINUTE = 10  # Burst protection
-MAX_UPLOADS_PER_DAY_FREE = 100  # Free users
-MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters
-```
+Contributions back via pull request are welcome. Run `npm test` and `npm run build` before
+opening one.
 
 </details>
 
@@ -462,16 +396,22 @@ MAX_UPLOADS_PER_DAY_SUPPORTER = 500  # Ko-fi supporters
 
 ## Legal
 
-- 📄 **[Privacy Policy](PRIVACY.md)** - How we handle data (TL;DR: we don't store it)
-- 📜 **[Terms of Service](TERMS_OF_SERVICE.md)** - The rules
+- 📄 **[Privacy Policy](PRIVACY.md)** — what we process and what we keep
+- 📜 **[Terms of Service](TERMS_OF_SERVICE.md)** — the rules
 
-**Quick Summary:**
+**Honest summary:** images, prompts, and extracted metadata are **not** stored — they're
+processed and deleted. The bot **does** keep operational data to do its job: a
+moderation/safety record (the cross-server ban registry) and each server's settings.
+Automated moderation can delete messages and ban users. Optional AI commands send content
+to third-party providers (Groq / Claude / Gemini) only when a server has enabled them.
 
-- ✅ Extract metadata, send to you
-- ✅ Delete images immediately after processing
-- ❌ Don't store images or metadata
-- ❌ Don't track or sell data
+**Support:**
+- AI-free space — Earth and Dusk: <https://discord.gg/5t2kYxt7An>
+- AI-friendly space — Ktiseos Nyx AI&ML: <https://discord.gg/HhBSvM9gBY>
 
 ---
 
-**🤖 This bot is a fork of [PromptInspectorBot](https://github.com/sALTaccount/PromptInspectorBot) with significant enhancements.**
+## Credits
+
+- **Icon:** <a href="https://www.flaticon.com/free-icons/flower" title="flower icons">Flower icons created by Icongeek26 - Flaticon</a> (base icon, modified for this bot).
+- Originally a fork of [PromptInspectorBot](https://github.com/sALTaccount/PromptInspectorBot); since rewritten in TypeScript with substantial added features.

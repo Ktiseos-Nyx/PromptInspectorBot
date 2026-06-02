@@ -45,4 +45,18 @@ describe('buildSettingsPanel', () => {
     const p = buildSettingsPanel(state as any, 'ai');
     expect(p.components.length).toBeLessThanOrEqual(5);
   });
+  it('nav row exposes all four pages including Advanced', () => {
+    const p = buildSettingsPanel(state as any, 'moderation');
+    const nav = (p.components[0] as any).toJSON();
+    const ids = nav.components.map((c: any) => c.custom_id);
+    expect(ids).toEqual([
+      'settings:nav:moderation', 'settings:nav:ai', 'settings:nav:fun', 'settings:nav:advanced',
+    ]);
+  });
+  it('advanced page stays within the 5-row limit and exposes the catcher-role select', () => {
+    const p = buildSettingsPanel(state as any, 'advanced');
+    expect(p.components.length).toBeLessThanOrEqual(5);
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:catcherRole');
+  });
 });
