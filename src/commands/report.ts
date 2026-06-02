@@ -6,7 +6,8 @@ import {
   addReport, clearReports, getReports, hasRecentReport, uniqueReporterCount,
   AUTO_TIMEOUT_MS, REPORT_THRESHOLD, REPORT_WINDOW_MS,
 } from '../lib/report-system';
-import { ADMIN_CHANNEL_IDS } from '../lib/config';
+import { ENV_MOD_DEFAULTS } from '../lib/config';
+import { getModeration } from '../lib/guild-settings';
 
 const REASONS = [
   { name: 'Harassment / Bullying',    value: 'harassment' },
@@ -35,7 +36,9 @@ async function notifyAdmins(
   totalReports: number,
   autoTimedOut: boolean,
 ): Promise<void> {
-  if (!ADMIN_CHANNEL_IDS.size || !interaction.guild) return;
+  if (!interaction.guild) return;
+  const mod = getModeration(interaction.guild.id, ENV_MOD_DEFAULTS);
+  if (!mod.alertChannelIds.size) return;
 
   const reporterTag = interaction.user.tag;
   const label = REASONS.find(r => r.value === reason)?.name ?? reason;
@@ -60,7 +63,7 @@ async function notifyAdmins(
     embed.setFooter({ text: `Threshold: ${REPORT_THRESHOLD} unique reporters in ${Math.round(REPORT_WINDOW_MS / 86_400_000)} days` });
   }
 
-  for (const channelId of ADMIN_CHANNEL_IDS) {
+  for (const channelId of mod.alertChannelIds) {
     const ch = interaction.guild.channels.cache.get(channelId) as TextChannel | undefined;
     if (ch) await ch.send({ embeds: [embed] }).catch(() => null);
   }
