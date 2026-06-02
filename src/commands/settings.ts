@@ -64,6 +64,9 @@ export const settingsCommand = {
         } else if (id === 'settings:monitoredChannels') {
           const sel = i as AnySelectMenuInteraction;
           setModerationField(guildId, 'monitoredChannelIds', [...sel.values]);
+        } else if (id === 'settings:catcherRole') {
+          const sel = i as AnySelectMenuInteraction;
+          setModerationField(guildId, 'catcherRoleId', sel.values[0] ?? null);
         } else if (id.startsWith('settings:tier:')) {
           const which = id.split(':')[2] as Page;
           const tier = which === 'ai' ? AI_FEATURES : FUN_FEATURES;

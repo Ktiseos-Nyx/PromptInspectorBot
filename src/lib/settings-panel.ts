@@ -22,7 +22,7 @@ export const FUN_FEATURES: Feature[] = [
   { value: 'qotd',         label: 'Question of the day' },
 ];
 
-export type Page = 'moderation' | 'ai' | 'fun';
+export type Page = 'moderation' | 'ai' | 'fun' | 'advanced';
 
 // State-transition: selected tier features → true, the rest of that tier → false.
 export function applyToggleSelection(
@@ -45,7 +45,7 @@ function navRow(active: Page): ActionRowBuilder<ButtonBuilder> {
       .setLabel(label)
       .setStyle(page === active ? ButtonStyle.Primary : ButtonStyle.Secondary);
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    mk('moderation', 'Moderation'), mk('ai', 'AI & Metadata'), mk('fun', 'Fun'),
+    mk('moderation', 'Moderation'), mk('ai', 'AI & Metadata'), mk('fun', 'Fun'), mk('advanced', 'Advanced'),
   );
 }
 
@@ -64,6 +64,7 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
           `Alert channel: ${m.alertChannelId ? `<#${m.alertChannelId}>` : '*(default)*'}`,
           `Trusted roles: ${m.trustedRoleIds?.length ? m.trustedRoleIds.map(r => `<@&${r}>`).join(' ') : '*(none)*'}`,
           `Monitored channels: ${m.monitoredChannelIds?.length ? m.monitoredChannelIds.map(c => `<#${c}>`).join(' ') : '*(all)*'}`,
+          `Catcher role: ${m.catcherRoleId ? `<@&${m.catcherRoleId}>` : '*(none)*'}`,
         ].join('\n'),
       },
       { name: 'AI & Metadata', value: AI_FEATURES.map(f => `${on(t[f.value])} ${f.label}`).join('\n') },
@@ -99,6 +100,15 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
           .setPlaceholder('Monitored channels (none = all)')
           .setChannelTypes(ChannelType.GuildText)
           .setMinValues(0).setMaxValues(25),
+      ),
+    );
+  } else if (page === 'advanced') {
+    components.push(
+      new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId('settings:catcherRole')
+          .setPlaceholder("Catcher role — extra scam weight when it's a user's only role")
+          .setMinValues(0).setMaxValues(1),
       ),
     );
   } else {
