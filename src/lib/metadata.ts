@@ -83,7 +83,7 @@ function parsePNGChunks(buffer: Buffer): Record<string, any> {
 }
 
 // Parse AI generation parameters from various formats
-async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<string, any>> {
+export async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<string, any>> {
   const aiData: Record<string, any> = {};
 
   // --- InvokeAI: dedicated invokeai_metadata PNG chunk ---
