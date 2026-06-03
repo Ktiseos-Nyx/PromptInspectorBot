@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { parseAIMetadata } from '../metadata';
+import { parseAIMetadata, routeUserComment } from '../metadata';
 
 const FX = path.join(__dirname, '__fixtures__');
 const load = (n: string) => JSON.parse(fs.readFileSync(path.join(FX, `${n}.json`), 'utf8')).chunks;
@@ -46,5 +46,41 @@ describe('parseAIMetadata — current behavior baseline', () => {
       const ai = await parseAIMetadata(load(name));
       expect(['ComfyUI','Civitai','TensorArt','ArcEnCiel']).toContain(ai.workflow_type);
     }
+  });
+});
+
+// CodeRabbit (PR #41): the EXIF/UserComment fallback must not route ALL JSON to the
+// `prompt` chunk, or comfyUiDetector swallows non-ComfyUI JSON and short-circuits the
+// SwarmUI/A1111 detectors. routeUserComment sends only ComfyUI graphs to `prompt`.
+describe('routeUserComment', () => {
+  it('routes a ComfyUI graph (has class_type) to the prompt chunk', () => {
+    const uc = '{"3":{"class_type":"KSampler","inputs":{}}}';
+    expect(routeUserComment(uc)).toEqual({ prompt: uc });
+  });
+  it('routes non-ComfyUI JSON (e.g. SwarmUI) to the parameters chunk', () => {
+    const uc = '{"comfyuisampler":"euler","cfgscale":7,"prompt":"a dog"}';
+    expect(routeUserComment(uc)).toEqual({ parameters: uc });
+  });
+  it('routes plain A1111 text to the parameters chunk', () => {
+    const uc = 'a cat\nNegative prompt: blurry\nSteps: 20, Sampler: Euler, CFG scale: 7, Seed: 1';
+    expect(routeUserComment(uc)).toEqual({ parameters: uc });
+  });
+});
+
+describe('parseAIMetadata — EXIF UserComment routing (CodeRabbit #41)', () => {
+  it('parses a ComfyUI graph carried in _exif_usercomment as ComfyUI', async () => {
+    const uc = JSON.stringify({
+      '6': { class_type: 'CLIPTextEncode', inputs: { text: 'a fox in the snow, masterpiece' } },
+      '4': { class_type: 'KSampler', inputs: { steps: 22, cfg: 6, sampler_name: 'euler', seed: 9, positive: ['6', 0], negative: ['6', 0] } },
+    });
+    const ai = await parseAIMetadata({ _exif_usercomment: uc });
+    expect(ai.workflow_type).toBe('ComfyUI');
+    expect(ai.prompt).toContain('a fox in the snow');
+  });
+  it('routes a SwarmUI JSON UserComment to SwarmUI, not ComfyUI', async () => {
+    const uc = JSON.stringify({ comfyuisampler: 'euler', cfgscale: 7, prompt: 'a dog', negativeprompt: 'blurry', steps: 20 });
+    const ai = await parseAIMetadata({ _exif_usercomment: uc });
+    expect(ai.workflow_type).toBe('SwarmUI');
+    expect(ai.prompt).toBe('a dog');
   });
 });

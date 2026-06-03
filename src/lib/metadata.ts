@@ -4,6 +4,7 @@ import iconv from 'iconv-lite';
 import zlib from 'zlib';
 import { coercePromptValue } from './metadata/comfyui/graph-trace';
 import { runDetectors } from './metadata/registry';
+import { getChunk } from './metadata/types';
 
 // PNG chunk parser for AI generation parameters
 function parsePNGChunks(buffer: Buffer): Record<string, any> {
@@ -78,17 +79,30 @@ function parsePNGChunks(buffer: Buffer): Record<string, any> {
   return chunks;
 }
 
+// EXIF/UserComment blobs are ambiguous: ComfyUI writes its API graph as JSON, while
+// A1111/SwarmUI/Civitai write plain text or service-specific JSON. Route ComfyUI
+// graphs (which always carry "class_type" keys) to the `prompt` chunk so
+// comfyUiDetector handles them; send everything else to `parameters` so the
+// text/SwarmUI/JSON detectors get a chance. Routing all JSON to `prompt` would let
+// comfyUiDetector swallow arbitrary JSON and short-circuit the other detectors.
+export function routeUserComment(uc: string): { prompt: string } | { parameters: string } {
+  if (uc.trim().startsWith('{') && /"class_type"\s*:/.test(uc)) return { prompt: uc };
+  return { parameters: uc };
+}
+
 // Parse AI generation parameters from various formats
 export async function parseAIMetadata(chunks: Record<string, any>): Promise<Record<string, any>> {
   const aiData = await runDetectors(chunks);
 
-  // MJ author chunk (post-step, not a format)
-  if (chunks.Author && aiData.workflow_type === 'Midjourney') aiData.author = chunks.Author;
+  // MJ author chunk (post-step, not a format). Case-insensitive: detectors read
+  // normalized lowercase keys, so don't assume the raw 'Author' casing here.
+  const author = getChunk(chunks, 'author');
+  if (author && aiData.workflow_type === 'Midjourney') aiData.author = author;
 
   // PNG eXIf UserComment fallback — recurse through the registry
   if (!aiData.workflow_type && chunks._exif_usercomment) {
     const uc = String(chunks._exif_usercomment);
-    const ucParsed = await parseAIMetadata(uc.trim().startsWith('{') ? { prompt: uc } : { parameters: uc });
+    const ucParsed = await parseAIMetadata(routeUserComment(uc));
     Object.assign(aiData, ucParsed);
   }
   return aiData;
@@ -677,9 +691,7 @@ export async function extractMetadataFromBuffer(
   } else if (effectiveMime === 'image/webp') {
     const webpComment = parseWebPExif(buffer);
     if (webpComment) {
-      aiData = await parseAIMetadata(
-        webpComment.trim().startsWith('{') ? { prompt: webpComment } : { parameters: webpComment }
-      );
+      aiData = await parseAIMetadata(routeUserComment(webpComment));
     }
   } else if (effectiveMime === 'image/jpeg') {
     let userComment = parseJPEGUserComment(buffer);
@@ -692,11 +704,7 @@ export async function extractMetadataFromBuffer(
     }
 
     if (userComment) {
-      if (userComment.trim().startsWith('{')) {
-        aiData = await parseAIMetadata({ prompt: userComment });
-      } else {
-        aiData = await parseAIMetadata({ parameters: userComment });
-      }
+      aiData = await parseAIMetadata(routeUserComment(userComment));
     }
   }
 

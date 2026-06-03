@@ -274,7 +274,6 @@ export function extractComfyUIParams(
     const node = nodeData as any;
     if (!node?.inputs || mutedNodeIds.has(nodeId)) continue;
     const inputs = node.inputs;
-    const classType = node.class_type || '';
 
     // --- Sampler: identified by having steps + cfg + positive/negative ---
     if (isSamplerByFields(inputs)) {
