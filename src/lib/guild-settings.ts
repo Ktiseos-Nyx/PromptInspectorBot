@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { dataFile } from './paths';
+import { dataFile, writeJsonAtomic } from './paths';
 import type { GuildEntry, GuildModeration, ResolvedModConfig, EnvModDefaults } from './settings-types';
 
 const DEFAULTS: Record<string, boolean> = {
@@ -55,12 +55,7 @@ function save(store: Store): void {
     _defaults: store._defaults,
     guilds: store.guilds,
   };
-  // Atomic write: write to a temp file then rename, so a crash mid-write can't leave a
-  // half-written (corrupt) file that load() would silently treat as empty.
-  const target = filePath();
-  const tmp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(out, null, 2));
-  fs.renameSync(tmp, target);
+  writeJsonAtomic(filePath(), out);
 }
 
 function entry(store: Store, guildId: string): GuildEntry {

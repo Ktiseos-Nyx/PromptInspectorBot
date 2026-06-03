@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { Client, TextChannel } from 'discord.js';
-import { dataFile } from './paths';
+import { dataFile, writeJsonAtomic, repoFile } from './paths';
 
 const FILE = dataFile('schedules.json');
 
@@ -39,7 +39,7 @@ function load(): Schedules {
 }
 
 function save(data: Schedules): void {
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+  writeJsonAtomic(FILE, data);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -62,6 +62,24 @@ export function addQotdQuestion(guildId: string, question: string): boolean {
   cfg.questions.push(question);
   save(data);
   return true;
+}
+
+// Path to the bundled seed question bank, committed at the repo root.
+export function qotdQuestionsPath(): string {
+  return repoFile('qotd-questions.json');
+}
+
+// Load the bundled seed questions. Returns [] if the file is missing or malformed,
+// so callers can treat "no questions loaded" uniformly.
+export function loadSeedQuestions(): string[] {
+  const p = qotdQuestionsPath();
+  if (!fs.existsSync(p)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((q): q is string => typeof q === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export function getReminders(guildId?: string): Reminder[] {
