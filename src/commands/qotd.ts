@@ -1,7 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { ChatInputCommandInteraction, EmbedBuilder, Colors, PermissionFlagsBits, SlashCommandBuilder, TextChannel, ChannelType, MessageFlags } from 'discord.js';
-import { getQotdConfig, setQotdConfig, addQotdQuestion, parseInterval, formatInterval } from '../lib/scheduler';
+import { getQotdConfig, setQotdConfig, addQotdQuestion, parseInterval, formatInterval, loadSeedQuestions } from '../lib/scheduler';
 
 export const qotdCommand = {
   data: new SlashCommandBuilder()
@@ -143,12 +141,11 @@ export const qotdCommand = {
       const cfg = getQotdConfig(interaction.guildId!);
       if (!cfg) return interaction.reply({ content: '❌ Run `/qotd setup` first.', flags: MessageFlags.Ephemeral });
 
-      const qotdPath = path.resolve(__dirname, '../qotd-questions.json');
-      if (!fs.existsSync(qotdPath)) {
-        return interaction.reply({ content: '❌ `qotd-questions.json` not found.', flags: MessageFlags.Ephemeral });
+      const questions = loadSeedQuestions();
+      if (questions.length === 0) {
+        return interaction.reply({ content: '❌ No questions found in `qotd-questions.json`.', flags: MessageFlags.Ephemeral });
       }
 
-      const questions: string[] = JSON.parse(fs.readFileSync(qotdPath, 'utf8'));
       let added = 0;
       for (const q of questions) {
         if (addQotdQuestion(interaction.guildId!, q)) added++;
