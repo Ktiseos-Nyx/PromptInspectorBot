@@ -124,6 +124,7 @@ export function verifyImageSafety(data: Buffer, filename: string): [boolean, str
 
 const ACTION_COLORS: Record<string, number> = {
   BANNED: Colors.Red,
+  FAILED: Colors.Red,
   COMPROMISED: Colors.Yellow,
   DELETED: Colors.Orange,
   ALERT: Colors.Yellow,

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { dataFile } from './paths';
+import { dataFile, writeJsonAtomic } from './paths';
 
 const FILE = process.env.REPORTS_PATH ?? dataFile('reports.json');
 
@@ -28,7 +28,7 @@ function load(): Store {
 }
 
 function save(store: Store): void {
-  fs.writeFileSync(FILE, JSON.stringify(store, null, 2));
+  writeJsonAtomic(FILE, store);
 }
 
 export function addReport(report: Omit<Report, 'id'>): Report {

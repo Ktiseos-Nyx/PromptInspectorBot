@@ -1,6 +1,6 @@
 import fs from 'fs';
 import crypto from 'crypto';
-import { dataFile } from './paths';
+import { dataFile, writeJsonAtomic } from './paths';
 
 const FILE = dataFile('ban-registry.json');
 
@@ -51,7 +51,7 @@ function load(): Registry {
 }
 
 function save(data: Registry): void {
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+  writeJsonAtomic(FILE, data);
 }
 
 // ── Pattern fingerprinting ────────────────────────────────────────────────────

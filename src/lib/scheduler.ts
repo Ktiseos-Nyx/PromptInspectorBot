@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Client, TextChannel } from 'discord.js';
-import { dataFile } from './paths';
+import { dataFile, writeJsonAtomic } from './paths';
 
 const FILE = dataFile('schedules.json');
 
@@ -40,7 +40,7 @@ function load(): Schedules {
 }
 
 function save(data: Schedules): void {
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+  writeJsonAtomic(FILE, data);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

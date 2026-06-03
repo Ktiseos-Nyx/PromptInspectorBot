@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { dataFile } from './paths';
+import { dataFile, writeJsonAtomic } from './paths';
 
 describe('dataFile', () => {
   afterEach(() => { delete process.env.DATA_DIR; });
@@ -12,5 +14,26 @@ describe('dataFile', () => {
   it('honors DATA_DIR when set (e.g. a mounted volume)', () => {
     process.env.DATA_DIR = path.join('mnt', 'botdata');
     expect(dataFile('ban-registry.json')).toBe(path.join('mnt', 'botdata', 'ban-registry.json'));
+  });
+});
+
+describe('writeJsonAtomic', () => {
+  let dir: string;
+  afterEach(() => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
+
+  it('writes JSON that round-trips and leaves no temp file behind', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pib-'));
+    const target = path.join(dir, 'x.json');
+    writeJsonAtomic(target, { a: 1, b: ['c'] });
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toEqual({ a: 1, b: ['c'] });
+    expect(fs.readdirSync(dir).filter(f => f.endsWith('.tmp'))).toHaveLength(0);
+  });
+
+  it('overwrites an existing file (atomic replace)', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pib-'));
+    const target = path.join(dir, 'y.json');
+    writeJsonAtomic(target, { v: 1 });
+    writeJsonAtomic(target, { v: 2 });
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toEqual({ v: 2 });
   });
 });
