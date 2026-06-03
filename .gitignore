@@ -58,3 +58,6 @@ logs/
 # Build output & dependencies
 dist/
 node_modules/
+
+# Local brainstorming/spec/plan docs (kept untracked; CR flags committed markdown)
+docs/superpowers/

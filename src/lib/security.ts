@@ -4,7 +4,7 @@ import type { ResolvedModConfig } from './settings-types';
 
 // ── Cross-post tracking ───────────────────────────────────────────────────────
 
-interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; }
+interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; bytes: number; isMedia: boolean; }
 const userMessages = new Map<string, TrackedMessage[]>();
 const CROSS_POST_WINDOW = 300; // seconds
 
@@ -14,12 +14,33 @@ function fingerprint(message: Message): string {
   return crypto.createHash('md5').update(s).digest('hex');
 }
 
-export function trackMessage(message: Message): void {
+// ── Media detection ───────────────────────────────────────────────────────────
+// GIFs are frequently delivered as links from known hosts (Tenor/Giphy/Discord
+// picker), not uploads. Scan message content synchronously — link embeds unfurl
+// later via a separate MessageUpdate, too late for MessageCreate checks.
+export function isGifLink(content: string, domains: string[]): boolean {
+  if (!content || domains.length === 0) return false;
+  const esc = domains.map(d => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(`https?://(?:[^\\s/]+\\.)?(?:${esc})\\/\\S+`, 'i');
+  return re.test(content);
+}
+
+export function isMediaMessage(message: Message, gifDomains: string[]): boolean {
+  for (const a of message.attachments.values()) {
+    if (a.contentType?.startsWith('image/')) return true;
+  }
+  return isGifLink(message.content ?? '', gifDomains);
+}
+
+export function trackMessage(message: Message, gifDomains: string[] = []): void {
   const uid = message.author.id;
   const now = Date.now() / 1000;
   const fp = fingerprint(message);
+  let bytes = 0;
+  for (const a of message.attachments.values()) bytes += a.size;
+  const isMedia = isMediaMessage(message, gifDomains);
   const prev = (userMessages.get(uid) ?? []).filter(m => now - m.timestamp < CROSS_POST_WINDOW);
-  prev.push({ fingerprint: fp, channelId: message.channelId, timestamp: now });
+  prev.push({ fingerprint: fp, channelId: message.channelId, timestamp: now, bytes, isMedia });
   userMessages.set(uid, prev.slice(-50));
 }
 
@@ -29,6 +50,25 @@ export function checkCrossPosting(message: Message): number {
   const recent = userMessages.get(uid) ?? [];
   const channels = new Set(recent.filter(m => m.fingerprint === fp).map(m => m.channelId));
   return channels.size;
+}
+
+// Two-track velocity over the same in-memory tracking, read over a tighter
+// (configurable) window than CROSS_POST_WINDOW:
+//   sameChannels  — distinct channels with the SAME fingerprint (identical repost)
+//   mediaChannels — distinct channels carrying ANY media (catches different GIFs)
+export function checkMediaVelocity(
+  message: Message,
+  windowSec: number,
+): { sameChannels: number; mediaChannels: number; maxBytes: number } {
+  const uid = message.author.id;
+  const now = Date.now() / 1000;
+  const fp = fingerprint(message);
+  const recent = (userMessages.get(uid) ?? []).filter(m => now - m.timestamp < windowSec);
+  const sameChannels = new Set(recent.filter(m => m.fingerprint === fp).map(m => m.channelId)).size;
+  const mediaMsgs = recent.filter(m => m.isMedia);
+  const mediaChannels = new Set(mediaMsgs.map(m => m.channelId)).size;
+  const maxBytes = mediaMsgs.reduce((mx, m) => Math.max(mx, m.bytes), 0);
+  return { sameChannels, mediaChannels, maxBytes };
 }
 
 // ── Gibberish / spam detection ────────────────────────────────────────────────
@@ -229,6 +269,14 @@ export async function checkEmbedImages(message: Message): Promise<string | null>
 }
 
 // ── Bypass checks ─────────────────────────────────────────────────────────────
+
+// Honeypot/catcher role: fires on mere presence (even if the member also holds a
+// verified role), unlike the score nudge in calculateScamScore which only counts
+// it when it is the only role.
+export function hasHoneypotRole(message: Message, cfg: ResolvedModConfig): boolean {
+  if (!cfg.catcherRoleId) return false;
+  return message.member?.roles?.cache?.has(cfg.catcherRoleId) ?? false;
+}
 
 export function isTrusted(message: Message, cfg: ResolvedModConfig): boolean {
   if (cfg.trustedUserIds.has(message.author.id)) return true;
