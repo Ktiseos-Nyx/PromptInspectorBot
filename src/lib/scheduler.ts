@@ -1,7 +1,6 @@
 import fs from 'fs';
-import path from 'path';
 import { Client, TextChannel } from 'discord.js';
-import { dataFile, writeJsonAtomic } from './paths';
+import { dataFile, writeJsonAtomic, repoFile } from './paths';
 
 const FILE = dataFile('schedules.json');
 
@@ -65,12 +64,9 @@ export function addQotdQuestion(guildId: string, question: string): boolean {
   return true;
 }
 
-// Path to the bundled seed question bank, committed at the repo root. Resolve from
-// process.cwd() (the repo root in both `ts-node` dev and `node dist/bot.js` prod) —
-// NOT from __dirname, which points into src/ or dist/ where the seed isn't, and NOT
-// from DATA_DIR, which may be a mounted volume that doesn't contain the bundled seed.
+// Path to the bundled seed question bank, committed at the repo root.
 export function qotdQuestionsPath(): string {
-  return path.resolve(process.cwd(), 'qotd-questions.json');
+  return repoFile('qotd-questions.json');
 }
 
 // Load the bundled seed questions. Returns [] if the file is missing or malformed,

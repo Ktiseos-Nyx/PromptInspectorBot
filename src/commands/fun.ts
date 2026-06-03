@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, EmbedBuilder, Colors, SlashCommandBuilder,  MessageFlags} from 'discord.js';
 import fs from 'fs';
-import path from 'path';
 import { getGuildSetting } from '../lib/guild-settings';
+import { repoFile } from '../lib/paths';
 
 const GOODNIGHT_GENERIC = [
   'Goodnight everyone! Sweet dreams! 💤',
@@ -111,7 +111,7 @@ export const wildcardCommand = {
   async execute(interaction: ChatInputCommandInteraction) {
     if (!funEnabled(interaction)) return interaction.reply({ content: '❌ Fun commands are not enabled on this server.', flags: MessageFlags.Ephemeral });
 
-    const wildcardsPath = path.resolve(__dirname, '../wildcards.json');
+    const wildcardsPath = repoFile('wildcards.json');
     if (!fs.existsSync(wildcardsPath)) {
       return interaction.reply({ content: '❌ Wildcards file not found.', flags: MessageFlags.Ephemeral });
     }
@@ -169,7 +169,7 @@ export const interactCommand = {
       return interaction.reply({ content: '❌ /interact is not enabled on this server.', flags: MessageFlags.Ephemeral });
     }
 
-    const interactionsPath = path.resolve(__dirname, '../interactions.json');
+    const interactionsPath = repoFile('interactions.json');
     if (!fs.existsSync(interactionsPath)) {
       return interaction.reply({ content: '❌ Interactions file not found.', flags: MessageFlags.Ephemeral });
     }

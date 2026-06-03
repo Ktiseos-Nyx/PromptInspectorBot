@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { dataFile, writeJsonAtomic } from './paths';
+import { dataFile, writeJsonAtomic, repoFile } from './paths';
 
 describe('dataFile', () => {
   afterEach(() => { delete process.env.DATA_DIR; });
@@ -14,6 +14,23 @@ describe('dataFile', () => {
   it('honors DATA_DIR when set (e.g. a mounted volume)', () => {
     process.env.DATA_DIR = path.join('mnt', 'botdata');
     expect(dataFile('ban-registry.json')).toBe(path.join('mnt', 'botdata', 'ban-registry.json'));
+  });
+});
+
+describe('repoFile', () => {
+  afterEach(() => { delete process.env.DATA_DIR; });
+
+  it('resolves bundled files from the repo root (cwd), ignoring DATA_DIR', () => {
+    process.env.DATA_DIR = path.join('mnt', 'vol');
+    expect(repoFile('wildcards.json')).toBe(path.resolve(process.cwd(), 'wildcards.json'));
+  });
+
+  // Regression guard: /qotd import, /wildcard and /interact all resolved these via
+  // __dirname (-> src/ or dist/, where they aren't), so they reported "file not found".
+  it('points at bundled command data files that actually exist', () => {
+    for (const f of ['qotd-questions.json', 'wildcards.json', 'interactions.json']) {
+      expect(fs.existsSync(repoFile(f))).toBe(true);
+    }
   });
 });
 
