@@ -1,4 +1,5 @@
 import { type FormatDetector, getChunk } from '../types';
+import { parseA1111Fields } from './a1111-fields';
 
 export const a1111Detector: FormatDetector = {
   name: 'AUTOMATIC1111',
@@ -56,36 +57,9 @@ export const a1111Detector: FormatDetector = {
 
     // A1111-style text parameters (A1111, Forge, Yodayo, Civitai A1111)
     if (!aiData.workflow_type) {
-      // Extract positive prompt (everything before "Negative prompt:")
-      const negativeMatch = params.match(/Negative prompt:\s*([\s\S]+?)(?:\n|$)/);
-      const splitIndex = params.indexOf('\nNegative prompt:');
-
-      if (splitIndex !== -1) {
-        aiData.prompt = params.substring(0, splitIndex).trim();
-        if (negativeMatch) {
-          aiData.negative_prompt = negativeMatch[1].split('\n')[0].trim();
-        }
-      } else {
-        aiData.prompt = params.split('\n')[0].trim();
-      }
-
-      // Extract generation settings (last line typically carries key=value pairs)
-      const lines = params.split('\n');
-      const settingsLine = lines[lines.length - 1];
-
-      const stepMatch = settingsLine.match(/Steps:\s*(\d+)/);
-      const samplerMatch = settingsLine.match(/Sampler:\s*([^,]+)/);
-      const cfgMatch = settingsLine.match(/CFG scale:\s*([\d.]+)/);
-      const seedMatch = settingsLine.match(/Seed:\s*(\d+)/);
-      const sizeMatch = settingsLine.match(/Size:\s*(\d+x\d+)/);
-      const modelMatch = settingsLine.match(/Model:\s*([^,]+)/);
-
-      if (stepMatch) aiData.steps = stepMatch[1];
-      if (samplerMatch) aiData.sampler = samplerMatch[1].trim();
-      if (cfgMatch) aiData.cfg_scale = cfgMatch[1];
-      if (seedMatch) aiData.seed = seedMatch[1];
-      if (sizeMatch) aiData.size = sizeMatch[1];
-      if (modelMatch) aiData.model = modelMatch[1].trim();
+      // Basic fields (prompt/negative/steps/sampler/cfg/seed/size/model) come from
+      // the shared A1111 field parser; platform detection stays below.
+      Object.assign(aiData, parseA1111Fields(params));
 
       // Version field (search all lines, not just the last — extensions add extra lines)
       const versionMatch = params.match(/Version:\s*([^,\n]+)/);

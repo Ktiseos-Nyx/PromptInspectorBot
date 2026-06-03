@@ -3,36 +3,50 @@ import { extractComfyUIParams } from '../comfyui/graph-trace';
 import {
   extractWorkflowProvenance, classifyComfyUIWorkflow, TENSORART_NODE_TYPES,
 } from '../comfyui/provenance';
+import { parseA1111Fields } from './a1111-fields';
+
+const sanitizeJson = (s: string) => s
+  .replace(/:\s*NaN/g, ': null')
+  .replace(/:\s*Infinity/g, ': null')
+  .replace(/:\s*-Infinity/g, ': null');
 
 export const comfyUiDetector: FormatDetector = {
   name: 'ComfyUI',
   detect(chunks) {
+    // Fire on an API `prompt` chunk that JSON-parses to a node graph, OR on the
+    // presence of a UI `workflow` chunk (Parameters+Workflow files have no prompt).
     const prompt = getChunk(chunks, 'prompt');
-    if (!prompt) return false;
-    try {
-      const sanitized = prompt
-        .replace(/:\s*NaN/g, ': null')
-        .replace(/:\s*Infinity/g, ': null')
-        .replace(/:\s*-Infinity/g, ': null');
-      const parsed = JSON.parse(sanitized);
-      return typeof parsed === 'object' && parsed !== null;
-    } catch {
-      return false;
+    if (prompt) {
+      try {
+        const parsed = JSON.parse(sanitizeJson(prompt));
+        if (typeof parsed === 'object' && parsed !== null) return true;
+      } catch {
+        /* fall through to workflow check */
+      }
     }
+    return getChunk(chunks, 'workflow') !== undefined;
   },
   async parse(chunks) {
-    const promptChunk = getChunk(chunks, 'prompt')!;
+    const promptChunk = getChunk(chunks, 'prompt');
     const workflowChunk = getChunk(chunks, 'workflow');
+    const parametersChunk = getChunk(chunks, 'parameters');
     const aiData: Record<string, any> = {};
 
-    // Sanitize NaN/Infinity values that break JSON.parse
-    const sanitized = promptChunk
-      .replace(/:\s*NaN/g, ': null')
-      .replace(/:\s*Infinity/g, ': null')
-      .replace(/:\s*-Infinity/g, ': null');
-
-    const workflow = JSON.parse(sanitized);
-    aiData.comfyui_workflow = workflowChunk ? JSON.parse(workflowChunk) : workflow;
+    // Parse whichever graph source exists — prefer the API `prompt` chunk; else
+    // the UI `workflow` chunk. A UI-format workflow yields little until Tasks 7-8.
+    const graphSource = promptChunk ?? workflowChunk ?? '{}';
+    let workflow: any = {};
+    try {
+      workflow = JSON.parse(sanitizeJson(graphSource));
+      if (typeof workflow !== 'object' || workflow === null) workflow = {};
+    } catch {
+      workflow = {};
+    }
+    try {
+      aiData.comfyui_workflow = workflowChunk ? JSON.parse(sanitizeJson(workflowChunk)) : workflow;
+    } catch {
+      aiData.comfyui_workflow = workflow;
+    }
     // Default to ComfyUI; override with service-specific signals below
     aiData.workflow_type = 'ComfyUI';
 
@@ -102,6 +116,16 @@ export const comfyUiDetector: FormatDetector = {
     // Restore workflow_type — extractComfyUIParams doesn't set it but Object.assign
     // could theoretically clobber it if the extracted object ever grows that key.
     if (!aiData.workflow_type) aiData.workflow_type = 'ComfyUI';
+
+    // Backfill basic fields from a Parameters block (e.g. Workflow-only ComfyUI
+    // files carry an A1111 infotext alongside the UI graph). Graph-derived values
+    // win: only fill fields the graph didn't already produce.
+    if (parametersChunk) {
+      const fields = parseA1111Fields(parametersChunk);
+      for (const [k, v] of Object.entries(fields)) {
+        if (aiData[k] === undefined || aiData[k] === null || aiData[k] === '') aiData[k] = v;
+      }
+    }
 
     return aiData;
   },

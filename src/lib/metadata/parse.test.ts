@@ -14,20 +14,12 @@ describe('parseAIMetadata — current behavior baseline', () => {
     expect(ai.prompt.length).toBeGreaterThan(0);
   });
 
-  // CHARACTERIZATION OF THE KNOWN BUG — assert the ACTUAL current output for a
-  // Parameters+Workflow (no `prompt` chunk) file. Observed empirically: the parser
-  // extracts NOTHING — it returns an empty aiData object. The A1111 branch is gated
-  // on `!chunks.workflow`, and there is no `prompt` chunk to trigger the ComfyUI
-  // branch, so the file falls through every branch.
-  // Task 6 will flip this so the file is recognized as 'ComfyUI'.
-  it('CURRENT BUG: a Workflow+Parameters ComfyUI file (ComfyUI_00005_) — baseline', async () => {
+  it('labels a Workflow+Parameters ComfyUI file as ComfyUI (not empty / not AUTOMATIC1111)', async () => {
     const ai = await parseAIMetadata(load('ComfyUI_00005_'));
-    // BUG: nothing is extracted today (empty object).
-    expect(Object.keys(ai)).toHaveLength(0);
-    expect(ai.workflow_type).toBeUndefined();
-    expect(ai.prompt).toBeUndefined();
-    expect(ai.steps).toBeUndefined();
-    expect(ai.seed).toBeUndefined();
+    expect(ai.workflow_type).toBe('ComfyUI');
+    // Field values come through (from the Parameters block until UI graph parsing lands in Tasks 7-8)
+    expect(ai.steps).toBe('30');
+    expect(ai.prompt).toContain('cone hair bun');
   });
 
   it('parses a Parameters-only file (ComfyUI_00015_) as an A1111-family type', async () => {
@@ -38,5 +30,14 @@ describe('parseAIMetadata — current behavior baseline', () => {
     expect(ai.prompt.length).toBeGreaterThan(0);
     expect(ai.steps).toBe('30');
     expect(typeof ai.seed).toBe('string');
+  });
+
+  it('labels every Workflow-bearing fixture as a ComfyUI-family type, never AUTOMATIC1111', async () => {
+    const comfyFixtures = ['ComfyUI_00005_','ComfyUI_00008_','ComfyUI_00009_','ComfyUI_00011_',
+      'ComfyUI_00013_','ComfyUI_00014_','ComfyUI_00016_','ComfyUI_00017_','ComfyUI_00018_','ComfyUI_00020_'];
+    for (const name of comfyFixtures) {
+      const ai = await parseAIMetadata(load(name));
+      expect(['ComfyUI','Civitai','TensorArt','ArcEnCiel']).toContain(ai.workflow_type);
+    }
   });
 });
