@@ -1,4 +1,5 @@
 import { type NodeLookupResult } from '../../comfyui-node-registry';
+import { readSamplerWidgets, longestStringWidget } from './widgets';
 
 // ============================================================================
 // ComfyUI Workflow Extraction — Graph Trace Primary, Type Match Fallback
@@ -187,6 +188,12 @@ export function isSamplerByFields(inputs: any): boolean {
   const samplerFields = ['steps', 'cfg', 'sampler_name', 'seed', 'positive', 'negative'];
   const matched = samplerFields.filter(f => inputs[f] !== undefined);
   if (matched.length >= 3) return true;
+  // UI-format KSampler: when a workflow is normalized from {nodes,links}, the
+  // numeric sampler settings (seed/steps/cfg/sampler_name/scheduler) live in
+  // widgets_values, not named inputs — only the conditioning wires survive as
+  // inputs. Both positive AND negative being node refs uniquely identifies a
+  // conditioning-consuming sampler. (Settings are recovered via widgets later.)
+  if (isNodeRef(inputs.positive) && isNodeRef(inputs.negative)) return true;
   // SamplerCustomAdvanced (Flux composite sampler) — all connections are node refs.
   // Identified by having guider + sigmas + noise all as node refs (its 3 defining wires).
   return ['guider', 'sigmas', 'noise'].every(f => isNodeRef(inputs[f]));
@@ -420,6 +427,21 @@ export function extractComfyUIParams(
       }
     }
 
+    // --- UI-format backfill: when this sampler came from a normalized UI
+    // workflow, its settings live positionally in widgets_values rather than in
+    // named inputs. Fill ONLY the fields the graph reads above left unset.
+    if (Array.isArray(mainSampler.node.widgets_values) &&
+        (extracted.steps === undefined || extracted.cfg_scale === undefined ||
+         extracted.sampler === undefined || extracted.scheduler === undefined ||
+         extracted.seed === undefined)) {
+      const w = readSamplerWidgets(mainSampler.node.class_type || '', mainSampler.node.widgets_values);
+      if (extracted.steps === undefined && w.steps !== undefined) extracted.steps = w.steps;
+      if (extracted.cfg_scale === undefined && w.cfg_scale !== undefined) extracted.cfg_scale = w.cfg_scale;
+      if (extracted.sampler === undefined && w.sampler !== undefined) extracted.sampler = w.sampler;
+      if (extracted.scheduler === undefined && w.scheduler !== undefined) extracted.scheduler = w.scheduler;
+      if (extracted.seed === undefined && w.seed !== undefined) extracted.seed = w.seed;
+    }
+
     // --- SamplerCustomAdvanced: follow specialised input refs ---
     // This Flux-era node delegates to BasicScheduler (steps/scheduler),
     // KSamplerSelect (sampler_name), RandomNoise (noise_seed), and BasicGuider
@@ -516,7 +538,13 @@ export function extractComfyUIParams(
       if (mutedNodeIds.has(nodeId)) continue;
 
       if (looksLikeTextEncoder(inputs, classType)) {
-        const text = findText(workflow, node);
+        let text = findText(workflow, node);
+        // UI-format backfill: text encoders from a normalized UI workflow keep
+        // their prompt in widgets_values, not named inputs. Use the longest
+        // prompt-shaped widget string when named-input lookup came up empty.
+        if (!text && Array.isArray(node.widgets_values)) {
+          text = longestStringWidget(node.widgets_values);
+        }
         if (text) promptTexts.push({ text, nodeId });
       }
     }

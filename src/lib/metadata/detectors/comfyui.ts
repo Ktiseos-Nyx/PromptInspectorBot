@@ -4,6 +4,7 @@ import {
   extractWorkflowProvenance, classifyComfyUIWorkflow, TENSORART_NODE_TYPES,
 } from '../comfyui/provenance';
 import { parseA1111Fields } from './a1111-fields';
+import { isUiWorkflow, normalizeUiWorkflow } from '../comfyui/normalize';
 
 const sanitizeJson = (s: string) => s
   .replace(/:\s*NaN/g, ': null')
@@ -41,6 +42,13 @@ export const comfyUiDetector: FormatDetector = {
       if (typeof workflow !== 'object' || workflow === null) workflow = {};
     } catch {
       workflow = {};
+    }
+    // Normalize UI-format graphs ({nodes,links}) into the API-shaped graph the
+    // extractor expects. The API `prompt` chunk is already API-shaped, so
+    // isUiWorkflow is false and this is a no-op; a `workflow`-only file gets
+    // converted so positional widgets_values become readable downstream.
+    if (isUiWorkflow(workflow)) {
+      workflow = normalizeUiWorkflow(workflow);
     }
     try {
       aiData.comfyui_workflow = workflowChunk ? JSON.parse(sanitizeJson(workflowChunk)) : workflow;

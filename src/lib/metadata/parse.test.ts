@@ -32,6 +32,13 @@ describe('parseAIMetadata — current behavior baseline', () => {
     expect(typeof ai.seed).toBe('string');
   });
 
+  it('extracts from a pure-UI Workflow-only file (no prompt/parameters)', async () => {
+    const ai = await parseAIMetadata(load('txt2img-basic-sdca-wsn'));
+    expect(ai.workflow_type).toBe('ComfyUI');
+    expect(typeof ai.prompt).toBe('string');
+    expect(ai.prompt.length).toBeGreaterThan(0);
+  });
+
   it('labels every Workflow-bearing fixture as a ComfyUI-family type, never AUTOMATIC1111', async () => {
     const comfyFixtures = ['ComfyUI_00005_','ComfyUI_00008_','ComfyUI_00009_','ComfyUI_00011_',
       'ComfyUI_00013_','ComfyUI_00014_','ComfyUI_00016_','ComfyUI_00017_','ComfyUI_00018_','ComfyUI_00020_'];
