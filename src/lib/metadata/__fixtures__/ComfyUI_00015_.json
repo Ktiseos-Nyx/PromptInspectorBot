@@ -1,0 +1,7 @@
+{
+  "name": "ComfyUI_00015_",
+  "source": "chunks.json",
+  "chunks": {
+    "parameters": "masterpiece, best quality, highres, absurdres, amazing quality, extemely detailed, PH3M0NT0Y4KNX, solo, shirt, blonde hair, 1boy, male focus, red hair, hazel eyes, jacket, looking at viewer, cat ears, medium hair, facial hair, stubble, beard, black pants, indoors, neon lighting, side lighting, led lighting, garage, door, brick wall, graffiti,   glowing eyes,  glowing hair, gradient background, magic, cinematic quality, cinematic, cinematic angle, half body portrait, \n<lora:PhoenixMontoya_ILLSXL.safetensors:1.0>\nNegative prompt: monochrome, worst quality, low quality, jpeg artifacts, logo, watermark, bad anatomy, bad hands, bad eyes, poorly drawn eyes, normal quality\nSteps: 30, Sampler: Euler a Karras, CFG scale: 6.0, Seed: 908516358445432, Size: 832x1216, Model hash: f8a37ebcff, Model: duskfallcrewArtStyle_v25"
+  }
+}

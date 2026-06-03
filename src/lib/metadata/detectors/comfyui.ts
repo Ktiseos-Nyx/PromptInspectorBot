@@ -1,0 +1,143 @@
+import { type FormatDetector, getChunk } from '../types';
+import { extractComfyUIParams } from '../comfyui/graph-trace';
+import {
+  extractWorkflowProvenance, classifyComfyUIWorkflow, TENSORART_NODE_TYPES,
+} from '../comfyui/provenance';
+import { parseA1111Fields } from './a1111-fields';
+import { isUiWorkflow, normalizeUiWorkflow } from '../comfyui/normalize';
+
+// ComfyUI serializes JS NaN/Infinity literally, which breaks JSON.parse. Replace
+// the bareword tokens with null, but only in JSON value position — i.e. preceded by
+// `:`/`[`/`,` and followed by a structural close — so we never corrupt a prompt
+// string that legitimately contains the word "Infinity"/"NaN". Handles both object
+// values (`: NaN`) and array elements (`[NaN]`, `, NaN`).
+const sanitizeJson = (s: string) =>
+  s.replace(/([:[,]\s*)(-?Infinity|NaN)(?=\s*[,\]}])/g, '$1null');
+
+export const comfyUiDetector: FormatDetector = {
+  name: 'ComfyUI',
+  detect(chunks) {
+    // Fire on an API `prompt` chunk that JSON-parses to a node graph, OR on the
+    // presence of a UI `workflow` chunk (Parameters+Workflow files have no prompt).
+    const prompt = getChunk(chunks, 'prompt');
+    if (prompt) {
+      try {
+        const parsed = JSON.parse(sanitizeJson(prompt));
+        if (typeof parsed === 'object' && parsed !== null) return true;
+      } catch {
+        /* fall through to workflow check */
+      }
+    }
+    return getChunk(chunks, 'workflow') !== undefined;
+  },
+  async parse(chunks) {
+    const promptChunk = getChunk(chunks, 'prompt');
+    const workflowChunk = getChunk(chunks, 'workflow');
+    const parametersChunk = getChunk(chunks, 'parameters');
+    const aiData: Record<string, any> = {};
+
+    // Parse whichever graph source exists — prefer the API `prompt` chunk; else
+    // the UI `workflow` chunk. A UI-format workflow yields little until Tasks 7-8.
+    const graphSource = promptChunk ?? workflowChunk ?? '{}';
+    let workflow: any = {};
+    try {
+      workflow = JSON.parse(sanitizeJson(graphSource));
+      if (typeof workflow !== 'object' || workflow === null) workflow = {};
+    } catch {
+      workflow = {};
+    }
+    // Normalize UI-format graphs ({nodes,links}) into the API-shaped graph the
+    // extractor expects. The API `prompt` chunk is already API-shaped, so
+    // isUiWorkflow is false and this is a no-op; a `workflow`-only file gets
+    // converted so positional widgets_values become readable downstream.
+    if (isUiWorkflow(workflow)) {
+      workflow = normalizeUiWorkflow(workflow);
+    }
+    try {
+      aiData.comfyui_workflow = workflowChunk ? JSON.parse(sanitizeJson(workflowChunk)) : workflow;
+    } catch {
+      aiData.comfyui_workflow = workflow;
+    }
+    // Default to ComfyUI; override with service-specific signals below
+    aiData.workflow_type = 'ComfyUI';
+
+    // UUID pattern used by ArcEnCiel for lora names and SaveImage prefixes
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+    for (const nodeData of Object.values(workflow)) {
+      const node = nodeData as any;
+      const inputs = node?.inputs ?? {};
+
+      // TensorArt: proprietary node class_types or EMS-<id> model naming
+      if (TENSORART_NODE_TYPES.has(node?.class_type)) { aiData.workflow_type = 'TensorArt'; break; }
+      const ckpt = inputs.ckpt_name;
+      if (typeof ckpt === 'string' && /EMS-\d+/i.test(ckpt)) { aiData.workflow_type = 'TensorArt'; break; }
+
+      // ArcEnCiel: SaveImage prefix is "generator/{uuid}", and/or lora names
+      // are UUID-prefixed (e.g. "ab234327-..._LoraName.safetensors").
+      // ArcEnCiel runs standard ComfyUI nodes so there are no proprietary class_types.
+      // NOTE: no API integration yet — pending contact with the ArcEnCiel team.
+      if (node?.class_type === 'SaveImage') {
+        const prefix = inputs.filename_prefix;
+        if (typeof prefix === 'string' && /^generator\/[0-9a-f-]{36}$/i.test(prefix)) {
+          aiData.workflow_type = 'ArcEnCiel';
+        }
+      }
+      if (aiData.workflow_type !== 'ArcEnCiel' && typeof inputs.lora_name === 'string' && UUID_RE.test(inputs.lora_name)) {
+        aiData.workflow_type = 'ArcEnCiel';
+      }
+    }
+
+    // If a Workflow chunk exists alongside the Prompt chunk, extract per-node
+    // provenance (cnr_id / aux_id). ComfyUI ≥1.26 embeds this automatically;
+    // it lets us resolve node origins without GitHub code search.
+    const provenance = workflowChunk ? extractWorkflowProvenance(workflowChunk) : undefined;
+
+    // Scan entire workflow JSON for Civitai URN:AIR resource identifiers.
+    // Format: urn:air:{baseModel}:{type}:civitai:{modelId}@{versionId}
+    // These appear in lora_name, model_name, and other input fields.
+    const URN_AIR_RE = /urn:air:([^:]+):([^:]+):civitai:(\d+)@(\d+)/g;
+    const workflowStr = JSON.stringify(workflow);
+    const seenUrns = new Set<string>();
+    const civitaiUrnResources: Array<{ urn: string; baseModel: string; type: string; modelId: string; versionId: string }> = [];
+    for (const m of workflowStr.matchAll(URN_AIR_RE)) {
+      if (!seenUrns.has(m[0])) {
+        seenUrns.add(m[0]);
+        civitaiUrnResources.push({ urn: m[0], baseModel: m[1], type: m[2], modelId: m[3], versionId: m[4] });
+      }
+    }
+    if (civitaiUrnResources.length > 0) {
+      aiData.civitai_urn_resources = civitaiUrnResources;
+      // URN:AIR presence is authoritative: this workflow was generated by Civitai
+      if (aiData.workflow_type === 'ComfyUI') aiData.workflow_type = 'Civitai';
+    }
+
+    // Classify all class_types FIRST (extension-map + Workflow provenance),
+    // so the traversal in extractComfyUIParams can recognise custom nodes.
+    const nodeInfo = await classifyComfyUIWorkflow(workflow, provenance);
+    if (nodeInfo) {
+      aiData.comfyui_nodes = nodeInfo;
+    }
+
+    // Extract useful parameters from workflow, feeding the classifications
+    // in so Phase 3 can treat known custom nodes with text-shaped inputs as
+    // candidate text encoders.
+    const extracted = extractComfyUIParams(workflow, nodeInfo?.classifications ?? {});
+    Object.assign(aiData, extracted);
+    // Restore workflow_type — extractComfyUIParams doesn't set it but Object.assign
+    // could theoretically clobber it if the extracted object ever grows that key.
+    if (!aiData.workflow_type) aiData.workflow_type = 'ComfyUI';
+
+    // Backfill basic fields from a Parameters block (e.g. Workflow-only ComfyUI
+    // files carry an A1111 infotext alongside the UI graph). Graph-derived values
+    // win: only fill fields the graph didn't already produce.
+    if (parametersChunk) {
+      const fields = parseA1111Fields(parametersChunk);
+      for (const [k, v] of Object.entries(fields)) {
+        if (aiData[k] === undefined || aiData[k] === null || aiData[k] === '') aiData[k] = v;
+      }
+    }
+
+    return aiData;
+  },
+};

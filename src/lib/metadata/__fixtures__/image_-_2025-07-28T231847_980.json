@@ -1,0 +1,7 @@
+{
+  "name": "image_-_2025-07-28T231847_980",
+  "source": "chunks.json",
+  "chunks": {
+    "parameters": "NAI_RANDOMIZERXL, 1girl, solo, long hair, blue hair, multicolored hair, breasts, looking at viewer, long sleeves, medium breasts, purple eyes, purple hair, sky, green hair, upper body, rainbow hair, blonde hair, night, building, night sky, lips, orange hair, arms up, makeup, lipstick, nose, star (sky), sweater, turtleneck, ribbed sweater, turtleneck sweater, white sweater, arms behind head, eyelashes, personification\nSteps: 30, Sampler: Euler a, Schedule type: Karras, CFG scale: 5, Seed: 3394402801, Size: 896x1152, Model hash: 835e2208eb, Model: RetirementMixNAIXL.fp16, Denoising strength: 0.25, Hires Module 1: Use same choices, Hires sampler: DPM++ 2M, Hires CFG Scale: 5, Hires upscale: 2, Hires steps: 15, Hires upscaler: 8x_NMKD-Superscale_150000_G, TI: \"NAI_RANDOMIZERXL, NAI_RANDOMIZERXL\", Version: f2.0.1v1.10.1-previous-659-gc055f2d4, Module 1: andromedaXLILNAIVAE_v10"
+  }
+}

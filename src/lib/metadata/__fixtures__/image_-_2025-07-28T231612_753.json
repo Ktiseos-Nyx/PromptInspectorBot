@@ -1,0 +1,7 @@
+{
+  "name": "image_-_2025-07-28T231612_753",
+  "source": "chunks.json",
+  "chunks": {
+    "parameters": "SuperDetailers_NAI NAI_RANDOMIZERXL,  solo, looking at viewer, short hair, brown hair, closed mouth, jacket, open clothes, pants, open jacket, shirt, outdoors, sky, belt, 1boy, red eyes, male focus, muscular, abs, muscular male, pectorals, colored sclera, black sclera, red hair, red shirt, railing, black jacket, night, moon, building, night sky, city, frown, bush, leather, leather jacket, taut clothes, shirt tucked in, cityscape, brown belt, denim, jeans, serious, tight clothes, bara, covered nipples, covered abs, large pectorals, taut shirt, manly, tight shirt\nSteps: 30, Sampler: Euler a, Schedule type: Karras, CFG scale: 5, Seed: 4187728505, Size: 896x1152, Model hash: 835e2208eb, Model: RetirementMixNAIXL.fp16, Denoising strength: 0.25, Hires Module 1: Use same choices, Hires sampler: DPM++ 2M, Hires CFG Scale: 5, Hires upscale: 2, Hires steps: 15, Hires upscaler: 8x_NMKD-Superscale_150000_G, TI: \"SuperDetailers_NAI, NAI_RANDOMIZERXL, SuperDetailers_NAI, NAI_RANDOMIZERXL\", Version: f2.0.1v1.10.1-previous-659-gc055f2d4, Module 1: andromedaXLILNAIVAE_v10"
+  }
+}
