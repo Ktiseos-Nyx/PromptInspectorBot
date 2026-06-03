@@ -6,10 +6,13 @@ import {
 import { parseA1111Fields } from './a1111-fields';
 import { isUiWorkflow, normalizeUiWorkflow } from '../comfyui/normalize';
 
-const sanitizeJson = (s: string) => s
-  .replace(/:\s*NaN/g, ': null')
-  .replace(/:\s*Infinity/g, ': null')
-  .replace(/:\s*-Infinity/g, ': null');
+// ComfyUI serializes JS NaN/Infinity literally, which breaks JSON.parse. Replace
+// the bareword tokens with null, but only in JSON value position — i.e. preceded by
+// `:`/`[`/`,` and followed by a structural close — so we never corrupt a prompt
+// string that legitimately contains the word "Infinity"/"NaN". Handles both object
+// values (`: NaN`) and array elements (`[NaN]`, `, NaN`).
+const sanitizeJson = (s: string) =>
+  s.replace(/([:[,]\s*)(-?Infinity|NaN)(?=\s*[,\]}])/g, '$1null');
 
 export const comfyUiDetector: FormatDetector = {
   name: 'ComfyUI',
