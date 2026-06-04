@@ -1,9 +1,9 @@
 import { Events, Message, DMChannel, type Client } from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
-import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS } from '../lib/config';
+import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isGifLink, isMediaMessage, hasHoneypotRole, checkMediaVelocity } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -74,11 +74,12 @@ export function registerMessageEvents(client: Client): void {
         }
       }
 
-      trackMessage(message);
+      trackMessage(message, GIF_SOURCE_DOMAINS);
 
       const userHasRoles = (message.member?.roles.cache.size ?? 1) > 1;
       const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));
       const hasImages = imageAttachments.size > 0;
+      const isMedia = hasImages || isGifLink(message.content, GIF_SOURCE_DOMAINS);
 
       // ── Magic bytes — attachments ──────────────────────────────────────────
       if (hasImages) {
@@ -125,17 +126,53 @@ export function registerMessageEvents(client: Client): void {
         }
       }
 
-      // ── Screenshot spam (4+ images + cross-posting) ────────────────────────
-      if (imageAttachments.size >= 4) {
-        const crossPosts = checkCrossPosting(message);
-        if (crossPosts >= 2) {
-          await instantBan(message, `Screenshot spam (${imageAttachments.size} images, ${crossPosts} channels)`,
-            mod, [`${imageAttachments.size} images`, `${crossPosts} channels`]);
+      // ── Media cross-post velocity ──────────────────────────────────────────
+      // Runs for ANY media (uploads OR GIF links). Two tracks: identical reposts
+      // (low bar) and any-media bursts (catches different GIFs). Honeypot role
+      // escalates per the configured mode.
+      if (isMedia) {
+        // Honeypot escalation
+        if (hasHoneypotRole(message, mod) && mod.honeypotMode !== 'off') {
+          const honeypotHit =
+            mod.honeypotMode === 'strict' ||
+            checkMediaVelocity(message, mod.mediaSpamWindowSec).mediaChannels >= 2;
+          if (honeypotHit) {
+            const reason = `Honeypot role + media (${mod.honeypotMode})`;
+            recordBan(message.author.id, message.guildId!, reason);
+            await instantBan(message, reason, mod, ['Honeypot/catcher role', `mode: ${mod.honeypotMode}`]);
+            return;
+          }
+        }
+
+        const { sameChannels, mediaChannels, maxBytes } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
+
+        // Identity track — same file reposted across channels (low bar)
+        if (sameChannels >= mod.mediaSpamSameChannels) {
+          const reason = `Repost spam (same media in ${sameChannels} channels / ${mod.mediaSpamWindowSec}s)`;
+          if (message.content) recordPattern(message.content, reason);
+          recordBan(message.author.id, message.guildId!, reason);
+          await instantBan(message, reason, mod, [`${sameChannels} channels`, 'Identical media']);
           return;
         }
-        if (!userHasRoles && isGibberish(message.content, false, hasImages)) {
-          await instantBan(message, `Screenshot spam + gibberish`,
-            mod, [`${imageAttachments.size} images`, 'No roles', 'Gibberish text']);
+
+        // Large-media fast path — a heavy payload of a flagged type lowers the bar
+        const hasLargeMedia = [...imageAttachments.values()].some(
+          a => a.contentType != null && mod.largeMediaTypes.has(a.contentType) && a.size >= mod.largeMediaBytes,
+        );
+        const mediaThreshold = hasLargeMedia ? Math.min(2, mod.mediaSpamChannels) : mod.mediaSpamChannels;
+
+        // Media-type track — any media across channels (catches different GIFs)
+        if (mediaChannels >= mediaThreshold) {
+          const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${hasLargeMedia ? ', large payload' : ''})`;
+          recordBan(message.author.id, message.guildId!, reason);
+          await instantBan(message, reason, mod, [`${mediaChannels} channels`, `Max ${Math.round(maxBytes / 1024)}KB`]);
+          return;
+        }
+
+        // Standalone: 4+ images + no roles + gibberish (single-message case, kept)
+        if (imageAttachments.size >= 4 && !userHasRoles && isGibberish(message.content, false, hasImages)) {
+          await instantBan(message, 'Screenshot spam + gibberish', mod,
+            [`${imageAttachments.size} images`, 'No roles', 'Gibberish text']);
           return;
         }
       }
