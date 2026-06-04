@@ -30,7 +30,7 @@ export const securityCommand = {
     if (!interaction.guild) {
       return interaction.reply({ content: '❌ Server only.', flags: MessageFlags.Ephemeral });
     }
-    const isAdmin = (interaction.member?.permissions as any)?.has(PermissionFlagsBits.ManageGuild);
+    const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false;
     if (!isAdmin) {
       return interaction.reply({ content: '❌ Requires Manage Server permission.', flags: MessageFlags.Ephemeral });
     }
@@ -49,7 +49,9 @@ export const securityCommand = {
       const bytes = interaction.options.getInteger('bytes');
       const types = interaction.options.getString('types');
       if (bytes != null) setModerationField(guildId, 'largeMediaBytes', bytes);
-      if (types != null) setModerationField(guildId, 'largeMediaTypes', types.split(',').map(t => t.trim()).filter(Boolean));
+      if (types != null) {
+        setModerationField(guildId, 'largeMediaTypes', types.split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
+      }
     } else if (sub === 'honeypot') {
       const mode = interaction.options.getString('mode', true) as 'off' | 'crosspost' | 'strict';
       setModerationField(guildId, 'honeypotMode', mode);

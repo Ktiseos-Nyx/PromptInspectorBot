@@ -20,14 +20,29 @@ function fingerprint(message: Message): string {
 // later via a separate MessageUpdate, too late for MessageCreate checks.
 export function isGifLink(content: string, domains: string[]): boolean {
   if (!content || domains.length === 0) return false;
-  const esc = domains.map(d => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const re = new RegExp(`https?://(?:[^\\s/]+\\.)?(?:${esc})\\/\\S+`, 'i');
-  return re.test(content);
+  const urls = content.match(/https?:\/\/\S+/gi);
+  if (!urls) return false;
+  for (const raw of urls) {
+    let host: string;
+    try {
+      host = new URL(raw).hostname.toLowerCase();
+    } catch {
+      continue; // not a parseable URL — skip
+    }
+    // Exact host or a subdomain of a known host (proper parse, not substring match)
+    if (domains.some(d => host === d.toLowerCase() || host.endsWith(`.${d.toLowerCase()}`))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function isMediaMessage(message: Message, gifDomains: string[]): boolean {
   for (const a of message.attachments.values()) {
-    if (a.contentType?.startsWith('image/')) return true;
+    const ct = a.contentType ?? '';
+    // image/* and video/* — Discord often serves GIFs as video/mp4, and large
+    // video uploads are a real spam payload, so both count toward velocity.
+    if (ct.startsWith('image/') || ct.startsWith('video/')) return true;
   }
   return isGifLink(message.content ?? '', gifDomains);
 }

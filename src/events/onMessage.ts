@@ -3,7 +3,7 @@ import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isGifLink, hasHoneypotRole, checkMediaVelocity } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -79,7 +79,7 @@ export function registerMessageEvents(client: Client): void {
       const userHasRoles = (message.member?.roles.cache.size ?? 1) > 1;
       const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));
       const hasImages = imageAttachments.size > 0;
-      const isMedia = hasImages || isGifLink(message.content, GIF_SOURCE_DOMAINS);
+      const isMedia = isMediaMessage(message, GIF_SOURCE_DOMAINS);
 
       // ── Magic bytes — attachments ──────────────────────────────────────────
       if (hasImages) {
@@ -152,9 +152,11 @@ export function registerMessageEvents(client: Client): void {
           return;
         }
 
-        // Large-media fast path — a heavy payload of a flagged type lowers the bar
-        const hasLargeMedia = [...imageAttachments.values()].some(
-          a => a.contentType != null && mod.largeMediaTypes.has(a.contentType) && a.size >= mod.largeMediaBytes,
+        // Large-media fast path — a heavy payload of a flagged type lowers the bar.
+        // Checks ALL attachments (not just images) so configured types like
+        // video/mp4 are honoured; MIME is lowercased to match stored values.
+        const hasLargeMedia = [...message.attachments.values()].some(
+          a => a.contentType != null && mod.largeMediaTypes.has(a.contentType.toLowerCase()) && a.size >= mod.largeMediaBytes,
         );
         const mediaThreshold = hasLargeMedia ? Math.min(2, mod.mediaSpamChannels) : mod.mediaSpamChannels;
 

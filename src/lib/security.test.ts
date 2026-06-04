@@ -94,6 +94,11 @@ describe('isGifLink', () => {
   it('ignores unknown hosts', () => {
     expect(isGifLink('https://example.com/x.gif', domains)).toBe(false);
   });
+  it('is not fooled by a look-alike host (proper URL parse, not substring)', () => {
+    expect(isGifLink('https://tenor.com.evil.com/x', domains)).toBe(false);
+    expect(isGifLink('https://eviltenor.com/x', domains)).toBe(false);
+    expect(isGifLink('https://evil.com/path?u=tenor.com/x', domains)).toBe(false);
+  });
   it('returns false when no domains configured', () => {
     expect(isGifLink('https://tenor.com/view/x', [])).toBe(false);
   });
@@ -102,6 +107,10 @@ describe('isGifLink', () => {
 describe('isMediaMessage', () => {
   it('is true for an image attachment', () => {
     const m = mediaMsg({ attachments: new Map([['f', { contentType: 'image/png', name: 'a.png', size: 10 }]]) });
+    expect(isMediaMessage(m, [])).toBe(true);
+  });
+  it('is true for a video attachment (e.g. a video/mp4 GIF)', () => {
+    const m = mediaMsg({ attachments: new Map([['f', { contentType: 'video/mp4', name: 'a.mp4', size: 10 }]]) });
     expect(isMediaMessage(m, [])).toBe(true);
   });
   it('is true for a GIF link', () => {
