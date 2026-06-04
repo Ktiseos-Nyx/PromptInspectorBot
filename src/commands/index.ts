@@ -5,6 +5,7 @@ import { decideCommand, pollCommand, wildcardCommand, interactCommand, goodnight
 import { qotdCommand } from './qotd';
 import { remindCommand } from './reminders';
 import { settingsCommand } from './settings';
+import { securityCommand } from './security';
 import { banregistryCommand } from './banregistry';
 import { reportCommand } from './report';
 import { viewPromptCommand } from './contextmenu';
@@ -14,7 +15,7 @@ const slashCommands = [
   askCommand, describeCommand, promptSupportCommand, coderCommand, techsupportCommand,
   decideCommand, pollCommand, wildcardCommand, interactCommand, goodnightCommand,
   qotdCommand, remindCommand,
-  settingsCommand, banregistryCommand, reportCommand,
+  settingsCommand, securityCommand, banregistryCommand, reportCommand,
 ];
 
 const contextMenus = [viewPromptCommand];
