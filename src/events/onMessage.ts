@@ -3,7 +3,7 @@ import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isGifLink, isMediaMessage, hasHoneypotRole, checkMediaVelocity } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isGifLink, hasHoneypotRole, checkMediaVelocity } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -131,20 +131,17 @@ export function registerMessageEvents(client: Client): void {
       // (low bar) and any-media bursts (catches different GIFs). Honeypot role
       // escalates per the configured mode.
       if (isMedia) {
+        const { sameChannels, mediaChannels, maxBytes } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
+
         // Honeypot escalation
         if (hasHoneypotRole(message, mod) && mod.honeypotMode !== 'off') {
-          const honeypotHit =
-            mod.honeypotMode === 'strict' ||
-            checkMediaVelocity(message, mod.mediaSpamWindowSec).mediaChannels >= 2;
-          if (honeypotHit) {
+          if (mod.honeypotMode === 'strict' || mediaChannels >= 2) {
             const reason = `Honeypot role + media (${mod.honeypotMode})`;
             recordBan(message.author.id, message.guildId!, reason);
             await instantBan(message, reason, mod, ['Honeypot/catcher role', `mode: ${mod.honeypotMode}`]);
             return;
           }
         }
-
-        const { sameChannels, mediaChannels, maxBytes } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
 
         // Identity track — same file reposted across channels (low bar)
         if (sameChannels >= mod.mediaSpamSameChannels) {
@@ -163,13 +160,16 @@ export function registerMessageEvents(client: Client): void {
 
         // Media-type track — any media across channels (catches different GIFs)
         if (mediaChannels >= mediaThreshold) {
+          const payloadDetail = maxBytes > 0 ? `Max ${Math.round(maxBytes / 1024)}KB` : 'GIF link(s)';
           const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${hasLargeMedia ? ', large payload' : ''})`;
           recordBan(message.author.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, [`${mediaChannels} channels`, `Max ${Math.round(maxBytes / 1024)}KB`]);
+          await instantBan(message, reason, mod, [`${mediaChannels} channels`, payloadDetail]);
           return;
         }
 
-        // Standalone: 4+ images + no roles + gibberish (single-message case, kept)
+        // Standalone single-message case: 4+ images + no roles + gibberish. Lower-
+        // confidence heuristic, so intentionally NOT written to the cross-server ban
+        // registry (no recordBan) — unlike the velocity tracks above.
         if (imageAttachments.size >= 4 && !userHasRoles && isGibberish(message.content, false, hasImages)) {
           await instantBan(message, 'Screenshot spam + gibberish', mod,
             [`${imageAttachments.size} images`, 'No roles', 'Gibberish text']);
