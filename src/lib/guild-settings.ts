@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { dataFile, writeJsonAtomic } from './paths';
 import type { GuildEntry, GuildModeration, ResolvedModConfig, EnvModDefaults } from './settings-types';
+import { CROSS_POST_WINDOW } from './security';
 
 const DEFAULTS: Record<string, boolean> = {
   ask: false,
@@ -129,6 +130,15 @@ export function resolveModeration(
     monitoredChannelIds:
       m.monitoredChannelIds != null ? new Set(m.monitoredChannelIds) : new Set(env.monitoredChannelIds),
     catcherRoleId: m.catcherRoleId != null ? m.catcherRoleId : env.catcherRoleId,
+    mediaSpamChannels: m.mediaSpamChannels != null ? m.mediaSpamChannels : env.mediaSpamChannels,
+    mediaSpamSameChannels: m.mediaSpamSameChannels != null ? m.mediaSpamSameChannels : env.mediaSpamSameChannels,
+    mediaSpamWindowSec: Math.min(
+      m.mediaSpamWindowSec != null ? m.mediaSpamWindowSec : env.mediaSpamWindowSec,
+      CROSS_POST_WINDOW,
+    ),
+    largeMediaBytes: m.largeMediaBytes != null ? m.largeMediaBytes : env.largeMediaBytes,
+    largeMediaTypes: m.largeMediaTypes != null ? new Set(m.largeMediaTypes) : new Set(env.largeMediaTypes),
+    honeypotMode: m.honeypotMode != null ? m.honeypotMode : env.honeypotMode,
   };
 }
 

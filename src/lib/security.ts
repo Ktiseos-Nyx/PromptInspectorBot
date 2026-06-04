@@ -6,7 +6,7 @@ import type { ResolvedModConfig } from './settings-types';
 
 interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; bytes: number; isMedia: boolean; }
 const userMessages = new Map<string, TrackedMessage[]>();
-const CROSS_POST_WINDOW = 300; // seconds
+export const CROSS_POST_WINDOW = 300; // seconds; also the max retention, so velocity windows are clamped to it
 
 function fingerprint(message: Message): string {
   let s = message.content.trim();
@@ -56,6 +56,7 @@ export function checkCrossPosting(message: Message): number {
 // (configurable) window than CROSS_POST_WINDOW:
 //   sameChannels  — distinct channels with the SAME fingerprint (identical repost)
 //   mediaChannels — distinct channels carrying ANY media (catches different GIFs)
+// windowSec is clamped by callers to CROSS_POST_WINDOW — entries older than that are pruned by trackMessage, so a larger window would silently undercount.
 export function checkMediaVelocity(
   message: Message,
   windowSec: number,

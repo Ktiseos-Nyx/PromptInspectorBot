@@ -55,6 +55,12 @@ const ENV: EnvModDefaults = {
   trustedUserIds: new Set(['env-user']),
   monitoredChannelIds: new Set(['env-chan']),
   catcherRoleId: 'env-catcher',
+  mediaSpamChannels: 4,
+  mediaSpamSameChannels: 3,
+  mediaSpamWindowSec: 120,
+  largeMediaBytes: 5 * 1024 * 1024,
+  largeMediaTypes: new Set(['image/gif']),
+  honeypotMode: 'crosspost',
 };
 
 describe('resolveModeration', () => {
@@ -140,10 +146,56 @@ describe('getModeration', () => {
       trustedUserIds: new Set(['env-user']),
       monitoredChannelIds: new Set(),
       catcherRoleId: null,
+      mediaSpamChannels: 4,
+      mediaSpamSameChannels: 3,
+      mediaSpamWindowSec: 120,
+      largeMediaBytes: 5 * 1024 * 1024,
+      largeMediaTypes: new Set(['image/gif']),
+      honeypotMode: 'crosspost',
     };
     setModerationField('g1', 'alertChannelId', 'guild-alert');
     const r = getModeration('g1', env);
     expect([...r.alertChannelIds]).toEqual(['guild-alert']);
     expect([...r.trustedUserIds]).toEqual(['env-user']); // fell back to env
+  });
+});
+
+describe('resolveModeration — media-spam fields', () => {
+  const env: EnvModDefaults = {
+    alertChannelIds: new Set(),
+    trustedRoleIds: new Set(),
+    trustedUserIds: new Set(),
+    monitoredChannelIds: new Set(),
+    catcherRoleId: null,
+    mediaSpamChannels: 4,
+    mediaSpamSameChannels: 3,
+    mediaSpamWindowSec: 120,
+    largeMediaBytes: 5 * 1024 * 1024,
+    largeMediaTypes: new Set(['image/gif']),
+    honeypotMode: 'crosspost',
+  };
+
+  it('falls back to env defaults when unset', () => {
+    const r = resolveModeration({}, env);
+    expect(r.mediaSpamChannels).toBe(4);
+    expect(r.mediaSpamWindowSec).toBe(120);
+    expect(r.honeypotMode).toBe('crosspost');
+    expect([...r.largeMediaTypes]).toEqual(['image/gif']);
+  });
+
+  it('uses per-guild overrides when set', () => {
+    const r = resolveModeration(
+      { mediaSpamChannels: 6, mediaSpamWindowSec: 60, honeypotMode: 'strict', largeMediaTypes: ['image/gif', 'video/mp4'] },
+      env,
+    );
+    expect(r.mediaSpamChannels).toBe(6);
+    expect(r.mediaSpamWindowSec).toBe(60);
+    expect(r.honeypotMode).toBe('strict');
+    expect(r.largeMediaTypes.has('video/mp4')).toBe(true);
+  });
+
+  it('clamps mediaSpamWindowSec to the 300s retention ceiling', () => {
+    const r = resolveModeration({ mediaSpamWindowSec: 400 }, env);
+    expect(r.mediaSpamWindowSec).toBe(300);
   });
 });

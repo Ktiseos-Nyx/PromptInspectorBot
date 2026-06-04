@@ -12,6 +12,12 @@ function cfg(over: Partial<ResolvedModConfig> = {}): ResolvedModConfig {
     trustedUserIds: new Set(),
     monitoredChannelIds: new Set(),
     catcherRoleId: null,
+    mediaSpamChannels: 4,
+    mediaSpamSameChannels: 3,
+    mediaSpamWindowSec: 120,
+    largeMediaBytes: 5 * 1024 * 1024,
+    largeMediaTypes: new Set(['image/gif']),
+    honeypotMode: 'crosspost',
     ...over,
   };
 }

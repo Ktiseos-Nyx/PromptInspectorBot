@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import type { EnvModDefaults } from './settings-types';
 import { RateLimiter } from './rate-limiter';
+import { CROSS_POST_WINDOW } from './security';
 
 function parseIdList(envVar: string | undefined): Set<string> {
   if (!envVar || envVar === '[]') return new Set();
@@ -43,12 +44,36 @@ export const ADMIN_CHANNEL_IDS = parseIdList(process.env.ADMIN_CHANNEL_IDS ?? pr
 export const DM_ALLOWED_USER_IDS = parseIdList(process.env.DM_ALLOWED_USER_IDS);
 export const DM_RESPONSE_MESSAGE = process.env.DM_RESPONSE_MESSAGE ?? '👋 This bot is configured for server use only.';
 
+export const MEDIA_SPAM_CHANNELS = parseInt(cfg('MEDIA_SPAM_CHANNELS', 'MEDIA_SPAM_CHANNELS', '4'));
+export const MEDIA_SPAM_SAME_CHANNELS = parseInt(cfg('MEDIA_SPAM_SAME_CHANNELS', 'MEDIA_SPAM_SAME_CHANNELS', '3'));
+export const MEDIA_SPAM_WINDOW_SEC = Math.min(
+  parseInt(cfg('MEDIA_SPAM_WINDOW_SEC', 'MEDIA_SPAM_WINDOW_SEC', '120')),
+  CROSS_POST_WINDOW,
+);
+export const LARGE_MEDIA_BYTES = parseInt(cfg('LARGE_MEDIA_BYTES', 'LARGE_MEDIA_BYTES', String(5 * 1024 * 1024)));
+export const LARGE_MEDIA_TYPES = new Set(
+  cfg('LARGE_MEDIA_TYPES', 'LARGE_MEDIA_TYPES', 'image/gif').split(',').map(s => s.trim()).filter(Boolean),
+);
+const HONEYPOT_MODE_RAW = cfg('HONEYPOT_MODE', 'HONEYPOT_MODE', 'crosspost');
+export const HONEYPOT_MODE: 'off' | 'crosspost' | 'strict' =
+  HONEYPOT_MODE_RAW === 'off' || HONEYPOT_MODE_RAW === 'strict' ? HONEYPOT_MODE_RAW : 'crosspost';
+export const GIF_SOURCE_DOMAINS = cfg(
+  'GIF_SOURCE_DOMAINS', 'GIF_SOURCE_DOMAINS',
+  'tenor.com,giphy.com,gfycat.com,media.discordapp.net,cdn.discordapp.com,imgur.com',
+).split(',').map(s => s.trim()).filter(Boolean);
+
 export const ENV_MOD_DEFAULTS: EnvModDefaults = {
   alertChannelIds: ADMIN_CHANNEL_IDS,
   trustedRoleIds: new Set<string>(), // no env var for trusted roles — per-guild only
   trustedUserIds: TRUSTED_USER_IDS,
   monitoredChannelIds: MONITORED_CHANNEL_IDS,
   catcherRoleId: CATCHER_ROLE_ID || null,
+  mediaSpamChannels: MEDIA_SPAM_CHANNELS,
+  mediaSpamSameChannels: MEDIA_SPAM_SAME_CHANNELS,
+  mediaSpamWindowSec: MEDIA_SPAM_WINDOW_SEC,
+  largeMediaBytes: LARGE_MEDIA_BYTES,
+  largeMediaTypes: LARGE_MEDIA_TYPES,
+  honeypotMode: HONEYPOT_MODE,
 };
 
 // ── Gemini ────────────────────────────────────────────────────────────────────
