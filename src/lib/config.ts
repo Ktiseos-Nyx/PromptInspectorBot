@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import type { EnvModDefaults } from './settings-types';
 import { RateLimiter } from './rate-limiter';
+import { CROSS_POST_WINDOW } from './security';
 
 function parseIdList(envVar: string | undefined): Set<string> {
   if (!envVar || envVar === '[]') return new Set();
@@ -29,6 +30,20 @@ function cfg(envKey: string, configKey: string, fallback: string): string {
   return process.env[envKey] ?? fileConfig[configKey] ?? fallback;
 }
 
+// Integer config with NaN protection + clamping, so a malformed env var (or 0/1)
+// can't silently disable or undercut a security threshold.
+function cfgInt(envKey: string, configKey: string, fallback: number, min: number, max = Number.MAX_SAFE_INTEGER): number {
+  const n = parseInt(cfg(envKey, configKey, String(fallback)), 10);
+  return Math.min(Math.max(Number.isFinite(n) ? n : fallback, min), max);
+}
+
+// List config that may arrive as a CSV string (env / inline) or an array (TOML list).
+function cfgList(envKey: string, configKey: string, fallback: string): string[] {
+  const raw: unknown = process.env[envKey] ?? fileConfig[configKey] ?? fallback;
+  const parts = Array.isArray(raw) ? raw.map(String) : String(raw).split(',');
+  return parts.map(s => s.trim()).filter(Boolean);
+}
+
 // ── Discord ───────────────────────────────────────────────────────────────────
 export const BOT_TOKEN = process.env.BOT_TOKEN ?? '';
 export const ALLOWED_GUILD_IDS = parseIdList(process.env.ALLOWED_GUILD_IDS);
@@ -43,12 +58,33 @@ export const ADMIN_CHANNEL_IDS = parseIdList(process.env.ADMIN_CHANNEL_IDS ?? pr
 export const DM_ALLOWED_USER_IDS = parseIdList(process.env.DM_ALLOWED_USER_IDS);
 export const DM_RESPONSE_MESSAGE = process.env.DM_RESPONSE_MESSAGE ?? '👋 This bot is configured for server use only.';
 
+export const MEDIA_SPAM_CHANNELS = cfgInt('MEDIA_SPAM_CHANNELS', 'MEDIA_SPAM_CHANNELS', 4, 2);
+export const MEDIA_SPAM_SAME_CHANNELS = cfgInt('MEDIA_SPAM_SAME_CHANNELS', 'MEDIA_SPAM_SAME_CHANNELS', 3, 2);
+export const MEDIA_SPAM_WINDOW_SEC = cfgInt('MEDIA_SPAM_WINDOW_SEC', 'MEDIA_SPAM_WINDOW_SEC', 120, 1, CROSS_POST_WINDOW);
+export const LARGE_MEDIA_BYTES = cfgInt('LARGE_MEDIA_BYTES', 'LARGE_MEDIA_BYTES', 5 * 1024 * 1024, 1);
+export const LARGE_MEDIA_TYPES = new Set(
+  cfgList('LARGE_MEDIA_TYPES', 'LARGE_MEDIA_TYPES', 'image/gif').map(s => s.toLowerCase()),
+);
+const HONEYPOT_MODE_RAW = cfg('HONEYPOT_MODE', 'HONEYPOT_MODE', 'crosspost');
+export const HONEYPOT_MODE: 'off' | 'crosspost' | 'strict' =
+  HONEYPOT_MODE_RAW === 'off' || HONEYPOT_MODE_RAW === 'strict' ? HONEYPOT_MODE_RAW : 'crosspost';
+export const GIF_SOURCE_DOMAINS = cfgList(
+  'GIF_SOURCE_DOMAINS', 'GIF_SOURCE_DOMAINS',
+  'tenor.com,giphy.com,gfycat.com,media.discordapp.net,cdn.discordapp.com,imgur.com',
+).map(s => s.toLowerCase());
+
 export const ENV_MOD_DEFAULTS: EnvModDefaults = {
   alertChannelIds: ADMIN_CHANNEL_IDS,
   trustedRoleIds: new Set<string>(), // no env var for trusted roles — per-guild only
   trustedUserIds: TRUSTED_USER_IDS,
   monitoredChannelIds: MONITORED_CHANNEL_IDS,
   catcherRoleId: CATCHER_ROLE_ID || null,
+  mediaSpamChannels: MEDIA_SPAM_CHANNELS,
+  mediaSpamSameChannels: MEDIA_SPAM_SAME_CHANNELS,
+  mediaSpamWindowSec: MEDIA_SPAM_WINDOW_SEC,
+  largeMediaBytes: LARGE_MEDIA_BYTES,
+  largeMediaTypes: LARGE_MEDIA_TYPES,
+  honeypotMode: HONEYPOT_MODE,
 };
 
 // ── Gemini ────────────────────────────────────────────────────────────────────

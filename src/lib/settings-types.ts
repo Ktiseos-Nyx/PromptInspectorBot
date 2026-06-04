@@ -6,6 +6,12 @@ export interface GuildModeration {
   trustedUserIds: string[];
   monitoredChannelIds: string[];
   catcherRoleId: string | null;
+  mediaSpamChannels: number | null;
+  mediaSpamSameChannels: number | null;
+  mediaSpamWindowSec: number | null;
+  largeMediaBytes: number | null;
+  largeMediaTypes: string[] | null;
+  honeypotMode: 'off' | 'crosspost' | 'strict' | null;
 }
 
 // One guild's full entry.
@@ -21,6 +27,12 @@ export interface ResolvedModConfig {
   trustedUserIds: Set<string>;
   monitoredChannelIds: Set<string>;
   catcherRoleId: string | null;
+  mediaSpamChannels: number;
+  mediaSpamSameChannels: number;
+  mediaSpamWindowSec: number;
+  largeMediaBytes: number;
+  largeMediaTypes: Set<string>;
+  honeypotMode: 'off' | 'crosspost' | 'strict';
 }
 
 // Global env baseline used when a guild has not overridden a field.
