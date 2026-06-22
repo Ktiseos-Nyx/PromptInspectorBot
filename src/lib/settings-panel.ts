@@ -22,7 +22,7 @@ export const FUN_FEATURES: Feature[] = [
   { value: 'qotd',         label: 'Question of the day' },
 ];
 
-export type Page = 'moderation' | 'ai' | 'fun' | 'advanced';
+export type Page = 'moderation' | 'ai' | 'fun';
 
 // State-transition: selected tier features → true, the rest of that tier → false.
 export function applyToggleSelection(
@@ -38,49 +38,56 @@ export function applyToggleSelection(
 
 function on(v: boolean | undefined): string { return v ? '✅' : '❌'; }
 
-function navRow(active: Page): ActionRowBuilder<ButtonBuilder> {
+function navRow(active: Page, securityOn: boolean): ActionRowBuilder<ButtonBuilder> {
   const mk = (page: Page, label: string) =>
     new ButtonBuilder()
       .setCustomId(`settings:nav:${page}`)
       .setLabel(label)
       .setStyle(page === active ? ButtonStyle.Primary : ButtonStyle.Secondary);
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    mk('moderation', 'Moderation'), mk('ai', 'AI & Metadata'), mk('fun', 'Fun'), mk('advanced', 'Advanced'),
+    mk('moderation', 'Moderation'), mk('ai', 'AI & Metadata'), mk('fun', 'Fun'),
+    new ButtonBuilder()
+      .setCustomId('settings:toggle:security')
+      .setLabel(`Anti-scam: ${securityOn ? 'ON' : 'OFF'}`)
+      .setStyle(securityOn ? ButtonStyle.Success : ButtonStyle.Danger),
   );
+}
+
+function fmtChannel(id: string | null | undefined): string {
+  return id ? `<#${id}>` : '*(not set)*';
+}
+
+function fmtRoles(ids: string[] | null | undefined): string {
+  return ids?.length ? ids.map(r => `<@&${r}>`).join(' ') : '*(none)*';
+}
+
+function fmtChannels(ids: string[] | null | undefined): string {
+  return ids?.length ? ids.map(c => `<#${c}>`).join(' ') : '*(all)*';
 }
 
 export function buildSettingsPanel(state: GuildEntry, page: Page) {
   const t = state.toggles ?? {};
   const m = state.moderation ?? {};
 
-  const summary = new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(Colors.Blurple)
-    .setTitle('⚙️ Server settings')
-    .addFields(
-      {
-        name: 'Moderation',
-        value: [
-          `${on(t.security ?? true)} Anti-scam protection`,
-          `Alert channel: ${m.alertChannelId ? `<#${m.alertChannelId}>` : '*(default)*'}`,
-          `Trusted roles: ${m.trustedRoleIds?.length ? m.trustedRoleIds.map(r => `<@&${r}>`).join(' ') : '*(none)*'}`,
-          `Monitored channels: ${m.monitoredChannelIds?.length ? m.monitoredChannelIds.map(c => `<#${c}>`).join(' ') : '*(all)*'}`,
-          `Catcher role: ${m.catcherRoleId ? `<@&${m.catcherRoleId}>` : '*(none)*'}`,
-        ].join('\n'),
-      },
-      { name: 'AI & Metadata', value: AI_FEATURES.map(f => `${on(t[f.value])} ${f.label}`).join('\n') },
-      { name: 'Fun', value: FUN_FEATURES.map(f => `${on(t[f.value])} ${f.label}`).join('\n') },
-    );
+    .setTitle('⚙️ Server settings');
 
-  const components: ActionRowBuilder<any>[] = [navRow(page)];
+  const securityOn = t.security ?? true;
+  const components: ActionRowBuilder<any>[] = [navRow(page, securityOn)];
 
   if (page === 'moderation') {
+    const lines: string[] = [];
+    lines.push(`${on(securityOn)} **Anti-scam protection**`);
+    if (securityOn) {
+      lines.push(`┣ Alert channel: ${fmtChannel(m.alertChannelId)}`);
+      lines.push(`┣ Trusted roles: ${fmtRoles(m.trustedRoleIds)}`);
+      lines.push(`┣ Monitored channels: ${fmtChannels(m.monitoredChannelIds)}`);
+      lines.push(`┗ Catcher role: ${fmtRoles(m.catcherRoleId ? [m.catcherRoleId] : [])}`);
+    }
+    embed.setDescription(lines.join('\n'));
+
     components.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId('settings:toggle:security')
-          .setLabel(`Anti-scam: ${t.security ?? true ? 'ON' : 'OFF'}`)
-          .setStyle(t.security ?? true ? ButtonStyle.Success : ButtonStyle.Danger),
-      ),
       new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId('settings:alertChannel')
@@ -101,22 +108,36 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
           .setChannelTypes(ChannelType.GuildText)
           .setMinValues(0).setMaxValues(25),
       ),
-    );
-  } else if (page === 'advanced') {
-    components.push(
       new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId('settings:catcherRole')
-          .setPlaceholder("Catcher role — extra scam weight when it's a user's only role")
+          .setPlaceholder('Catcher role — extra scam weight')
           .setMinValues(0).setMaxValues(1),
       ),
     );
-  } else {
-    const tier = page === 'ai' ? AI_FEATURES : FUN_FEATURES;
+  } else if (page === 'ai') {
+    embed.setDescription(
+      ['**AI & Metadata features**', ...AI_FEATURES.map(f => `${on(t[f.value])} ${f.label}`)].join('\n'),
+    );
+    const tier = AI_FEATURES;
     components.push(
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(`settings:tier:${page}`)
+          .setCustomId('settings:tier:ai')
+          .setPlaceholder('Enabled features (selected = on)')
+          .setMinValues(0).setMaxValues(tier.length)
+          .addOptions(tier.map(f => ({ label: f.label, value: f.value, default: !!t[f.value] }))),
+      ),
+    );
+  } else {
+    embed.setDescription(
+      ['**Fun features**', ...FUN_FEATURES.map(f => `${on(t[f.value])} ${f.label}`)].join('\n'),
+    );
+    const tier = FUN_FEATURES;
+    components.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('settings:tier:fun')
           .setPlaceholder('Enabled features (selected = on)')
           .setMinValues(0).setMaxValues(tier.length)
           .addOptions(tier.map(f => ({ label: f.label, value: f.value, default: !!t[f.value] }))),
@@ -124,5 +145,5 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
     );
   }
 
-  return { embeds: [summary], components };
+  return { embeds: [embed], components };
 }

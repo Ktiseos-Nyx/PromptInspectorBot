@@ -3,7 +3,7 @@ import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -192,6 +192,24 @@ export function registerMessageEvents(client: Client): void {
         await alertAdmins(message.guild, message.member ?? message.author as any,
           `Suspicious message (score: ${score})`, reasons, 'DELETED', mod);
         return;
+      }
+
+      // ── Mention spam detection ─────────────────────────────────────────────
+      if (message.mentions) {
+        const [mentionScore, mentionReasons] = checkMentionSpam(message);
+        if (mentionScore >= 100) {
+          const r = `Mention spam (score: ${mentionScore})`;
+          recordPattern(message.content, r);
+          recordBan(message.author.id, message.guildId!, r);
+          await instantBan(message, r, mod, mentionReasons);
+          return;
+        }
+        if (mentionScore >= 50) {
+          await message.delete().catch(() => null);
+          await alertAdmins(message.guild, message.member ?? message.author as any,
+            `Mention spam (score: ${mentionScore})`, mentionReasons, 'DELETED', mod);
+          return;
+        }
       }
     }
 

@@ -42,7 +42,8 @@ A Discord bot that extracts AI image-generation metadata (Forge/A1111, ComfyUI, 
 - 🛡️ **Behaviour-based scam detection** — crypto/wallet spam scoring
 - 🖼️ **Screenshot-spam protection** — 4+ images cross-posted across channels → ban
 - 🔣 **Obfuscation detection** — zero-width / zalgo / homoglyph "algo-speak" used to evade filters
-- 🔒 **Malware prevention** — magic-bytes check on attachments and embeds
+- 🗣️ **Mention spam detection** — `@everyone` / `@here` / mass-user-mention attacks
+- 🔒 **Malware prevention** — magic-bytes check on attachments and embeds with SSRF protection on embed URLs
 - 🗂️ **Cross-server ban registry** — known bad actors and scam fingerprints are remembered across servers the bot runs in
 - 🧰 **Admin tools** — `/report`, `/banregistry`, configurable word filters
 
@@ -178,10 +179,9 @@ Run **`/settings`** (requires **Manage Server**) to open an interactive panel. I
 
 | Page | What you configure |
 | ---- | ------------------ |
-| **Moderation** | Anti-scam on/off, alert channel, trusted roles, monitored channels |
+| **Moderation** | Anti-scam on/off, alert channel, trusted roles, monitored channels, catcher role |
 | **AI & Metadata** | Toggle metadata extraction and each AI command |
 | **Fun** | Toggle fun commands, `/interact`, QOTD |
-| **Advanced** | Catcher role (extra scam weight when it's a user's only role) |
 
 Everything is per server and persists immediately. Where a server hasn't set a value, the
 bot falls back to the global environment defaults.
@@ -337,6 +337,7 @@ SCAN_LIMIT_BYTES=10485760          # 10 MB
 ADMIN_CHANNEL_IDS=123,456          # where alerts go
 TRUSTED_USER_IDS=123,456
 CATCHER_ROLE_ID=...
+BLOCKED_IMAGE_DOMAINS=imgur.com    # optional; blocklisted image hosts checked on embed links
 
 # AI
 GROQ_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=
@@ -355,7 +356,7 @@ DATA_DIR=/data                     # set to a mounted volume on hosted deploys
 
 **Required:** View Channel, Send Messages, Read Message History, Add Reactions, Attach Files.
 
-**For moderation:** Ban Members, Moderate Members (timeouts), Manage Messages.
+**For moderation:** Ban Members (bot alerts if missing instead of silently failing), Moderate Members (timeouts), Manage Messages.
 
 ---
 

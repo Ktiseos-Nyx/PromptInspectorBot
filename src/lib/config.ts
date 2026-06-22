@@ -73,6 +73,11 @@ export const GIF_SOURCE_DOMAINS = cfgList(
   'tenor.com,giphy.com,gfycat.com,media.discordapp.net,cdn.discordapp.com,imgur.com',
 ).map(s => s.toLowerCase());
 
+export const BLOCKED_IMAGE_DOMAINS = new Set(
+  cfgList('BLOCKED_IMAGE_DOMAINS', 'BLOCKED_IMAGE_DOMAINS', '')
+    .map(s => s.toLowerCase()),
+);
+
 export const ENV_MOD_DEFAULTS: EnvModDefaults = {
   alertChannelIds: ADMIN_CHANNEL_IDS,
   trustedRoleIds: new Set<string>(), // no env var for trusted roles — per-guild only

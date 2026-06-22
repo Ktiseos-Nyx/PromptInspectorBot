@@ -1,6 +1,9 @@
 import crypto from 'crypto';
-import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors } from 'discord.js';
+import dns from 'dns';
+import net from 'net';
+import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors, PermissionFlagsBits } from 'discord.js';
 import type { ResolvedModConfig } from './settings-types';
+import { BLOCKED_IMAGE_DOMAINS } from './config';
 
 // ── Cross-post tracking ───────────────────────────────────────────────────────
 
@@ -218,6 +221,14 @@ export async function alertAdmins(
 export async function instantBan(message: Message, reason: string, cfg: ResolvedModConfig, details: string[] = []): Promise<void> {
   console.error(`🚨 BAN: ${message.author.tag} (${message.author.id}) — ${reason}`);
   if (!message.guild) return;
+
+  const me = message.guild.members.me;
+  if (!me || !me.permissions.has(PermissionFlagsBits.BanMembers)) {
+    await alertAdmins(message.guild, message.member ?? message.author as any,
+      reason, [...details, 'Bot missing BAN_MEMBERS permission'], 'FAILED', cfg);
+    return;
+  }
+
   try {
     await message.delete().catch(() => null);
     await message.guild.members.ban(message.author.id, {
@@ -268,12 +279,66 @@ export function algoSpeakScore(text: string): number {
   return score;
 }
 
+// ── SSRF guard ────────────────────────────────────────────────────────────────
+
+function isPrivateIP(ip: string): boolean {
+  const n = ip.split('.').map(Number);
+  if (n.length !== 4) return false;
+  // 127.0.0.0/8
+  if (n[0] === 127) return true;
+  // 10.0.0.0/8
+  if (n[0] === 10) return true;
+  // 169.254.0.0/16
+  if (n[0] === 169 && n[1] === 254) return true;
+  // 172.16.0.0/12
+  if (n[0] === 172 && n[1] >= 16 && n[1] <= 31) return true;
+  // 192.168.0.0/16
+  if (n[0] === 192 && n[1] === 168) return true;
+  return false;
+}
+
+async function resolveAndCheckURL(rawUrl: string): Promise<string | null> {
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname;
+  } catch {
+    return 'Invalid URL in embed';
+  }
+
+  const lowerHost = host.toLowerCase();
+
+  // Blocked domain check
+  for (const blocked of BLOCKED_IMAGE_DOMAINS) {
+    if (lowerHost === blocked || lowerHost.endsWith(`.${blocked}`)) {
+      return `Blocked domain: ${host}`;
+    }
+  }
+
+  // DNS resolution — skip fetch if any A record points to a private/loopback IP
+  try {
+    const addresses = await dns.promises.resolve4(host);
+    for (const addr of addresses) {
+      if (isPrivateIP(addr)) {
+        return `Blocked private IP (${addr}) for host: ${host}`;
+      }
+    }
+  } catch {
+    // DNS failure — allow the fetch (rate-limited below, might just be a transient error)
+  }
+
+  return null; // OK to proceed
+}
+
 // ── Embed URL magic bytes check ───────────────────────────────────────────────
 
 export async function checkEmbedImages(message: Message): Promise<string | null> {
   for (const embed of message.embeds) {
     const url = embed.image?.url ?? embed.thumbnail?.url;
     if (!url) continue;
+
+    const ssrfReason = await resolveAndCheckURL(url);
+    if (ssrfReason) return ssrfReason;
+
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       const buf = Buffer.from(await res.arrayBuffer());
@@ -282,6 +347,28 @@ export async function checkEmbedImages(message: Message): Promise<string | null>
     } catch { /* network error — skip */ }
   }
   return null;
+}
+
+// ── Mention spam detection ───────────────────────────────────────────────────
+
+export function checkMentionSpam(message: Message): [number, string[]] {
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (message.mentions.everyone) {
+    score += 50;
+    reasons.push('@everyone or @here mention');
+  }
+
+  const userMentions = message.mentions.users.size;
+  // Bot accounts used for mass-mention attacks target many distinct users at once;
+  // 5+ unique user pings in a single message is well outside normal behaviour.
+  if (userMentions >= 5) {
+    score += Math.min(30 + userMentions * 2, 80);
+    reasons.push(`Mass mention (${userMentions} users)`);
+  }
+
+  return [score, reasons];
 }
 
 // ── Bypass checks ─────────────────────────────────────────────────────────────
