@@ -1,7 +1,7 @@
 import {
   EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, ChannelSelectMenuBuilder, RoleSelectMenuBuilder,
-  ChannelType,
+  UserSelectMenuBuilder, ChannelType,
 } from 'discord.js';
 import type { GuildEntry } from './settings-types';
 
@@ -22,7 +22,13 @@ export const FUN_FEATURES: Feature[] = [
   { value: 'qotd',         label: 'Question of the day' },
 ];
 
-export type Page = 'moderation' | 'ai' | 'fun';
+export type Page = 'moderation' | 'trust' | 'ai' | 'fun';
+
+// Trust-list caps. Shared with /security so the command can't grow a list past
+// what the panel can render — Discord requires a select's default_values count to
+// be <= its max_values, so an oversized list would otherwise break the Trust page.
+export const TRUSTED_USERS_MAX = 25;
+export const TRUSTED_ROLES_MAX = 10;
 
 // State-transition: selected tier features → true, the rest of that tier → false.
 export function applyToggleSelection(
@@ -45,7 +51,7 @@ function navRow(active: Page, securityOn: boolean): ActionRowBuilder<ButtonBuild
       .setLabel(label)
       .setStyle(page === active ? ButtonStyle.Primary : ButtonStyle.Secondary);
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    mk('moderation', 'Moderation'), mk('ai', 'AI & Metadata'), mk('fun', 'Fun'),
+    mk('moderation', 'Moderation'), mk('ai', 'AI & Metadata'), mk('fun', 'Fun'), mk('trust', 'Trust'),
     new ButtonBuilder()
       .setCustomId('settings:toggle:security')
       .setLabel(`Anti-scam: ${securityOn ? 'ON' : 'OFF'}`)
@@ -65,6 +71,10 @@ function fmtChannels(ids: string[] | null | undefined): string {
   return ids?.length ? ids.map(c => `<#${c}>`).join(' ') : '*(all)*';
 }
 
+function fmtUsers(ids: string[] | null | undefined): string {
+  return ids?.length ? ids.map(u => `<@${u}>`).join(' ') : '*(none)*';
+}
+
 export function buildSettingsPanel(state: GuildEntry, page: Page) {
   const t = state.toggles ?? {};
   const m = state.moderation ?? {};
@@ -81,9 +91,9 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
     lines.push(`${on(securityOn)} **Anti-scam protection**`);
     if (securityOn) {
       lines.push(`┣ Alert channel: ${fmtChannel(m.alertChannelId)}`);
-      lines.push(`┣ Trusted roles: ${fmtRoles(m.trustedRoleIds)}`);
       lines.push(`┣ Monitored channels: ${fmtChannels(m.monitoredChannelIds)}`);
       lines.push(`┗ Catcher role: ${fmtRoles(m.catcherRoleId ? [m.catcherRoleId] : [])}`);
+      lines.push('*Trusted roles & bots are on the **Trust** page.*');
     }
     embed.setDescription(lines.join('\n'));
 
@@ -94,12 +104,6 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
           .setPlaceholder('Alert channel')
           .setChannelTypes(ChannelType.GuildText)
           .setMinValues(0).setMaxValues(1),
-      ),
-      new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
-        new RoleSelectMenuBuilder()
-          .setCustomId('settings:trustedRoles')
-          .setPlaceholder('Trusted roles')
-          .setMinValues(0).setMaxValues(10),
       ),
       new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
         new ChannelSelectMenuBuilder()
@@ -113,6 +117,33 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
           .setCustomId('settings:catcherRole')
           .setPlaceholder('Catcher role — extra scam weight')
           .setMinValues(0).setMaxValues(1),
+      ),
+    );
+  } else if (page === 'trust') {
+    embed.setDescription([
+      '**Trusted — skipped entirely by anti-scam**',
+      `┣ Trusted roles: ${fmtRoles(m.trustedRoleIds)}`,
+      `┗ Trusted users / bots: ${fmtUsers(m.trustedUserIds)}`,
+      '*Add admin/mod bots (e.g. Carlbot) here so their log embeds are never flagged.*',
+    ].join('\n'));
+
+    // Prefill current selections so editing the picker adds/removes from the existing
+    // list rather than replacing it — otherwise an admin could silently wipe trusted
+    // bots, re-exposing them to the anti-scam pipeline.
+    components.push(
+      new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId('settings:trustedRoles')
+          .setPlaceholder('Trusted roles')
+          .setMinValues(0).setMaxValues(TRUSTED_ROLES_MAX)
+          .setDefaultRoles(...(m.trustedRoleIds ?? []).slice(0, TRUSTED_ROLES_MAX)),
+      ),
+      new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+        new UserSelectMenuBuilder()
+          .setCustomId('settings:trustedUsers')
+          .setPlaceholder('Trusted users / bots (e.g. Carlbot)')
+          .setMinValues(0).setMaxValues(TRUSTED_USERS_MAX)
+          .setDefaultUsers(...(m.trustedUserIds ?? []).slice(0, TRUSTED_USERS_MAX)),
       ),
     );
   } else if (page === 'ai') {

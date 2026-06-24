@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  isTrusted, calculateScamScore, algoSpeakScore, verifyImageSafety,
+  isTrusted, calculateScamScore, algoSpeakScore, detectDisguisedExecutable,
   isGifLink, isMediaMessage, hasHoneypotRole, trackMessage, checkMediaVelocity,
+  isRecentJoin, mediaRaidThreshold,
 } from './security';
 import type { ResolvedModConfig } from './settings-types';
 
@@ -15,7 +16,6 @@ function cfg(over: Partial<ResolvedModConfig> = {}): ResolvedModConfig {
     mediaSpamChannels: 4,
     mediaSpamSameChannels: 3,
     mediaSpamWindowSec: 120,
-    largeMediaBytes: 5 * 1024 * 1024,
     largeMediaTypes: new Set(['image/gif']),
     honeypotMode: 'crosspost',
     ...over,
@@ -53,6 +53,30 @@ describe('isTrusted', () => {
   it('does not trust an unknown user with no trusted role', () => {
     expect(isTrusted(fakeMessage({ author: { id: 'u9' } }), cfg())).toBe(false);
   });
+
+  it('trusts a bot via cached member roles when message.member is absent (webhook/interaction)', () => {
+    const m = fakeMessage({
+      author: { id: 'carlbot' },
+      member: null,
+      guild: {
+        ownerId: 'owner',
+        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['mod-role', {}]]) } }]]) },
+      },
+    });
+    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(true);
+  });
+
+  it('does not trust a cached bot member lacking the trusted role', () => {
+    const m = fakeMessage({
+      author: { id: 'carlbot' },
+      member: null,
+      guild: {
+        ownerId: 'owner',
+        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['random', {}]]) } }]]) },
+      },
+    });
+    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(false);
+  });
 });
 
 describe('calculateScamScore', () => {
@@ -68,11 +92,28 @@ describe('calculateScamScore', () => {
 });
 
 describe('pure scorers still work', () => {
-  it('verifyImageSafety rejects an MZ executable', () => {
-    expect(verifyImageSafety(Buffer.from([0x4d, 0x5a, 0x00, 0x00]), 'x.png')[0]).toBe(false);
-  });
   it('algoSpeakScore flags zero-width characters', () => {
     expect(algoSpeakScore('hi​there friend')).toBeGreaterThanOrEqual(40);
+  });
+});
+
+describe('detectDisguisedExecutable', () => {
+  it('flags a Windows MZ executable', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x4d, 0x5a, 0x00, 0x00]))).not.toBeNull();
+  });
+  it('flags a Linux ELF binary', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))).not.toBeNull();
+  });
+  it('does NOT flag content that only shares the first two ELF bytes', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x7f, 0x45, 0x00, 0x00]))).toBeNull();
+  });
+  it('does NOT flag a JSON error body (expired CDN link → {"me…)', () => {
+    // Regression: Carlbot embed whose image URL returned `{"message":...}`
+    // (magic 7b226d65) was wrongly banned as a "malicious embed".
+    expect(detectDisguisedExecutable(Buffer.from('{"message":"gone"}', 'ascii'))).toBeNull();
+  });
+  it('does NOT flag a normal PNG', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
   });
 });
 
@@ -163,7 +204,6 @@ describe('checkMediaVelocity', () => {
     trackMessage(cur, dom);
     const v = checkMediaVelocity(cur, 120);
     expect(v.sameChannels).toBe(3);
-    expect(v.maxBytes).toBe(1000);
   });
 
   it('excludes entries older than the window', () => {
@@ -180,5 +220,35 @@ describe('checkMediaVelocity', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('isRecentJoin', () => {
+  const now = 1_000_000_000_000;
+  const day = 24 * 60 * 60 * 1000;
+  it('is false when the join time is unknown', () => {
+    expect(isRecentJoin(null, now)).toBe(false);
+    expect(isRecentJoin(undefined, now)).toBe(false);
+  });
+  it('is true for a member who joined within the window', () => {
+    expect(isRecentJoin(now - 3 * day, now)).toBe(true);
+  });
+  it('is false for a member who joined before the window', () => {
+    expect(isRecentJoin(now - 8 * day, now)).toBe(false);
+  });
+});
+
+describe('mediaRaidThreshold', () => {
+  it('lowers the threshold for an uploaded risky type from a recent joiner', () => {
+    expect(mediaRaidThreshold(4, true, true)).toBe(2);
+  });
+  it('keeps the base threshold for an established member (no recent join)', () => {
+    expect(mediaRaidThreshold(4, true, false)).toBe(4);
+  });
+  it('keeps the base threshold when there is no risky upload', () => {
+    expect(mediaRaidThreshold(4, false, true)).toBe(4);
+  });
+  it('never produces a threshold above an already-low base', () => {
+    expect(mediaRaidThreshold(2, true, true)).toBe(2);
   });
 });

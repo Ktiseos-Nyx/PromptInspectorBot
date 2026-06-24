@@ -136,7 +136,6 @@ export function resolveModeration(
       m.mediaSpamWindowSec != null ? m.mediaSpamWindowSec : env.mediaSpamWindowSec,
       CROSS_POST_WINDOW,
     )),
-    largeMediaBytes: m.largeMediaBytes != null ? m.largeMediaBytes : env.largeMediaBytes,
     largeMediaTypes: m.largeMediaTypes != null ? new Set(m.largeMediaTypes) : new Set(env.largeMediaTypes),
     honeypotMode: m.honeypotMode != null ? m.honeypotMode : env.honeypotMode,
   };

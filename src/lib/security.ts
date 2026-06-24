@@ -7,7 +7,7 @@ import { BLOCKED_IMAGE_DOMAINS } from './config';
 
 // ── Cross-post tracking ───────────────────────────────────────────────────────
 
-interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; bytes: number; isMedia: boolean; }
+interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; isMedia: boolean; }
 const userMessages = new Map<string, TrackedMessage[]>();
 export const CROSS_POST_WINDOW = 300; // seconds; also the max retention, so velocity windows are clamped to it
 
@@ -54,11 +54,9 @@ export function trackMessage(message: Message, gifDomains: string[] = []): void 
   const uid = message.author.id;
   const now = Date.now() / 1000;
   const fp = fingerprint(message);
-  let bytes = 0;
-  for (const a of message.attachments.values()) bytes += a.size;
   const isMedia = isMediaMessage(message, gifDomains);
   const prev = (userMessages.get(uid) ?? []).filter(m => now - m.timestamp < CROSS_POST_WINDOW);
-  prev.push({ fingerprint: fp, channelId: message.channelId, timestamp: now, bytes, isMedia });
+  prev.push({ fingerprint: fp, channelId: message.channelId, timestamp: now, isMedia });
   userMessages.set(uid, prev.slice(-50));
 }
 
@@ -78,16 +76,39 @@ export function checkCrossPosting(message: Message): number {
 export function checkMediaVelocity(
   message: Message,
   windowSec: number,
-): { sameChannels: number; mediaChannels: number; maxBytes: number } {
+): { sameChannels: number; mediaChannels: number } {
   const uid = message.author.id;
   const now = Date.now() / 1000;
   const fp = fingerprint(message);
   const recent = (userMessages.get(uid) ?? []).filter(m => now - m.timestamp < windowSec);
   const sameChannels = new Set(recent.filter(m => m.fingerprint === fp).map(m => m.channelId)).size;
-  const mediaMsgs = recent.filter(m => m.isMedia);
-  const mediaChannels = new Set(mediaMsgs.map(m => m.channelId)).size;
-  const maxBytes = mediaMsgs.reduce((mx, m) => Math.max(mx, m.bytes), 0);
-  return { sameChannels, mediaChannels, maxBytes };
+  const mediaChannels = new Set(recent.filter(m => m.isMedia).map(m => m.channelId)).size;
+  return { sameChannels, mediaChannels };
+}
+
+// New members rarely *upload* GIFs directly — legit GIFs arrive as Tenor/Giphy/Klipy
+// LINKS — so a recently-joined account is the likely media-raid actor.
+export const NEW_MEMBER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+export function isRecentJoin(
+  joinedTimestamp: number | null | undefined,
+  now: number = Date.now(),
+  windowMs: number = NEW_MEMBER_WINDOW_MS,
+): boolean {
+  if (joinedTimestamp == null) return false;
+  return now - joinedTimestamp < windowMs;
+}
+
+// A direct-uploaded risky type (e.g. image/gif) from a recently-joined member is the
+// media-raid pattern, so it lowers the cross-channel ban threshold. Everyone else keeps
+// the normal threshold. File SIZE is deliberately NOT a factor: abuse GIFs match normal
+// art (PNG) sizes, so a size bar punishes safe art posters instead of the raider.
+export function mediaRaidThreshold(
+  baseThreshold: number,
+  hasRiskyUpload: boolean,
+  recentJoin: boolean,
+): number {
+  return hasRiskyUpload && recentJoin ? Math.min(2, baseThreshold) : baseThreshold;
 }
 
 // ── Gibberish / spam detection ────────────────────────────────────────────────
@@ -166,17 +187,21 @@ export function calculateScamScore(message: Message, cfg: ResolvedModConfig): [n
 
 // ── Magic bytes check ─────────────────────────────────────────────────────────
 
-export function verifyImageSafety(data: Buffer, filename: string): [boolean, string] {
-  if (data.length < 4) return [false, 'File too small'];
-  const magic = data.subarray(0, 4);
-  if (magic[0] === 0x4D && magic[1] === 0x5A) return [false, 'Windows executable disguised as image'];
-  if (magic[0] === 0x7F && magic[1] === 0x45) return [false, 'Linux ELF binary disguised as image'];
-  if (magic[0] === 0xFF && magic[1] === 0xD8) return [true, 'JPEG'];
-  if (magic.toString('ascii', 1, 4) === 'PNG') return [true, 'PNG'];
-  if (data.subarray(0, 4).toString('ascii') === 'RIFF') return [true, 'WebP'];
-  if (magic[0] === 0x42 && magic[1] === 0x4D) return [true, 'BMP'];
-  if (data.subarray(0, 3).toString('ascii') === 'GIF') return [true, 'GIF'];
-  return [false, `Unknown format (magic: ${magic.toString('hex')})`];
+// Detects ONLY a binary executable disguised as an image (MZ / ELF) — the genuine
+// attack the magic-bytes check exists to stop. Returns a reason string when the
+// bytes are a known executable, otherwise null. Crucially, "this isn't a format I
+// recognise" (JSON error pages, SVG, expired-CDN responses) is NOT malicious and
+// returns null — banning on unverifiable content false-bans real users.
+export function detectDisguisedExecutable(data: Buffer): string | null {
+  if (data.length < 2) return null;
+  // MZ (0x4D 0x5A) is the complete DOS/PE signature — two bytes is correct here.
+  if (data[0] === 0x4D && data[1] === 0x5A) return 'Windows executable disguised as image';
+  // ELF magic is four bytes (0x7F 'E' 'L' 'F'); matching only the first two would
+  // false-flag benign binary content that happens to start with 0x7F 0x45.
+  if (data.length >= 4 && data[0] === 0x7F && data[1] === 0x45 && data[2] === 0x4C && data[3] === 0x46) {
+    return 'Linux ELF binary disguised as image';
+  }
+  return null;
 }
 
 // ── Admin alert ───────────────────────────────────────────────────────────────
@@ -342,8 +367,13 @@ export async function checkEmbedImages(message: Message): Promise<string | null>
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       const buf = Buffer.from(await res.arrayBuffer());
-      const [safe, reason] = verifyImageSafety(buf, url.split('/').pop() ?? 'embed');
-      if (!safe) return reason;
+      // Only ban on a genuinely malicious payload (an executable disguised as an
+      // image). Embed image URLs routinely resolve to non-image content — expired
+      // Discord CDN links return JSON, link previews can return SVG/HTML — and that
+      // is not an attack. Treating "unverifiable" as "malicious" false-bans bots
+      // (e.g. Carlbot log embeds) and real users posting expired links.
+      const exeReason = detectDisguisedExecutable(buf);
+      if (exeReason) return exeReason;
     } catch { /* network error — skip */ }
   }
   return null;
@@ -384,9 +414,17 @@ export function hasHoneypotRole(message: Message, cfg: ResolvedModConfig): boole
 export function isTrusted(message: Message, cfg: ResolvedModConfig): boolean {
   if (cfg.trustedUserIds.has(message.author.id)) return true;
   if (message.guild && message.author.id === message.guild.ownerId) return true;
-  const roles = message.member?.roles?.cache;
-  if (roles && cfg.trustedRoleIds.size) {
-    for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
+  if (cfg.trustedRoleIds.size) {
+    // message.member is null for webhook/interaction bot messages (e.g. Carlbot),
+    // so a trusted role would never match. Fall back to the guild's member cache
+    // (cache-only — no fetch, keeps this synchronous) so a trusted role can still
+    // exempt a bot that is already a known guild member.
+    const roles =
+      message.member?.roles?.cache ??
+      message.guild?.members?.cache?.get(message.author.id)?.roles?.cache;
+    if (roles) {
+      for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
+    }
   }
   return false;
 }

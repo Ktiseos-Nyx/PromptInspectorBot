@@ -61,6 +61,9 @@ export const settingsCommand = {
         } else if (id === 'settings:trustedRoles') {
           const sel = i as AnySelectMenuInteraction;
           setModerationField(guildId, 'trustedRoleIds', [...sel.values]);
+        } else if (id === 'settings:trustedUsers') {
+          const sel = i as AnySelectMenuInteraction;
+          setModerationField(guildId, 'trustedUserIds', [...sel.values]);
         } else if (id === 'settings:monitoredChannels') {
           const sel = i as AnySelectMenuInteraction;
           setModerationField(guildId, 'monitoredChannelIds', [...sel.values]);
