@@ -173,22 +173,14 @@ export function calculateScamScore(message: Message, cfg: ResolvedModConfig): [n
 // returns null — banning on unverifiable content false-bans real users.
 export function detectDisguisedExecutable(data: Buffer): string | null {
   if (data.length < 2) return null;
+  // MZ (0x4D 0x5A) is the complete DOS/PE signature — two bytes is correct here.
   if (data[0] === 0x4D && data[1] === 0x5A) return 'Windows executable disguised as image';
-  if (data[0] === 0x7F && data[1] === 0x45) return 'Linux ELF binary disguised as image';
+  // ELF magic is four bytes (0x7F 'E' 'L' 'F'); matching only the first two would
+  // false-flag benign binary content that happens to start with 0x7F 0x45.
+  if (data.length >= 4 && data[0] === 0x7F && data[1] === 0x45 && data[2] === 0x4C && data[3] === 0x46) {
+    return 'Linux ELF binary disguised as image';
+  }
   return null;
-}
-
-export function verifyImageSafety(data: Buffer, filename: string): [boolean, string] {
-  if (data.length < 4) return [false, 'File too small'];
-  const exe = detectDisguisedExecutable(data);
-  if (exe) return [false, exe];
-  const magic = data.subarray(0, 4);
-  if (magic[0] === 0xFF && magic[1] === 0xD8) return [true, 'JPEG'];
-  if (magic.toString('ascii', 1, 4) === 'PNG') return [true, 'PNG'];
-  if (data.subarray(0, 4).toString('ascii') === 'RIFF') return [true, 'WebP'];
-  if (magic[0] === 0x42 && magic[1] === 0x4D) return [true, 'BMP'];
-  if (data.subarray(0, 3).toString('ascii') === 'GIF') return [true, 'GIF'];
-  return [false, `Unknown format (magic: ${magic.toString('hex')})`];
 }
 
 // ── Admin alert ───────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  isTrusted, calculateScamScore, algoSpeakScore, verifyImageSafety, detectDisguisedExecutable,
+  isTrusted, calculateScamScore, algoSpeakScore, detectDisguisedExecutable,
   isGifLink, isMediaMessage, hasHoneypotRole, trackMessage, checkMediaVelocity,
 } from './security';
 import type { ResolvedModConfig } from './settings-types';
@@ -92,9 +92,6 @@ describe('calculateScamScore', () => {
 });
 
 describe('pure scorers still work', () => {
-  it('verifyImageSafety rejects an MZ executable', () => {
-    expect(verifyImageSafety(Buffer.from([0x4d, 0x5a, 0x00, 0x00]), 'x.png')[0]).toBe(false);
-  });
   it('algoSpeakScore flags zero-width characters', () => {
     expect(algoSpeakScore('hi​there friend')).toBeGreaterThanOrEqual(40);
   });
@@ -106,6 +103,9 @@ describe('detectDisguisedExecutable', () => {
   });
   it('flags a Linux ELF binary', () => {
     expect(detectDisguisedExecutable(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))).not.toBeNull();
+  });
+  it('does NOT flag content that only shares the first two ELF bytes', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x7f, 0x45, 0x00, 0x00]))).toBeNull();
   });
   it('does NOT flag a JSON error body (expired CDN link → {"me…)', () => {
     // Regression: Carlbot embed whose image URL returned `{"message":...}`

@@ -4,6 +4,7 @@ import {
 import { getModeration, setModerationField } from '../lib/guild-settings';
 import { ENV_MOD_DEFAULTS } from '../lib/config';
 import { CROSS_POST_WINDOW } from '../lib/security';
+import { TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX } from '../lib/settings-panel';
 
 export const securityCommand = {
   data: new SlashCommandBuilder()
@@ -70,6 +71,16 @@ export const securityCommand = {
       // Merge onto the resolved set so existing (incl. env-default) trusted entries are
       // preserved rather than clobbered when this guild's override is first written.
       const cur = getModeration(guildId, ENV_MOD_DEFAULTS);
+      // Adding past the panel's caps would make the Trust page un-renderable
+      // (a select's default_values must be <= its max_values), so reject overflow.
+      if (sub === 'trust') {
+        if (user && !cur.trustedUserIds.has(user.id) && cur.trustedUserIds.size >= TRUSTED_USERS_MAX) {
+          return interaction.reply({ content: `❌ Trusted users/bots limit is ${TRUSTED_USERS_MAX}.`, flags: MessageFlags.Ephemeral });
+        }
+        if (role && !cur.trustedRoleIds.has(role.id) && cur.trustedRoleIds.size >= TRUSTED_ROLES_MAX) {
+          return interaction.reply({ content: `❌ Trusted roles limit is ${TRUSTED_ROLES_MAX}.`, flags: MessageFlags.Ephemeral });
+        }
+      }
       if (user) {
         const set = new Set(cur.trustedUserIds);
         if (sub === 'trust') set.add(user.id); else set.delete(user.id);

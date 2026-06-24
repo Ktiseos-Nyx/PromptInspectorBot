@@ -24,6 +24,12 @@ export const FUN_FEATURES: Feature[] = [
 
 export type Page = 'moderation' | 'trust' | 'ai' | 'fun';
 
+// Trust-list caps. Shared with /security so the command can't grow a list past
+// what the panel can render — Discord requires a select's default_values count to
+// be <= its max_values, so an oversized list would otherwise break the Trust page.
+export const TRUSTED_USERS_MAX = 25;
+export const TRUSTED_ROLES_MAX = 10;
+
 // State-transition: selected tier features → true, the rest of that tier → false.
 export function applyToggleSelection(
   current: Record<string, boolean>,
@@ -129,15 +135,15 @@ export function buildSettingsPanel(state: GuildEntry, page: Page) {
         new RoleSelectMenuBuilder()
           .setCustomId('settings:trustedRoles')
           .setPlaceholder('Trusted roles')
-          .setMinValues(0).setMaxValues(10)
-          .setDefaultRoles(...(m.trustedRoleIds ?? [])),
+          .setMinValues(0).setMaxValues(TRUSTED_ROLES_MAX)
+          .setDefaultRoles(...(m.trustedRoleIds ?? []).slice(0, TRUSTED_ROLES_MAX)),
       ),
       new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
         new UserSelectMenuBuilder()
           .setCustomId('settings:trustedUsers')
           .setPlaceholder('Trusted users / bots (e.g. Carlbot)')
-          .setMinValues(0).setMaxValues(25)
-          .setDefaultUsers(...(m.trustedUserIds ?? [])),
+          .setMinValues(0).setMaxValues(TRUSTED_USERS_MAX)
+          .setDefaultUsers(...(m.trustedUserIds ?? []).slice(0, TRUSTED_USERS_MAX)),
       ),
     );
   } else if (page === 'ai') {

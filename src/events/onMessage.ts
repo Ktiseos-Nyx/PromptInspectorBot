@@ -3,7 +3,7 @@ import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, verifyImageSafety, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -87,9 +87,13 @@ export function registerMessageEvents(client: Client): void {
           try {
             const res = await fetch(att.url);
             const buf = Buffer.from(await res.arrayBuffer());
-            const [safe, reason] = verifyImageSafety(buf, att.name);
-            if (!safe) {
-              await instantBan(message, reason, mod);
+            // Only ban on a genuinely disguised executable. A failed/expired CDN fetch
+            // returns an HTML or JSON error body (not the user's actual image), so
+            // "unrecognised format" must NOT be a ban trigger — that false-banned a
+            // real (PluralKit-proxied) user on an HTML error page.
+            const exeReason = detectDisguisedExecutable(buf);
+            if (exeReason) {
+              await instantBan(message, exeReason, mod);
               return;
             }
           } catch { /* skip on network error */ }
