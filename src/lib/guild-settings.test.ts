@@ -58,7 +58,6 @@ const ENV: EnvModDefaults = {
   mediaSpamChannels: 4,
   mediaSpamSameChannels: 3,
   mediaSpamWindowSec: 120,
-  largeMediaBytes: 5 * 1024 * 1024,
   largeMediaTypes: new Set(['image/gif']),
   honeypotMode: 'crosspost',
 };
@@ -149,7 +148,6 @@ describe('getModeration', () => {
       mediaSpamChannels: 4,
       mediaSpamSameChannels: 3,
       mediaSpamWindowSec: 120,
-      largeMediaBytes: 5 * 1024 * 1024,
       largeMediaTypes: new Set(['image/gif']),
       honeypotMode: 'crosspost',
     };
@@ -170,7 +168,6 @@ describe('resolveModeration — media-spam fields', () => {
     mediaSpamChannels: 4,
     mediaSpamSameChannels: 3,
     mediaSpamWindowSec: 120,
-    largeMediaBytes: 5 * 1024 * 1024,
     largeMediaTypes: new Set(['image/gif']),
     honeypotMode: 'crosspost',
   };

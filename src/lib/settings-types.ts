@@ -9,7 +9,6 @@ export interface GuildModeration {
   mediaSpamChannels: number | null;
   mediaSpamSameChannels: number | null;
   mediaSpamWindowSec: number | null;
-  largeMediaBytes: number | null;
   largeMediaTypes: string[] | null;
   honeypotMode: 'off' | 'crosspost' | 'strict' | null;
 }
@@ -30,7 +29,6 @@ export interface ResolvedModConfig {
   mediaSpamChannels: number;
   mediaSpamSameChannels: number;
   mediaSpamWindowSec: number;
-  largeMediaBytes: number;
   largeMediaTypes: Set<string>;
   honeypotMode: 'off' | 'crosspost' | 'strict';
 }

@@ -90,6 +90,31 @@ export function checkMediaVelocity(
   return { sameChannels, mediaChannels, maxBytes };
 }
 
+// New members rarely *upload* GIFs directly — legit GIFs arrive as Tenor/Giphy/Klipy
+// LINKS — so a recently-joined account is the likely media-raid actor.
+export const NEW_MEMBER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+export function isRecentJoin(
+  joinedTimestamp: number | null | undefined,
+  now: number = Date.now(),
+  windowMs: number = NEW_MEMBER_WINDOW_MS,
+): boolean {
+  if (joinedTimestamp == null) return false;
+  return now - joinedTimestamp < windowMs;
+}
+
+// A direct-uploaded risky type (e.g. image/gif) from a recently-joined member is the
+// media-raid pattern, so it lowers the cross-channel ban threshold. Everyone else keeps
+// the normal threshold. File SIZE is deliberately NOT a factor: abuse GIFs match normal
+// art (PNG) sizes, so a size bar punishes safe art posters instead of the raider.
+export function mediaRaidThreshold(
+  baseThreshold: number,
+  hasRiskyUpload: boolean,
+  recentJoin: boolean,
+): number {
+  return hasRiskyUpload && recentJoin ? Math.min(2, baseThreshold) : baseThreshold;
+}
+
 // ── Gibberish / spam detection ────────────────────────────────────────────────
 
 const COMMON_OK = new Set([

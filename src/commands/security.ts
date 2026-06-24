@@ -15,9 +15,8 @@ export const securityCommand = {
       .addIntegerOption(o => o.setName('channels').setDescription('Distinct channels of ANY media to ban (default 4)').setMinValue(2))
       .addIntegerOption(o => o.setName('same').setDescription('Distinct channels of the SAME file to ban (default 3)').setMinValue(2))
       .addIntegerOption(o => o.setName('window').setDescription('Time window in seconds (default 120, max 300)').setMinValue(10).setMaxValue(CROSS_POST_WINDOW)))
-    .addSubcommand(s => s.setName('largemedia').setDescription('Heavy-payload fast path')
-      .addIntegerOption(o => o.setName('bytes').setDescription('Size threshold in bytes (default 5242880)').setMinValue(1))
-      .addStringOption(o => o.setName('types').setDescription('CSV of MIME types (default image/gif)')))
+    .addSubcommand(s => s.setName('largemedia').setDescription('Raid-risky direct-upload types (default image/gif)')
+      .addStringOption(o => o.setName('types').setDescription('CSV of MIME types treated as risky direct uploads (default image/gif)')))
     .addSubcommand(s => s.setName('honeypot').setDescription('Honeypot/catcher role behavior')
       .addStringOption(o => o.setName('mode').setDescription('off | crosspost | strict').setRequired(true)
         .addChoices(
@@ -53,9 +52,7 @@ export const securityCommand = {
       if (same != null) setModerationField(guildId, 'mediaSpamSameChannels', same);
       if (win != null) setModerationField(guildId, 'mediaSpamWindowSec', win);
     } else if (sub === 'largemedia') {
-      const bytes = interaction.options.getInteger('bytes');
       const types = interaction.options.getString('types');
-      if (bytes != null) setModerationField(guildId, 'largeMediaBytes', bytes);
       if (types != null) {
         setModerationField(guildId, 'largeMediaTypes', types.split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
       }
@@ -104,7 +101,7 @@ export const securityCommand = {
         `• media-spam channels (any media): **${r.mediaSpamChannels}**`,
         `• same-file channels: **${r.mediaSpamSameChannels}**`,
         `• window: **${r.mediaSpamWindowSec}s**`,
-        `• large-media: **${r.largeMediaBytes} bytes** of [${[...r.largeMediaTypes].join(', ') || 'none'}]`,
+        `• risky direct-upload types: [${[...r.largeMediaTypes].join(', ') || 'none'}]`,
         `• honeypot mode: **${r.honeypotMode}**`,
         `• trusted users/bots: ${trustedUsers}`,
         `• trusted roles: ${trustedRoles}`,

@@ -3,7 +3,7 @@ import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -135,7 +135,7 @@ export function registerMessageEvents(client: Client): void {
       // (low bar) and any-media bursts (catches different GIFs). Honeypot role
       // escalates per the configured mode.
       if (isMedia) {
-        const { sameChannels, mediaChannels, maxBytes } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
+        const { sameChannels, mediaChannels } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
 
         // Honeypot escalation
         if (hasHoneypotRole(message, mod) && mod.honeypotMode !== 'off') {
@@ -156,20 +156,28 @@ export function registerMessageEvents(client: Client): void {
           return;
         }
 
-        // Large-media fast path — a heavy payload of a flagged type lowers the bar.
-        // Checks ALL attachments (not just images) so configured types like
-        // video/mp4 are honoured; MIME is lowercased to match stored values.
-        const hasLargeMedia = [...message.attachments.values()].some(
-          a => a.contentType != null && mod.largeMediaTypes.has(a.contentType.toLowerCase()) && a.size >= mod.largeMediaBytes,
+        // Raid fast path — a direct-uploaded flagged type (default image/gif) from a
+        // recently-joined member lowers the cross-channel bar. Legit GIFs arrive as
+        // Tenor/Giphy/Klipy LINKS, not uploads, and established members keep the normal
+        // threshold. Size is NOT used: abuse GIFs match normal art (PNG) sizes, so a
+        // size bar punished safe art posters instead of the raider. Checks ALL
+        // attachments so configured types like video/mp4 are honoured.
+        const hasRiskyUpload = [...message.attachments.values()].some(
+          a => a.contentType != null && mod.largeMediaTypes.has(a.contentType.toLowerCase()),
         );
-        const mediaThreshold = hasLargeMedia ? Math.min(2, mod.mediaSpamChannels) : mod.mediaSpamChannels;
+        const recentJoin = isRecentJoin(message.member?.joinedTimestamp);
+        const mediaThreshold = mediaRaidThreshold(mod.mediaSpamChannels, hasRiskyUpload, recentJoin);
 
         // Media-type track — any media across channels (catches different GIFs)
         if (mediaChannels >= mediaThreshold) {
-          const payloadDetail = maxBytes > 0 ? `Max ${Math.round(maxBytes / 1024)}KB` : 'GIF link(s)';
-          const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${hasLargeMedia ? ', large payload' : ''})`;
+          const raid = hasRiskyUpload && recentJoin;
+          const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${raid ? ', new-member GIF upload' : ''})`;
           recordBan(message.author.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, [`${mediaChannels} channels`, payloadDetail]);
+          await instantBan(message, reason, mod, [
+            `${mediaChannels} channels`,
+            hasRiskyUpload ? 'Direct-uploaded flagged type' : 'Mixed media',
+            recentJoin ? 'Recently joined' : 'Established member',
+          ]);
           return;
         }
 

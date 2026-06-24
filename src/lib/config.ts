@@ -61,7 +61,8 @@ export const DM_RESPONSE_MESSAGE = process.env.DM_RESPONSE_MESSAGE ?? '👋 This
 export const MEDIA_SPAM_CHANNELS = cfgInt('MEDIA_SPAM_CHANNELS', 'MEDIA_SPAM_CHANNELS', 4, 2);
 export const MEDIA_SPAM_SAME_CHANNELS = cfgInt('MEDIA_SPAM_SAME_CHANNELS', 'MEDIA_SPAM_SAME_CHANNELS', 3, 2);
 export const MEDIA_SPAM_WINDOW_SEC = cfgInt('MEDIA_SPAM_WINDOW_SEC', 'MEDIA_SPAM_WINDOW_SEC', 120, 1, CROSS_POST_WINDOW);
-export const LARGE_MEDIA_BYTES = cfgInt('LARGE_MEDIA_BYTES', 'LARGE_MEDIA_BYTES', 5 * 1024 * 1024, 1);
+// Direct-upload types treated as raid-risky (default image/gif). Size is intentionally
+// not configurable — abuse GIFs match normal art sizes, so size was a false signal.
 export const LARGE_MEDIA_TYPES = new Set(
   cfgList('LARGE_MEDIA_TYPES', 'LARGE_MEDIA_TYPES', 'image/gif').map(s => s.toLowerCase()),
 );
@@ -87,7 +88,6 @@ export const ENV_MOD_DEFAULTS: EnvModDefaults = {
   mediaSpamChannels: MEDIA_SPAM_CHANNELS,
   mediaSpamSameChannels: MEDIA_SPAM_SAME_CHANNELS,
   mediaSpamWindowSec: MEDIA_SPAM_WINDOW_SEC,
-  largeMediaBytes: LARGE_MEDIA_BYTES,
   largeMediaTypes: LARGE_MEDIA_TYPES,
   honeypotMode: HONEYPOT_MODE,
 };

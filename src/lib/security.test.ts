@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   isTrusted, calculateScamScore, algoSpeakScore, detectDisguisedExecutable,
   isGifLink, isMediaMessage, hasHoneypotRole, trackMessage, checkMediaVelocity,
+  isRecentJoin, mediaRaidThreshold,
 } from './security';
 import type { ResolvedModConfig } from './settings-types';
 
@@ -15,7 +16,6 @@ function cfg(over: Partial<ResolvedModConfig> = {}): ResolvedModConfig {
     mediaSpamChannels: 4,
     mediaSpamSameChannels: 3,
     mediaSpamWindowSec: 120,
-    largeMediaBytes: 5 * 1024 * 1024,
     largeMediaTypes: new Set(['image/gif']),
     honeypotMode: 'crosspost',
     ...over,
@@ -221,5 +221,35 @@ describe('checkMediaVelocity', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('isRecentJoin', () => {
+  const now = 1_000_000_000_000;
+  const day = 24 * 60 * 60 * 1000;
+  it('is false when the join time is unknown', () => {
+    expect(isRecentJoin(null, now)).toBe(false);
+    expect(isRecentJoin(undefined, now)).toBe(false);
+  });
+  it('is true for a member who joined within the window', () => {
+    expect(isRecentJoin(now - 3 * day, now)).toBe(true);
+  });
+  it('is false for a member who joined before the window', () => {
+    expect(isRecentJoin(now - 8 * day, now)).toBe(false);
+  });
+});
+
+describe('mediaRaidThreshold', () => {
+  it('lowers the threshold for an uploaded risky type from a recent joiner', () => {
+    expect(mediaRaidThreshold(4, true, true)).toBe(2);
+  });
+  it('keeps the base threshold for an established member (no recent join)', () => {
+    expect(mediaRaidThreshold(4, true, false)).toBe(4);
+  });
+  it('keeps the base threshold when there is no risky upload', () => {
+    expect(mediaRaidThreshold(4, false, true)).toBe(4);
+  });
+  it('never produces a threshold above an already-low base', () => {
+    expect(mediaRaidThreshold(2, true, true)).toBe(2);
   });
 });
