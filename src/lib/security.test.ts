@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  isTrusted, calculateScamScore, algoSpeakScore, verifyImageSafety,
+  isTrusted, calculateScamScore, algoSpeakScore, verifyImageSafety, detectDisguisedExecutable,
   isGifLink, isMediaMessage, hasHoneypotRole, trackMessage, checkMediaVelocity,
 } from './security';
 import type { ResolvedModConfig } from './settings-types';
@@ -53,6 +53,30 @@ describe('isTrusted', () => {
   it('does not trust an unknown user with no trusted role', () => {
     expect(isTrusted(fakeMessage({ author: { id: 'u9' } }), cfg())).toBe(false);
   });
+
+  it('trusts a bot via cached member roles when message.member is absent (webhook/interaction)', () => {
+    const m = fakeMessage({
+      author: { id: 'carlbot' },
+      member: null,
+      guild: {
+        ownerId: 'owner',
+        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['mod-role', {}]]) } }]]) },
+      },
+    });
+    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(true);
+  });
+
+  it('does not trust a cached bot member lacking the trusted role', () => {
+    const m = fakeMessage({
+      author: { id: 'carlbot' },
+      member: null,
+      guild: {
+        ownerId: 'owner',
+        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['random', {}]]) } }]]) },
+      },
+    });
+    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(false);
+  });
 });
 
 describe('calculateScamScore', () => {
@@ -73,6 +97,23 @@ describe('pure scorers still work', () => {
   });
   it('algoSpeakScore flags zero-width characters', () => {
     expect(algoSpeakScore('hi​there friend')).toBeGreaterThanOrEqual(40);
+  });
+});
+
+describe('detectDisguisedExecutable', () => {
+  it('flags a Windows MZ executable', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x4d, 0x5a, 0x00, 0x00]))).not.toBeNull();
+  });
+  it('flags a Linux ELF binary', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))).not.toBeNull();
+  });
+  it('does NOT flag a JSON error body (expired CDN link → {"me…)', () => {
+    // Regression: Carlbot embed whose image URL returned `{"message":...}`
+    // (magic 7b226d65) was wrongly banned as a "malicious embed".
+    expect(detectDisguisedExecutable(Buffer.from('{"message":"gone"}', 'ascii'))).toBeNull();
+  });
+  it('does NOT flag a normal PNG', () => {
+    expect(detectDisguisedExecutable(Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
   });
 });
 

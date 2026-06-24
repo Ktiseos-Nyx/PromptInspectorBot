@@ -166,11 +166,23 @@ export function calculateScamScore(message: Message, cfg: ResolvedModConfig): [n
 
 // ── Magic bytes check ─────────────────────────────────────────────────────────
 
+// Detects ONLY a binary executable disguised as an image (MZ / ELF) — the genuine
+// attack the magic-bytes check exists to stop. Returns a reason string when the
+// bytes are a known executable, otherwise null. Crucially, "this isn't a format I
+// recognise" (JSON error pages, SVG, expired-CDN responses) is NOT malicious and
+// returns null — banning on unverifiable content false-bans real users.
+export function detectDisguisedExecutable(data: Buffer): string | null {
+  if (data.length < 2) return null;
+  if (data[0] === 0x4D && data[1] === 0x5A) return 'Windows executable disguised as image';
+  if (data[0] === 0x7F && data[1] === 0x45) return 'Linux ELF binary disguised as image';
+  return null;
+}
+
 export function verifyImageSafety(data: Buffer, filename: string): [boolean, string] {
   if (data.length < 4) return [false, 'File too small'];
+  const exe = detectDisguisedExecutable(data);
+  if (exe) return [false, exe];
   const magic = data.subarray(0, 4);
-  if (magic[0] === 0x4D && magic[1] === 0x5A) return [false, 'Windows executable disguised as image'];
-  if (magic[0] === 0x7F && magic[1] === 0x45) return [false, 'Linux ELF binary disguised as image'];
   if (magic[0] === 0xFF && magic[1] === 0xD8) return [true, 'JPEG'];
   if (magic.toString('ascii', 1, 4) === 'PNG') return [true, 'PNG'];
   if (data.subarray(0, 4).toString('ascii') === 'RIFF') return [true, 'WebP'];
@@ -342,8 +354,13 @@ export async function checkEmbedImages(message: Message): Promise<string | null>
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       const buf = Buffer.from(await res.arrayBuffer());
-      const [safe, reason] = verifyImageSafety(buf, url.split('/').pop() ?? 'embed');
-      if (!safe) return reason;
+      // Only ban on a genuinely malicious payload (an executable disguised as an
+      // image). Embed image URLs routinely resolve to non-image content — expired
+      // Discord CDN links return JSON, link previews can return SVG/HTML — and that
+      // is not an attack. Treating "unverifiable" as "malicious" false-bans bots
+      // (e.g. Carlbot log embeds) and real users posting expired links.
+      const exeReason = detectDisguisedExecutable(buf);
+      if (exeReason) return exeReason;
     } catch { /* network error — skip */ }
   }
   return null;
@@ -384,9 +401,17 @@ export function hasHoneypotRole(message: Message, cfg: ResolvedModConfig): boole
 export function isTrusted(message: Message, cfg: ResolvedModConfig): boolean {
   if (cfg.trustedUserIds.has(message.author.id)) return true;
   if (message.guild && message.author.id === message.guild.ownerId) return true;
-  const roles = message.member?.roles?.cache;
-  if (roles && cfg.trustedRoleIds.size) {
-    for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
+  if (cfg.trustedRoleIds.size) {
+    // message.member is null for webhook/interaction bot messages (e.g. Carlbot),
+    // so a trusted role would never match. Fall back to the guild's member cache
+    // (cache-only — no fetch, keeps this synchronous) so a trusted role can still
+    // exempt a bot that is already a known guild member.
+    const roles =
+      message.member?.roles?.cache ??
+      message.guild?.members?.cache?.get(message.author.id)?.roles?.cache;
+    if (roles) {
+      for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
+    }
   }
   return false;
 }

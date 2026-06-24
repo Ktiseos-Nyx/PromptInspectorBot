@@ -45,13 +45,28 @@ describe('buildSettingsPanel', () => {
     const p = buildSettingsPanel(state as any, 'ai');
     expect(p.components.length).toBeLessThanOrEqual(5);
   });
-  it('nav row exposes three pages plus the anti-scam toggle', () => {
+  it('nav row exposes four pages plus the anti-scam toggle', () => {
     const p = buildSettingsPanel(state as any, 'moderation');
     const nav = (p.components[0] as any).toJSON();
     const ids = nav.components.map((c: any) => c.custom_id);
     expect(ids).toEqual([
-      'settings:nav:moderation', 'settings:nav:ai', 'settings:nav:fun', 'settings:toggle:security',
+      'settings:nav:moderation', 'settings:nav:ai', 'settings:nav:fun', 'settings:nav:trust', 'settings:toggle:security',
     ]);
+  });
+  it('trust page exposes trusted-roles and trusted-users selects within the 5-row limit', () => {
+    const p = buildSettingsPanel(state as any, 'trust');
+    expect(p.components.length).toBeLessThanOrEqual(5);
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:trustedRoles');
+    expect(ids).toContain('settings:trustedUsers');
+  });
+  it('trust page prefills current trusted roles and users so panel edits do not clobber them', () => {
+    const s = { toggles: { security: true }, moderation: { trustedRoleIds: ['r1'], trustedUserIds: ['bot1'] } };
+    const comps = buildSettingsPanel(s as any, 'trust').components.flatMap(r => (r as any).toJSON().components);
+    const roleSel = comps.find((c: any) => c.custom_id === 'settings:trustedRoles');
+    const userSel = comps.find((c: any) => c.custom_id === 'settings:trustedUsers');
+    expect(roleSel.default_values.map((d: any) => d.id)).toContain('r1');
+    expect(userSel.default_values.map((d: any) => d.id)).toContain('bot1');
   });
   it('moderation page exposes catcher-role select alongside other controls', () => {
     const p = buildSettingsPanel(state as any, 'moderation');
