@@ -204,7 +204,6 @@ describe('checkMediaVelocity', () => {
     trackMessage(cur, dom);
     const v = checkMediaVelocity(cur, 120);
     expect(v.sameChannels).toBe(3);
-    expect(v.maxBytes).toBe(1000);
   });
 
   it('excludes entries older than the window', () => {

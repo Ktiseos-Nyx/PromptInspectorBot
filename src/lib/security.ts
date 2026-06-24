@@ -7,7 +7,7 @@ import { BLOCKED_IMAGE_DOMAINS } from './config';
 
 // ── Cross-post tracking ───────────────────────────────────────────────────────
 
-interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; bytes: number; isMedia: boolean; }
+interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; isMedia: boolean; }
 const userMessages = new Map<string, TrackedMessage[]>();
 export const CROSS_POST_WINDOW = 300; // seconds; also the max retention, so velocity windows are clamped to it
 
@@ -54,11 +54,9 @@ export function trackMessage(message: Message, gifDomains: string[] = []): void 
   const uid = message.author.id;
   const now = Date.now() / 1000;
   const fp = fingerprint(message);
-  let bytes = 0;
-  for (const a of message.attachments.values()) bytes += a.size;
   const isMedia = isMediaMessage(message, gifDomains);
   const prev = (userMessages.get(uid) ?? []).filter(m => now - m.timestamp < CROSS_POST_WINDOW);
-  prev.push({ fingerprint: fp, channelId: message.channelId, timestamp: now, bytes, isMedia });
+  prev.push({ fingerprint: fp, channelId: message.channelId, timestamp: now, isMedia });
   userMessages.set(uid, prev.slice(-50));
 }
 
@@ -78,16 +76,14 @@ export function checkCrossPosting(message: Message): number {
 export function checkMediaVelocity(
   message: Message,
   windowSec: number,
-): { sameChannels: number; mediaChannels: number; maxBytes: number } {
+): { sameChannels: number; mediaChannels: number } {
   const uid = message.author.id;
   const now = Date.now() / 1000;
   const fp = fingerprint(message);
   const recent = (userMessages.get(uid) ?? []).filter(m => now - m.timestamp < windowSec);
   const sameChannels = new Set(recent.filter(m => m.fingerprint === fp).map(m => m.channelId)).size;
-  const mediaMsgs = recent.filter(m => m.isMedia);
-  const mediaChannels = new Set(mediaMsgs.map(m => m.channelId)).size;
-  const maxBytes = mediaMsgs.reduce((mx, m) => Math.max(mx, m.bytes), 0);
-  return { sameChannels, mediaChannels, maxBytes };
+  const mediaChannels = new Set(recent.filter(m => m.isMedia).map(m => m.channelId)).size;
+  return { sameChannels, mediaChannels };
 }
 
 // New members rarely *upload* GIFs directly — legit GIFs arrive as Tenor/Giphy/Klipy
