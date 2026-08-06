@@ -2,6 +2,14 @@
 
 A Discord bot that extracts AI image-generation metadata (Forge/A1111, ComfyUI, SwarmUI, and more) **and** keeps servers safe with automated anti-spam/anti-scam moderation. Per-server configurable, with optional AI commands.
 
+WARNING: BY SEPTEMBER THIS VERSION WILL BE ARCHIVED - IT IS HEAVILY POORLY DONE (NOT BECAUSE THEO RIGINAL SUCKED BUT BECAUSE MY ADDITIONS SUCKED) 
+
+Current Big Huge Bugs i am never fixing:
+
+- Bot currently ignores every setting known to man and tries to ban the admins.
+- Bot currently DOES work for one specific thing -- and one specific thing only (Catching one scammer at a time)
+- Bot barely works for prompt inspection because dataset tools is .. well REALLY REASONABLY DECENT IN THEORY but even now i'm questioning it's validity after three years.
+
 > **Now written in TypeScript / Node.js.** (The original was Python — the codebase has since been fully rewritten.)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/OCA5uC?referralCode=EQxw4P&utm_medium=integration&utm_source=template&utm_campaign=generic)
