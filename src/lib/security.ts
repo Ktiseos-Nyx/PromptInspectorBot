@@ -17,21 +17,45 @@ export type AuthorResolution =
   | { kind: 'proxy_webhook'; id: string; member: GuildMember }
   | { kind: 'unknown_webhook' };
 
+// Cache webhookId→appId verification so both isTrusted and effectiveAuthor
+// reuse one fetchWebhook call per webhook (avoiding two REST calls per
+// proxied message). Bounded to WEBHOOK_CACHE_MAX entries, TTL of 1 hour.
+const webhookVerifyCache = new Map<string, { appId: string | null; at: number }>();
+const WEBHOOK_CACHE_TTL_MS = 60 * 60 * 1000;
+const WEBHOOK_CACHE_MAX = 500;
+
+async function verifyWebhookApp(webhookId: string): Promise<string | null> {
+  const hit = webhookVerifyCache.get(webhookId);
+  if (hit && Date.now() - hit.at < WEBHOOK_CACHE_TTL_MS) return hit.appId;
+  if (!bottieClient) return null;
+  let appId: string | null = null;
+  try {
+    const webhook = await bottieClient.fetchWebhook(webhookId);
+    appId = webhook.applicationId ?? null;
+  } catch { /* no MANAGE_WEBHOOKS perm, or webhook not found */ }
+  webhookVerifyCache.set(webhookId, { appId, at: Date.now() });
+  if (webhookVerifyCache.size > WEBHOOK_CACHE_MAX) {
+    const oldest = webhookVerifyCache.keys().next().value;
+    if (oldest) webhookVerifyCache.delete(oldest);
+  }
+  return appId;
+}
+
+// NOTE: resolveWebhookAuthor verifies the webhook *application* (PluralKit /
+// Tupperbox), then resolves to a GuildMember via display-name/username
+// matching from the member cache. This is NOT an authenticated mapping — a
+// user can set their proxy display-name to match any server member. The
+// resolved identity MUST NOT be used for permission-based trust or ban
+// targeting. Use `isTrustedResolved` and `effectiveAuthor` which enforce
+// this constraint.
 export async function resolveWebhookAuthor(
   message: Message,
 ): Promise<{ id: string; member: GuildMember } | null> {
   if (!message.webhookId || !message.guild) return null;
   if (!message.author.username) return null;
 
-  let verified = false;
-  if (bottieClient) {
-    try {
-      const webhook = await bottieClient.fetchWebhook(message.webhookId);
-      verified = KNOWN_PROXY_BOT_IDS.has(webhook.applicationId ?? '');
-    } catch { /* no MANAGE_WEBHOOKS perm, or webhook not found */ }
-  }
-
-  if (!verified) return null;
+  const appId = await verifyWebhookApp(message.webhookId);
+  if (!appId || !KNOWN_PROXY_BOT_IDS.has(appId)) return null;
 
   const name = message.author.username;
   const baseName = name
@@ -306,7 +330,6 @@ export async function instantBan(
   const targetMember = who?.kind === 'proxy_webhook' ? who.member : message.member ?? message.author;
 
   console.error(`🚨 BAN: ${targetMember instanceof GuildMember ? targetMember.user.tag : (targetMember as any).tag} (${targetId}) — ${reason}`);
-  if (!message.guild) return;
 
   const me = message.guild.members.me;
   if (!me || !me.permissions.has(PermissionFlagsBits.BanMembers)) {
@@ -472,37 +495,51 @@ export function hasHoneypotRole(message: Message, cfg: ResolvedModConfig): boole
   return message.member?.roles?.cache?.has(cfg.catcherRoleId) ?? false;
 }
 
-export async function isTrusted(message: Message, cfg: ResolvedModConfig): Promise<boolean> {
-  const effective = await resolveWebhookAuthor(message);
-  const userId = effective?.id ?? message.author.id;
-  const member = effective?.member ?? message.member;
+// isTrustedResolved — caller already resolved effectiveAuthor, so no duplicate
+// fetchWebhook. Permission bypass only applies to Discord-authenticated
+// members (kind === 'user'), not to name-resolved proxy webhooks.
+export function isTrustedResolved(
+  who: AuthorResolution, message: Message, cfg: ResolvedModConfig,
+): boolean {
+  const userId = who.kind === 'unknown_webhook' ? message.author.id : who.id;
 
-  // 1. Manually trusted via slash command
   if (cfg.trustedUserIds.has(userId)) return true;
-  
-  // 2. Literal Server Owner
   if (message.guild && userId === message.guild.ownerId) return true;
 
-  // 🛑 THE FIX: Bypass for Native Discord Staff Permissions!
-  if (member?.permissions.has(PermissionFlagsBits.Administrator)) return true;
-  if (member?.permissions.has(PermissionFlagsBits.ManageMessages)) return true;
-  if (member?.permissions.has(PermissionFlagsBits.ManageGuild)) return true;
-  if (member?.permissions.has(PermissionFlagsBits.MentionEveryone)) return true;
+  // Staff-permission bypass — only for Discord-authenticated messages,
+  // NEVER for name-resolved proxy webhooks (see resolveWebhookAuthor note).
+  if (who.kind === 'user' && who.member) {
+    const perms = who.member.permissions;
+    if (perms?.has(PermissionFlagsBits.Administrator)) return true;
+    if (perms?.has(PermissionFlagsBits.ManageMessages)) return true;
+    if (perms?.has(PermissionFlagsBits.ManageGuild)) return true;
+  }
 
-  // 3. Manually trusted roles
   if (cfg.trustedRoleIds.size) {
-    const roles =
-      member?.roles?.cache ??
-      message.guild?.members?.cache?.get(userId)?.roles?.cache;
+    const member =
+      who.kind === 'user' ? who.member
+      : message.guild?.members?.cache?.get(userId);
+    const roles = member?.roles?.cache
+      ?? message.guild?.members?.cache?.get(userId)?.roles?.cache;
     if (roles) {
       for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
     }
   }
-  
+
   return false;
 }
 
-export async function effectiveAuthor(message: Message): Promise<AuthorResolution | null> {
+// Backward-compatible async wrapper — resolves the author internally and then
+// delegates to isTrustedResolved. Prefer isTrustedResolved when the caller
+// already has an AuthorResolution (e.g. after effectiveAuthor) to avoid
+// double fetchWebhook.
+export async function isTrusted(message: Message, cfg: ResolvedModConfig): Promise<boolean> {
+  const who = await effectiveAuthor(message);
+  return isTrustedResolved(who, message, cfg);
+}
+
+// effectiveAuthor never returns null — every branch produces a resolution.
+export async function effectiveAuthor(message: Message): Promise<AuthorResolution> {
   if (message.webhookId) {
     const resolved = await resolveWebhookAuthor(message);
     if (resolved) return { kind: 'proxy_webhook', id: resolved.id, member: resolved.member };

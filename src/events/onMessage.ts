@@ -1,9 +1,9 @@
-import { Events, Message, DMChannel, type Client } from 'discord.js';
+import { Events, Message, DMChannel, type Client, type GuildMember } from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold, effectiveAuthor } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrustedResolved, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold, effectiveAuthor } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -36,9 +36,12 @@ export function registerMessageEvents(client: Client): void {
     // ── Security checks (independent of the metadata toggle) ─────────────────────
     const securityEnabled = getGuildSetting(message.guildId!, 'security', true);
 
-    if (securityEnabled && !(await isTrusted(message, mod))) {
-      const who = await effectiveAuthor(message);
-      if (!who) return;
+    // Resolve once per message — both trust and ban targeting use the same resolution.
+    const who = securityEnabled
+      ? await effectiveAuthor(message)
+      : { kind: 'user', id: message.author.id, member: message.member ?? null } as { kind: 'user'; id: string; member: GuildMember | null };
+
+    if (securityEnabled && !isTrustedResolved(who, message, mod)) {
       const canBan = who.kind !== 'unknown_webhook';
       // ── Known banned user ──────────────────────────────────────────────────
       if (canBan) {

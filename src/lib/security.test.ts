@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  isTrusted, calculateScamScore, algoSpeakScore, detectDisguisedExecutable,
-  isGifLink, isMediaMessage, hasHoneypotRole, trackMessage, checkMediaVelocity,
-  isRecentJoin, mediaRaidThreshold,
+  isTrusted, isTrustedResolved, calculateScamScore, algoSpeakScore,
+  detectDisguisedExecutable, isGifLink, isMediaMessage, hasHoneypotRole,
+  trackMessage, checkMediaVelocity, isRecentJoin, mediaRaidThreshold,
+  effectiveAuthor,
+  type AuthorResolution,
 } from './security';
+import { PermissionFlagsBits } from 'discord.js';
 import type { ResolvedModConfig } from './settings-types';
 
 function cfg(over: Partial<ResolvedModConfig> = {}): ResolvedModConfig {
@@ -26,56 +29,202 @@ function fakeMessage(over: any = {}): any {
   return {
     author: { id: 'u1', username: 'normal', avatar: 'abc' },
     content: '',
-    guild: { ownerId: 'owner' },
-    member: { displayName: 'normal', roles: { cache: new Map([['everyone', {}]]) } },
+    guild: { ownerId: 'owner', members: { cache: new Map() } },
+    member: { displayName: 'normal', roles: { cache: new Map([['everyone', {}]]) }, permissions: { has: () => false } },
     attachments: new Map(),
+    webhookId: undefined,
     ...over,
   };
 }
 
+function whMsg(over: any = {}): any {
+  return fakeMessage({
+    webhookId: 'wh123',
+    member: null,
+    author: { id: 'webhook_user', username: 'Alice', avatar: null },
+    guild: {
+      ownerId: 'owner',
+      members: { cache: new Map([['aliceId', { id: 'aliceId', displayName: 'Alice', user: { username: 'Alice' }, permissions: { has: () => false }, roles: { cache: new Map() } }]]) },
+    },
+    ...over,
+  });
+}
+
 describe('isTrusted', () => {
-  it('trusts a user in trustedUserIds', () => {
-    expect(isTrusted(fakeMessage({ author: { id: 'u1' } }), cfg({ trustedUserIds: new Set(['u1']) }))).toBe(true);
+  it('trusts a user in trustedUserIds', async () => {
+    expect(await isTrusted(fakeMessage({ author: { id: 'u1' } }), cfg({ trustedUserIds: new Set(['u1']) }))).toBe(true);
   });
 
-  it('trusts the guild owner', () => {
-    expect(isTrusted(fakeMessage({ author: { id: 'owner' } }), cfg())).toBe(true);
+  it('trusts the guild owner', async () => {
+    expect(await isTrusted(fakeMessage({ author: { id: 'owner' } }), cfg())).toBe(true);
   });
 
-  it('trusts a member holding a trusted role (NEW capability)', () => {
+  it('trusts a member holding a trusted role', async () => {
     const m = fakeMessage({
       author: { id: 'u9' },
       member: { displayName: 'x', roles: { cache: new Map([['mod-role', {}]]) } },
     });
-    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(true);
+    expect(await isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(true);
   });
 
-  it('does not trust an unknown user with no trusted role', () => {
-    expect(isTrusted(fakeMessage({ author: { id: 'u9' } }), cfg())).toBe(false);
+  it('does not trust an unknown user with no trusted role', async () => {
+    expect(await isTrusted(fakeMessage({ author: { id: 'u9' } }), cfg())).toBe(false);
   });
 
-  it('trusts a bot via cached member roles when message.member is absent (webhook/interaction)', () => {
+  it('trusts a bot via cached member roles when message.member is absent (webhook/interaction)', async () => {
     const m = fakeMessage({
       author: { id: 'carlbot' },
       member: null,
       guild: {
         ownerId: 'owner',
-        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['mod-role', {}]]) } }]]) },
+        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['mod-role', {}]]) }, permissions: { has: () => false } }]]) },
       },
     });
-    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(true);
+    expect(await isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(true);
   });
 
-  it('does not trust a cached bot member lacking the trusted role', () => {
+  it('does not trust a cached bot member lacking the trusted role', async () => {
     const m = fakeMessage({
       author: { id: 'carlbot' },
       member: null,
       guild: {
         ownerId: 'owner',
-        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['random', {}]]) } }]]) },
+        members: { cache: new Map([['carlbot', { roles: { cache: new Map([['random', {}]]) }, permissions: { has: () => false } }]]) },
       },
     });
-    expect(isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(false);
+    expect(await isTrusted(m, cfg({ trustedRoleIds: new Set(['mod-role']) }))).toBe(false);
+  });
+
+  it('allows admin permission bypass for non-webhook messages', async () => {
+    const m = fakeMessage({
+      author: { id: 'admin1' },
+      member: {
+        displayName: 'admin',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.Administrator },
+      },
+    });
+    expect(await isTrusted(m, cfg())).toBe(true);
+  });
+
+  it('allows ManageMessages permission bypass for non-webhook messages', async () => {
+    const m = fakeMessage({
+      author: { id: 'mod1' },
+      member: {
+        displayName: 'mod',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.ManageMessages },
+      },
+    });
+    expect(await isTrusted(m, cfg())).toBe(true);
+  });
+});
+
+describe('isTrustedResolved', () => {
+  const msg = fakeMessage();
+
+  it('trusts a user in trustedUserIds', () => {
+    const who: AuthorResolution = { kind: 'user', id: 'u1', member: null };
+    expect(isTrustedResolved(who, msg, cfg({ trustedUserIds: new Set(['u1']) }))).toBe(true);
+  });
+
+  it('trusts the guild owner', () => {
+    const who: AuthorResolution = { kind: 'user', id: 'owner', member: null };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(true);
+  });
+
+  it('trusts a member with Administrator permission (direct Discord auth)', () => {
+    const who: AuthorResolution = {
+      kind: 'user', id: 'admin', member: {
+        displayName: 'admin',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.Administrator },
+      } as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(true);
+  });
+
+  it('does NOT grant permission bypass for proxy_webhook (name-based, not authenticated)', () => {
+    const who: AuthorResolution = {
+      kind: 'proxy_webhook', id: 'admin', member: {
+        displayName: 'admin',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.Administrator },
+      } as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(false);
+  });
+
+  it('does NOT grant permission bypass for proxy_webhook even with ManageGuild', () => {
+    const who: AuthorResolution = {
+      kind: 'proxy_webhook', id: 'mod', member: {
+        displayName: 'mod',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.ManageGuild },
+      } as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(false);
+  });
+
+  it('does NOT grant permission bypass for proxy_webhook even with ManageMessages', () => {
+    const who: AuthorResolution = {
+      kind: 'proxy_webhook', id: 'msgmod', member: {
+        displayName: 'msgmod',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.ManageMessages },
+      } as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(false);
+  });
+
+  it('does NOT bypass via MentionEveryone (removed from bypass list)', () => {
+    const who: AuthorResolution = {
+      kind: 'user', id: 'mentioner', member: {
+        displayName: 'mentioner',
+        roles: { cache: new Map() },
+        permissions: { has: (perm: bigint) => perm === PermissionFlagsBits.MentionEveryone },
+      } as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(false);
+  });
+
+  it('checks trustedUserIds for proxy_webhook by resolved id', () => {
+    const who: AuthorResolution = {
+      kind: 'proxy_webhook', id: 'trustedProxy', member: {} as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg({ trustedUserIds: new Set(['trustedProxy']) }))).toBe(true);
+  });
+
+  it('checks guild owner for proxy_webhook by resolved id', () => {
+    const who: AuthorResolution = {
+      kind: 'proxy_webhook', id: 'owner', member: {} as any,
+    };
+    expect(isTrustedResolved(who, msg, cfg())).toBe(true);
+  });
+});
+
+describe('effectiveAuthor', () => {
+  it('returns user kind for normal messages', async () => {
+    const m = fakeMessage({ author: { id: 'u1' }, member: { displayName: 'Bob' } });
+    const who = await effectiveAuthor(m);
+    expect(who.kind).toBe('user');
+    if (who.kind !== 'user') throw new Error('expected user kind');
+    expect(who.id).toBe('u1');
+  });
+
+  it('returns unknown_webhook for non-proxy webhooks when client not set', async () => {
+    const m = whMsg();
+    const who = await effectiveAuthor(m);
+    expect(who.kind).toBe('unknown_webhook');
+  });
+
+  it('returns user kind with null member for a message without member (e.g. partial)', async () => {
+    const m = fakeMessage({ author: { id: 'u1' }, member: null });
+    const who = await effectiveAuthor(m);
+    expect(who.kind).toBe('user');
+    if (who.kind !== 'user') throw new Error('expected user kind');
+    expect(who.id).toBe('u1');
+    expect(who.member).toBeNull();
   });
 });
 
@@ -108,8 +257,6 @@ describe('detectDisguisedExecutable', () => {
     expect(detectDisguisedExecutable(Buffer.from([0x7f, 0x45, 0x00, 0x00]))).toBeNull();
   });
   it('does NOT flag a JSON error body (expired CDN link → {"me…)', () => {
-    // Regression: Carlbot embed whose image URL returned `{"message":...}`
-    // (magic 7b226d65) was wrongly banned as a "malicious embed".
     expect(detectDisguisedExecutable(Buffer.from('{"message":"gone"}', 'ascii'))).toBeNull();
   });
   it('does NOT flag a normal PNG', () => {
@@ -192,7 +339,7 @@ describe('checkMediaVelocity', () => {
     trackMessage(cur, dom);
     const v = checkMediaVelocity(cur, 120);
     expect(v.mediaChannels).toBe(4);
-    expect(v.sameChannels).toBe(1); // each link is a different fingerprint
+    expect(v.sameChannels).toBe(1);
   });
 
   it('counts distinct channels for the SAME file reposted', () => {
@@ -212,10 +359,10 @@ describe('checkMediaVelocity', () => {
       vi.setSystemTime(0);
       const att = new Map([['f', { name: 'p.png', size: 5, contentType: 'image/png' }]]);
       trackMessage(mediaMsg({ author: { id: 'win1' }, channelId: 'a', attachments: att }), dom);
-      vi.setSystemTime(200_000); // 200s later
+      vi.setSystemTime(200_000);
       const cur = mediaMsg({ author: { id: 'win1' }, channelId: 'b', attachments: att });
       trackMessage(cur, dom);
-      const v = checkMediaVelocity(cur, 120); // 120s window excludes the 200s-old entry
+      const v = checkMediaVelocity(cur, 120);
       expect(v.mediaChannels).toBe(1);
     } finally {
       vi.useRealTimers();

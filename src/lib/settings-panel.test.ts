@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import {
-  AI_FEATURES, FUN_FEATURES, applyToggleSelection, buildSettingsPanel,
-  TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX,
-} from './settings-panel';
+import { buildSettingsPanel, type Page } from '../panels/index';
+import { applyToggleSelection, TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX, navRow, fmtChannel, fmtRoles, fmtChannels, fmtUsers } from '../panels/shared';
+import { AI_FEATURES } from '../panels/ai';
+import { FUN_FEATURES } from '../panels/fun';
 
 describe('feature tiers', () => {
   it('keeps metadata in the AI tier and not in Fun', () => {
@@ -26,7 +26,73 @@ describe('applyToggleSelection', () => {
   it('does not touch features outside the tier', () => {
     const current = { fun_commands: true, ask: true };
     const next = applyToggleSelection(current, AI_FEATURES, []);
-    expect(next.fun_commands).toBe(true); // fun tier untouched
+    expect(next.fun_commands).toBe(true);
+  });
+});
+
+describe('formatting helpers', () => {
+  it('fmtChannel returns mention with set id', () => {
+    expect(fmtChannel('c123')).toBe('<#c123>');
+  });
+  it('fmtChannel returns placeholder for undefined/null', () => {
+    expect(fmtChannel(undefined)).toBe('*(not set)*');
+    expect(fmtChannel(null)).toBe('*(not set)*');
+  });
+  it('fmtRoles returns mentions for IDs', () => {
+    expect(fmtRoles(['r1', 'r2'])).toBe('<@&r1> <@&r2>');
+  });
+  it('fmtRoles returns placeholder for empty/undefined/null', () => {
+    expect(fmtRoles([])).toBe('*(none)*');
+    expect(fmtRoles(undefined)).toBe('*(none)*');
+    expect(fmtRoles(null)).toBe('*(none)*');
+  });
+  it('fmtChannels returns mentions for IDs', () => {
+    expect(fmtChannels(['c1', 'c2'])).toBe('<#c1> <#c2>');
+  });
+  it('fmtChannels returns placeholder for empty/undefined/null', () => {
+    expect(fmtChannels([])).toBe('*(all)*');
+    expect(fmtChannels(undefined)).toBe('*(all)*');
+    expect(fmtChannels(null)).toBe('*(all)*');
+  });
+  it('fmtUsers returns mentions for IDs', () => {
+    expect(fmtUsers(['u1', 'u2'])).toBe('<@u1> <@u2>');
+  });
+  it('fmtUsers returns placeholder for empty/undefined/null', () => {
+    expect(fmtUsers([])).toBe('*(none)*');
+    expect(fmtUsers(undefined)).toBe('*(none)*');
+    expect(fmtUsers(null)).toBe('*(none)*');
+  });
+});
+
+describe('navRow', () => {
+  it('exposes four pages plus the anti-scam toggle', () => {
+    const nav = navRow('moderation', true).toJSON() as any;
+    const ids = nav.components.map((c: any) => c.custom_id);
+    expect(ids).toEqual([
+      'settings:nav:moderation', 'settings:nav:ai', 'settings:nav:fun', 'settings:nav:trust', 'settings:toggle:security',
+    ]);
+  });
+  it('sets active page button to primary style', () => {
+    const nav = navRow('ai', true).toJSON() as any;
+    const aiBtn = nav.components.find((c: any) => c.custom_id === 'settings:nav:ai');
+    expect(aiBtn.style).toBe(1); // ButtonStyle.Primary
+  });
+  it('sets inactive page button to secondary style', () => {
+    const nav = navRow('ai', true).toJSON() as any;
+    const modBtn = nav.components.find((c: any) => c.custom_id === 'settings:nav:moderation');
+    expect(modBtn.style).toBe(2); // ButtonStyle.Secondary
+  });
+  it('shows anti-scam ON with success style when enabled', () => {
+    const nav = navRow('moderation', true).toJSON() as any;
+    const secBtn = nav.components.find((c: any) => c.custom_id === 'settings:toggle:security');
+    expect(secBtn.label).toBe('Anti-scam: ON');
+    expect(secBtn.style).toBe(3); // ButtonStyle.Success
+  });
+  it('shows anti-scam OFF with danger style when disabled', () => {
+    const nav = navRow('moderation', false).toJSON() as any;
+    const secBtn = nav.components.find((c: any) => c.custom_id === 'settings:toggle:security');
+    expect(secBtn.label).toBe('Anti-scam: OFF');
+    expect(secBtn.style).toBe(4); // ButtonStyle.Danger
   });
 });
 
@@ -46,6 +112,10 @@ describe('buildSettingsPanel', () => {
   });
   it('ai page stays within the 5-row limit', () => {
     const p = buildSettingsPanel(state as any, 'ai');
+    expect(p.components.length).toBeLessThanOrEqual(5);
+  });
+  it('fun page stays within the 5-row limit', () => {
+    const p = buildSettingsPanel(state as any, 'fun');
     expect(p.components.length).toBeLessThanOrEqual(5);
   });
   it('nav row exposes four pages plus the anti-scam toggle', () => {
@@ -90,5 +160,24 @@ describe('buildSettingsPanel', () => {
     expect(p.components.length).toBeLessThanOrEqual(5);
     const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
     expect(ids).toContain('settings:catcherRole');
+  });
+  it('ai page includes AI_FEATURES as select menu options', () => {
+    const p = buildSettingsPanel(state as any, 'ai');
+    const comps = p.components.flatMap(r => (r as any).toJSON().components);
+    const sel = comps.find((c: any) => c.custom_id === 'settings:tier:ai');
+    expect(sel.options.map((o: any) => o.value)).toEqual(AI_FEATURES.map(f => f.value));
+    expect(sel.max_values).toBe(AI_FEATURES.length);
+  });
+  it('fun page includes FUN_FEATURES as select menu options', () => {
+    const p = buildSettingsPanel(state as any, 'fun');
+    const comps = p.components.flatMap(r => (r as any).toJSON().components);
+    const sel = comps.find((c: any) => c.custom_id === 'settings:tier:fun');
+    expect(sel.options.map((o: any) => o.value)).toEqual(FUN_FEATURES.map(f => f.value));
+    expect(sel.max_values).toBe(FUN_FEATURES.length);
+  });
+  it('defaults to moderation panel for unknown page type (safety net)', () => {
+    const p = buildSettingsPanel(state as any, 'nonexistent' as Page);
+    expect(p.embeds.length).toBe(1);
+    expect(p.components.length).toBeGreaterThanOrEqual(1);
   });
 });

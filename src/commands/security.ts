@@ -4,7 +4,7 @@ import {
 import { getModeration, setModerationField } from '../lib/guild-settings';
 import { ENV_MOD_DEFAULTS } from '../lib/config';
 import { CROSS_POST_WINDOW } from '../lib/security';
-import { TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX } from '../lib/settings-panel';
+import { TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX } from '../panels/shared';
 
 export const securityCommand = {
   data: new SlashCommandBuilder()
