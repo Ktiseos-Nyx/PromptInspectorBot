@@ -5,9 +5,10 @@ import {
 import {
   getGuildModeration, getAllGuildSettings, setGuildSetting, setModerationField,
 } from '../lib/guild-settings';
-import {
-  buildSettingsPanel, applyToggleSelection, AI_FEATURES, FUN_FEATURES, type Page,
-} from '../lib/settings-panel';
+import { buildSettingsPanel, type Page } from '../panels/index';
+import { applyToggleSelection } from '../panels/shared';
+import { AI_FEATURES } from '../panels/ai';
+import { FUN_FEATURES } from '../panels/fun';
 
 function snapshot(guildId: string) {
   return { toggles: getAllGuildSettings(guildId), moderation: getGuildModeration(guildId) };

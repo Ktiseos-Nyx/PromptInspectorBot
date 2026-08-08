@@ -3,7 +3,7 @@ import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrusted, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold, effectiveAuthor } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
@@ -36,20 +36,25 @@ export function registerMessageEvents(client: Client): void {
     // ── Security checks (independent of the metadata toggle) ─────────────────────
     const securityEnabled = getGuildSetting(message.guildId!, 'security', true);
 
-    if (securityEnabled && !isTrusted(message, mod)) {
+    if (securityEnabled && !(await isTrusted(message, mod))) {
+      const who = await effectiveAuthor(message);
+      if (!who) return;
+      const canBan = who.kind !== 'unknown_webhook';
       // ── Known banned user ──────────────────────────────────────────────────
-      const knownBan = isUserBanned(message.author.id);
-      if (knownBan) {
-        await instantBan(message, `Known banned user: ${knownBan.reason}`, mod, ['In ban registry']);
-        return;
+      if (canBan) {
+        const knownBan = isUserBanned(who.id);
+        if (knownBan) {
+          await instantBan(message, `Known banned user: ${knownBan.reason}`, mod, ['In ban registry'], who);
+          return;
+        }
       }
 
       // ── Known banned message pattern ───────────────────────────────────────
       if (message.content) {
         const knownPattern = isPatternBanned(message.content);
         if (knownPattern) {
-          await instantBan(message, `Known banned pattern: ${knownPattern.reason}`, mod, ['Pattern registry match']);
-          recordBan(message.author.id, message.guildId!, `Pattern match: ${knownPattern.reason}`);
+          if (canBan) recordBan(who.id, message.guildId!, `Pattern match: ${knownPattern.reason}`);
+          await instantBan(message, `Known banned pattern: ${knownPattern.reason}`, mod, ['Pattern registry match'], who);
           return;
         }
 
@@ -57,8 +62,8 @@ export function registerMessageEvents(client: Client): void {
         const wordMatch = checkWordPatterns(message.content);
         if (wordMatch) {
           if (wordMatch.action === 'ban') {
-            recordBan(message.author.id, message.guildId!, `Word pattern: ${wordMatch.reason}`);
-            await instantBan(message, `Word pattern match: ${wordMatch.reason}`, mod, [`Pattern: ${wordMatch.pattern}`]);
+            if (canBan) recordBan(who.id, message.guildId!, `Word pattern: ${wordMatch.reason}`);
+            await instantBan(message, `Word pattern match: ${wordMatch.reason}`, mod, [`Pattern: ${wordMatch.pattern}`], who);
             return;
           }
           if (wordMatch.action === 'delete') {
@@ -93,7 +98,7 @@ export function registerMessageEvents(client: Client): void {
             // real (PluralKit-proxied) user on an HTML error page.
             const exeReason = detectDisguisedExecutable(buf);
             if (exeReason) {
-              await instantBan(message, exeReason, mod);
+              await instantBan(message, exeReason, mod, [], who);
               return;
             }
           } catch { /* skip on network error */ }
@@ -104,7 +109,7 @@ export function registerMessageEvents(client: Client): void {
       if (message.embeds.length > 0) {
         const embedReason = await checkEmbedImages(message);
         if (embedReason) {
-          await instantBan(message, `Malicious embed: ${embedReason}`, mod);
+          await instantBan(message, `Malicious embed: ${embedReason}`, mod, [], who);
           return;
         }
       }
@@ -118,8 +123,8 @@ export function registerMessageEvents(client: Client): void {
         if (crossPosts >= 2) {
           const reason = `Algo speak + cross-posting (algo score: ${algoScore}, channels: ${crossPosts})`;
           recordPattern(message.content, reason);
-          recordBan(message.author.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, ['Obfuscated text', `${crossPosts} channels`, `Algo score: ${algoScore}`]);
+          if (canBan) recordBan(who.id, message.guildId!, reason);
+          await instantBan(message, reason, mod, ['Obfuscated text', `${crossPosts} channels`, `Algo score: ${algoScore}`], who);
           return;
         }
         // High score alone (heavy zalgo/ZWC) — delete and alert without banning
@@ -141,8 +146,8 @@ export function registerMessageEvents(client: Client): void {
         if (hasHoneypotRole(message, mod) && mod.honeypotMode !== 'off') {
           if (mod.honeypotMode === 'strict' || mediaChannels >= 2) {
             const reason = `Honeypot role + media (${mod.honeypotMode})`;
-            recordBan(message.author.id, message.guildId!, reason);
-            await instantBan(message, reason, mod, ['Honeypot/catcher role', `mode: ${mod.honeypotMode}`]);
+            if (canBan) recordBan(who.id, message.guildId!, reason);
+            await instantBan(message, reason, mod, ['Honeypot/catcher role', `mode: ${mod.honeypotMode}`], who);
             return;
           }
         }
@@ -151,8 +156,8 @@ export function registerMessageEvents(client: Client): void {
         if (sameChannels >= mod.mediaSpamSameChannels) {
           const reason = `Repost spam (same media in ${sameChannels} channels / ${mod.mediaSpamWindowSec}s)`;
           if (message.content) recordPattern(message.content, reason);
-          recordBan(message.author.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, [`${sameChannels} channels`, 'Identical media']);
+          if (canBan) recordBan(who.id, message.guildId!, reason);
+          await instantBan(message, reason, mod, [`${sameChannels} channels`, 'Identical media'], who);
           return;
         }
 
@@ -172,12 +177,12 @@ export function registerMessageEvents(client: Client): void {
         if (mediaChannels >= mediaThreshold) {
           const raid = hasRiskyUpload && recentJoin;
           const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${raid ? ', new-member GIF upload' : ''})`;
-          recordBan(message.author.id, message.guildId!, reason);
+          if (canBan) recordBan(who.id, message.guildId!, reason);
           await instantBan(message, reason, mod, [
             `${mediaChannels} channels`,
             hasRiskyUpload ? 'Direct-uploaded flagged type' : 'Mixed media',
             recentJoin ? 'Recently joined' : 'Established member',
-          ]);
+          ], who);
           return;
         }
 
@@ -186,7 +191,7 @@ export function registerMessageEvents(client: Client): void {
         // registry (no recordBan) — unlike the velocity tracks above.
         if (imageAttachments.size >= 4 && !userHasRoles && isGibberish(message.content, false, hasImages)) {
           await instantBan(message, 'Screenshot spam + gibberish', mod,
-            [`${imageAttachments.size} images`, 'No roles', 'Gibberish text']);
+            [`${imageAttachments.size} images`, 'No roles', 'Gibberish text'], who);
           return;
         }
       }
@@ -195,8 +200,8 @@ export function registerMessageEvents(client: Client): void {
       const [score, reasons] = calculateScamScore(message, mod);
       if (score >= 100) {
         recordPattern(message.content, `Wallet scam score ${score}`);
-        recordBan(message.author.id, message.guildId!, `Wallet scam score ${score}`);
-        await instantBan(message, `Wallet scam (score: ${score})`, mod, reasons);
+        if (canBan) recordBan(who.id, message.guildId!, `Wallet scam score ${score}`);
+        await instantBan(message, `Wallet scam (score: ${score})`, mod, reasons, who);
         return;
       }
       if (score >= 75) {
@@ -212,8 +217,8 @@ export function registerMessageEvents(client: Client): void {
         if (mentionScore >= 100) {
           const r = `Mention spam (score: ${mentionScore})`;
           recordPattern(message.content, r);
-          recordBan(message.author.id, message.guildId!, r);
-          await instantBan(message, r, mod, mentionReasons);
+          if (canBan) recordBan(who.id, message.guildId!, r);
+          await instantBan(message, r, mod, mentionReasons, who);
           return;
         }
         if (mentionScore >= 50) {

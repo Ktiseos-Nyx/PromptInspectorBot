@@ -1,11 +1,56 @@
 import crypto from 'crypto';
 import dns from 'dns';
 import net from 'net';
-import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors, PermissionFlagsBits } from 'discord.js';
+import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors, PermissionFlagsBits, type Client } from 'discord.js';
 import type { ResolvedModConfig } from './settings-types';
 import { BLOCKED_IMAGE_DOMAINS } from './config';
 
-// ── Cross-post tracking ───────────────────────────────────────────────────────
+// ── Webhook author resolution (PluralKit / Tupperbox) ─────────────────────
+let bottieClient: Client | null = null;
+export function setClient(client: Client): void { bottieClient = client; }
+
+const KNOWN_PROXY_BOT_IDS = new Set(['466378653216014359', '431544605209788416']);
+// PluralKit                                ^^^^^^^^^^^^^^^^^^  Tupperbox ^^^^^^^^^^^^^^^^^^
+
+export type AuthorResolution =
+  | { kind: 'user'; id: string; member: GuildMember | null }
+  | { kind: 'proxy_webhook'; id: string; member: GuildMember }
+  | { kind: 'unknown_webhook' };
+
+export async function resolveWebhookAuthor(
+  message: Message,
+): Promise<{ id: string; member: GuildMember } | null> {
+  if (!message.webhookId || !message.guild) return null;
+  if (!message.author.username) return null;
+
+  let verified = false;
+  if (bottieClient) {
+    try {
+      const webhook = await bottieClient.fetchWebhook(message.webhookId);
+      verified = KNOWN_PROXY_BOT_IDS.has(webhook.applicationId ?? '');
+    } catch { /* no MANAGE_WEBHOOKS perm, or webhook not found */ }
+  }
+
+  if (!verified) return null;
+
+  const name = message.author.username;
+  const baseName = name
+    .replace(/\s*\([a-z0-9]{5}\)$/, '')
+    .replace(/\s*\[.+?\]$/, '')
+    .trim();
+
+  if (!baseName) return null;
+
+  const matches = message.guild.members.cache.filter(
+    m => m.displayName === name || m.displayName === baseName
+      || m.user.username === name || m.user.username === baseName,
+  );
+
+  if (matches.size !== 1) return null;
+
+  const member = matches.first()!;
+  return { id: member.id, member };
+}
 
 interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; isMedia: boolean; }
 const userMessages = new Map<string, TrackedMessage[]>();
@@ -243,27 +288,43 @@ export async function alertAdmins(
 
 // ── Instant ban ───────────────────────────────────────────────────────────────
 
-export async function instantBan(message: Message, reason: string, cfg: ResolvedModConfig, details: string[] = []): Promise<void> {
-  console.error(`🚨 BAN: ${message.author.tag} (${message.author.id}) — ${reason}`);
+export async function instantBan(
+  message: Message, reason: string, cfg: ResolvedModConfig,
+  details: string[] = [],
+  who?: AuthorResolution,
+): Promise<void> {
+  if (!message.guild) return;
+
+  if (who?.kind === 'unknown_webhook') {
+    await message.delete().catch(() => null);
+    await alertAdmins(message.guild, message.author,
+      reason, [...details, 'Unresolvable webhook — not banning'], 'DELETED', cfg);
+    return;
+  }
+
+  const targetId = who?.kind === 'proxy_webhook' ? who.id : message.author.id;
+  const targetMember = who?.kind === 'proxy_webhook' ? who.member : message.member ?? message.author;
+
+  console.error(`🚨 BAN: ${targetMember instanceof GuildMember ? targetMember.user.tag : (targetMember as any).tag} (${targetId}) — ${reason}`);
   if (!message.guild) return;
 
   const me = message.guild.members.me;
   if (!me || !me.permissions.has(PermissionFlagsBits.BanMembers)) {
-    await alertAdmins(message.guild, message.member ?? message.author as any,
+    await alertAdmins(message.guild, targetMember as any,
       reason, [...details, 'Bot missing BAN_MEMBERS permission'], 'FAILED', cfg);
     return;
   }
 
   try {
     await message.delete().catch(() => null);
-    await message.guild.members.ban(message.author.id, {
+    await message.guild.members.ban(targetId, {
       reason: `Auto-ban: ${reason} | ${details.slice(0, 3).join(', ')}`,
       deleteMessageSeconds: 300,
     });
-    await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'BANNED', cfg);
+    await alertAdmins(message.guild, targetMember as any, reason, details, 'BANNED', cfg);
   } catch (e) {
     console.error('Ban failed:', e);
-    if (message.guild) await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'FAILED', cfg);
+    if (message.guild) await alertAdmins(message.guild, targetMember as any, reason, details, 'FAILED', cfg);
   }
 }
 
@@ -411,20 +472,41 @@ export function hasHoneypotRole(message: Message, cfg: ResolvedModConfig): boole
   return message.member?.roles?.cache?.has(cfg.catcherRoleId) ?? false;
 }
 
-export function isTrusted(message: Message, cfg: ResolvedModConfig): boolean {
-  if (cfg.trustedUserIds.has(message.author.id)) return true;
-  if (message.guild && message.author.id === message.guild.ownerId) return true;
+export async function isTrusted(message: Message, cfg: ResolvedModConfig): Promise<boolean> {
+  const effective = await resolveWebhookAuthor(message);
+  const userId = effective?.id ?? message.author.id;
+  const member = effective?.member ?? message.member;
+
+  // 1. Manually trusted via slash command
+  if (cfg.trustedUserIds.has(userId)) return true;
+  
+  // 2. Literal Server Owner
+  if (message.guild && userId === message.guild.ownerId) return true;
+
+  // 🛑 THE FIX: Bypass for Native Discord Staff Permissions!
+  if (member?.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  if (member?.permissions.has(PermissionFlagsBits.ManageMessages)) return true;
+  if (member?.permissions.has(PermissionFlagsBits.ManageGuild)) return true;
+  if (member?.permissions.has(PermissionFlagsBits.MentionEveryone)) return true;
+
+  // 3. Manually trusted roles
   if (cfg.trustedRoleIds.size) {
-    // message.member is null for webhook/interaction bot messages (e.g. Carlbot),
-    // so a trusted role would never match. Fall back to the guild's member cache
-    // (cache-only — no fetch, keeps this synchronous) so a trusted role can still
-    // exempt a bot that is already a known guild member.
     const roles =
-      message.member?.roles?.cache ??
-      message.guild?.members?.cache?.get(message.author.id)?.roles?.cache;
+      member?.roles?.cache ??
+      message.guild?.members?.cache?.get(userId)?.roles?.cache;
     if (roles) {
       for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
     }
   }
+  
   return false;
+}
+
+export async function effectiveAuthor(message: Message): Promise<AuthorResolution | null> {
+  if (message.webhookId) {
+    const resolved = await resolveWebhookAuthor(message);
+    if (resolved) return { kind: 'proxy_webhook', id: resolved.id, member: resolved.member };
+    return { kind: 'unknown_webhook' };
+  }
+  return { kind: 'user', id: message.author.id, member: message.member ?? null };
 }
