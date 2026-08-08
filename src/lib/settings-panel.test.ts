@@ -182,4 +182,70 @@ describe('buildSettingsPanel', () => {
     const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
     expect(ids).toContain('settings:catcherRole');
   });
+
+  it('routes moderation page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'moderation');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:alertChannel');
+    expect(ids).toContain('settings:monitoredChannels');
+  });
+
+  it('routes ai page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'ai');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:tier:ai');
+  });
+
+  it('routes fun page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'fun');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:tier:fun');
+  });
+
+  it('routes trust page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'trust');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:trustedRoles');
+    expect(ids).toContain('settings:trustedUsers');
+  });
+
+  it('moderation page shows anti-scam status text', () => {
+    const p = buildSettingsPanel({ toggles: { security: true }, moderation: {} } as any, 'moderation');
+    expect((p.embeds[0] as any).data.description).toContain('✅ **Anti-scam protection**');
+  });
+
+  it('moderation page shows disabled anti-scam text when security is off', () => {
+    const p = buildSettingsPanel({ toggles: { security: false }, moderation: {} } as any, 'moderation');
+    expect((p.embeds[0] as any).data.description).toContain('❌ **Anti-scam protection**');
+  });
+
+  it('trust page shows trusted-entity rendering', () => {
+    const s = { toggles: { security: true }, moderation: { trustedRoleIds: ['r1'], trustedUserIds: ['u1'] } };
+    const p = buildSettingsPanel(s as any, 'trust');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('<@&r1>');
+    expect(desc).toContain('<@u1>');
+  });
+
+  it('trust page shows placeholder when no trusted entities configured', () => {
+    const p = buildSettingsPanel({ toggles: { security: true }, moderation: {} } as any, 'trust');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('*(none)*');
+  });
+
+  it('ai page shows feature status text with emoji indicators', () => {
+    const s = { toggles: { metadata: true, ask: false }, moderation: {} };
+    const p = buildSettingsPanel(s as any, 'ai');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('✅ Metadata extraction');
+    expect(desc).toContain('❌ AI chat');
+  });
+
+  it('fun page shows feature status text with emoji indicators', () => {
+    const s = { toggles: { fun_commands: true, qotd: false }, moderation: {} };
+    const p = buildSettingsPanel(s as any, 'fun');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('✅ Fun commands');
+    expect(desc).toContain('❌ Question of the day');
+  });
 });
