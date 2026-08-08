@@ -3,10 +3,10 @@ import {
   isTrusted, isTrustedResolved, calculateScamScore, algoSpeakScore,
   detectDisguisedExecutable, isGifLink, isMediaMessage, hasHoneypotRole,
   trackMessage, checkMediaVelocity, isRecentJoin, mediaRaidThreshold,
-  effectiveAuthor,
+  effectiveAuthor, setClient,
   type AuthorResolution,
 } from './security';
-import { PermissionFlagsBits } from 'discord.js';
+import { PermissionFlagsBits, Collection } from 'discord.js';
 import type { ResolvedModConfig } from './settings-types';
 
 function cfg(over: Partial<ResolvedModConfig> = {}): ResolvedModConfig {
@@ -38,13 +38,15 @@ function fakeMessage(over: any = {}): any {
 }
 
 function whMsg(over: any = {}): any {
+  const memberCache = new Collection<string, any>();
+  memberCache.set('aliceId', { id: 'aliceId', displayName: 'Alice', user: { username: 'Alice' }, permissions: { has: () => false }, roles: { cache: new Map() } });
   return fakeMessage({
     webhookId: 'wh123',
     member: null,
     author: { id: 'webhook_user', username: 'Alice', avatar: null },
     guild: {
       ownerId: 'owner',
-      members: { cache: new Map([['aliceId', { id: 'aliceId', displayName: 'Alice', user: { username: 'Alice' }, permissions: { has: () => false }, roles: { cache: new Map() } }]]) },
+      members: { cache: memberCache },
     },
     ...over,
   });
@@ -225,6 +227,34 @@ describe('effectiveAuthor', () => {
     if (who.kind !== 'user') throw new Error('expected user kind');
     expect(who.id).toBe('u1');
     expect(who.member).toBeNull();
+  });
+
+  it('returns proxy_webhook for verified PluralKit/Tupperbox webhook', async () => {
+    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: '466378653216014359' });
+    setClient({ fetchWebhook } as any);
+    try {
+      const m = whMsg();
+      const who = await effectiveAuthor(m);
+      expect(who.kind).toBe('proxy_webhook');
+      if (who.kind !== 'proxy_webhook') throw new Error('expected proxy_webhook kind');
+      expect(who.id).toBe('aliceId');
+      expect(fetchWebhook).toHaveBeenCalledTimes(1);
+    } finally {
+      setClient(null as any);
+    }
+  });
+
+  it('caches webhook verification so second call reuses fetchWebhook result', async () => {
+    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: '466378653216014359' });
+    setClient({ fetchWebhook } as any);
+    try {
+      const m = whMsg({ webhookId: 'whCacheTest' });
+      await effectiveAuthor(m);
+      await effectiveAuthor(m);
+      expect(fetchWebhook).toHaveBeenCalledTimes(1);
+    } finally {
+      setClient(null as any);
+    }
   });
 });
 

@@ -29,14 +29,24 @@ async function verifyWebhookApp(webhookId: string): Promise<string | null> {
   if (hit && Date.now() - hit.at < WEBHOOK_CACHE_TTL_MS) return hit.appId;
   if (!bottieClient) return null;
   let appId: string | null = null;
+  let cacheable = true;
   try {
     const webhook = await bottieClient.fetchWebhook(webhookId);
     appId = webhook.applicationId ?? null;
-  } catch { /* no MANAGE_WEBHOOKS perm, or webhook not found */ }
-  webhookVerifyCache.set(webhookId, { appId, at: Date.now() });
-  if (webhookVerifyCache.size > WEBHOOK_CACHE_MAX) {
-    const oldest = webhookVerifyCache.keys().next().value;
-    if (oldest) webhookVerifyCache.delete(oldest);
+  } catch (e: any) {
+    // Cache definitive API responses (unknown webhook 10015, missing
+    // permissions 50013). Skip transient errors (network failure, 5xx,
+    // rate-limit) so the next message retries fresh.
+    if (typeof e?.code !== 'number' || e?.status >= 500) {
+      cacheable = false;
+    }
+  }
+  if (cacheable) {
+    webhookVerifyCache.set(webhookId, { appId, at: Date.now() });
+    if (webhookVerifyCache.size > WEBHOOK_CACHE_MAX) {
+      const oldest = webhookVerifyCache.keys().next().value;
+      if (oldest) webhookVerifyCache.delete(oldest);
+    }
   }
   return appId;
 }
@@ -319,15 +329,16 @@ export async function instantBan(
 ): Promise<void> {
   if (!message.guild) return;
 
-  if (who?.kind === 'unknown_webhook') {
+  if (who?.kind === 'unknown_webhook' || who?.kind === 'proxy_webhook') {
     await message.delete().catch(() => null);
+    const label = who?.kind === 'proxy_webhook' ? 'Name-resolved proxy webhook' : 'Unresolvable webhook';
     await alertAdmins(message.guild, message.author,
-      reason, [...details, 'Unresolvable webhook — not banning'], 'DELETED', cfg);
+      reason, [...details, `${label} — not banning`], 'DELETED', cfg);
     return;
   }
 
-  const targetId = who?.kind === 'proxy_webhook' ? who.id : message.author.id;
-  const targetMember = who?.kind === 'proxy_webhook' ? who.member : message.member ?? message.author;
+  const targetId = who?.id ?? message.author.id;
+  const targetMember = (who?.member ?? message.member ?? message.author) as GuildMember | typeof message.author;
 
   console.error(`🚨 BAN: ${targetMember instanceof GuildMember ? targetMember.user.tag : (targetMember as any).tag} (${targetId}) — ${reason}`);
 
@@ -516,11 +527,10 @@ export function isTrustedResolved(
   }
 
   if (cfg.trustedRoleIds.size) {
-    const member =
-      who.kind === 'user' ? who.member
+    const member = who.kind === 'user'
+      ? (who.member ?? message.guild?.members?.cache?.get(userId))
       : message.guild?.members?.cache?.get(userId);
-    const roles = member?.roles?.cache
-      ?? message.guild?.members?.cache?.get(userId)?.roles?.cache;
+    const roles = member?.roles?.cache;
     if (roles) {
       for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
     }

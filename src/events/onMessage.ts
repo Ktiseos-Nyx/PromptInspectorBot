@@ -1,13 +1,19 @@
-import { Events, Message, DMChannel, type Client, type GuildMember } from 'discord.js';
+import { Events, Message, DMChannel, type Client } from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
 import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
-import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrustedResolved, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold, effectiveAuthor } from '../lib/security';
+import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrustedResolved, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold, effectiveAuthor, type AuthorResolution } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
 
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
 const processedUrls = new Set<string>();
+
+function alertTarget(who: AuthorResolution, message: Message) {
+  if (who.kind === 'proxy_webhook') return who.member;
+  if (who.kind === 'user' && who.member) return who.member;
+  return message.member ?? message.author;
+}
 
 export function registerMessageEvents(client: Client): void {
   client.on(Events.MessageCreate, async (message: Message) => {
@@ -36,199 +42,178 @@ export function registerMessageEvents(client: Client): void {
     // ── Security checks (independent of the metadata toggle) ─────────────────────
     const securityEnabled = getGuildSetting(message.guildId!, 'security', true);
 
-    // Resolve once per message — both trust and ban targeting use the same resolution.
-    const who = securityEnabled
-      ? await effectiveAuthor(message)
-      : { kind: 'user', id: message.author.id, member: message.member ?? null } as { kind: 'user'; id: string; member: GuildMember | null };
-
-    if (securityEnabled && !isTrustedResolved(who, message, mod)) {
-      const canBan = who.kind !== 'unknown_webhook';
-      // ── Known banned user ──────────────────────────────────────────────────
-      if (canBan) {
-        const knownBan = isUserBanned(who.id);
-        if (knownBan) {
-          await instantBan(message, `Known banned user: ${knownBan.reason}`, mod, ['In ban registry'], who);
-          return;
-        }
-      }
-
-      // ── Known banned message pattern ───────────────────────────────────────
-      if (message.content) {
-        const knownPattern = isPatternBanned(message.content);
-        if (knownPattern) {
-          if (canBan) recordBan(who.id, message.guildId!, `Pattern match: ${knownPattern.reason}`);
-          await instantBan(message, `Known banned pattern: ${knownPattern.reason}`, mod, ['Pattern registry match'], who);
-          return;
-        }
-
-        // ── Word pattern filter ──────────────────────────────────────────────
-        const wordMatch = checkWordPatterns(message.content);
-        if (wordMatch) {
-          if (wordMatch.action === 'ban') {
-            if (canBan) recordBan(who.id, message.guildId!, `Word pattern: ${wordMatch.reason}`);
-            await instantBan(message, `Word pattern match: ${wordMatch.reason}`, mod, [`Pattern: ${wordMatch.pattern}`], who);
+    if (securityEnabled) {
+      // Resolve once per message — both trust and ban targeting use the same
+      // resolution. Resolution only occurs when security is enabled.
+      const who = await effectiveAuthor(message);
+      if (!isTrustedResolved(who, message, mod)) {
+        const target = alertTarget(who, message);
+        const canBan = who.kind === 'user';
+        // ── Known banned user ────────────────────────────────────────────────
+        if (canBan) {
+          const knownBan = isUserBanned(who.id);
+          if (knownBan) {
+            await instantBan(message, `Known banned user: ${knownBan.reason}`, mod, ['In ban registry'], who);
             return;
           }
-          if (wordMatch.action === 'delete') {
-            await message.delete().catch(() => null);
-            await alertAdmins(message.guild!, message.member ?? message.author as any,
-              `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`], 'DELETED', mod);
+        }
+
+        // ── Known banned message pattern ─────────────────────────────────────
+        if (message.content) {
+          const knownPattern = isPatternBanned(message.content);
+          if (knownPattern) {
+            if (canBan) recordBan(who.id, message.guildId!, `Pattern match: ${knownPattern.reason}`);
+            await instantBan(message, `Known banned pattern: ${knownPattern.reason}`, mod, ['Pattern registry match'], who);
             return;
           }
-          if (wordMatch.action === 'warn') {
-            await alertAdmins(message.guild!, message.member ?? message.author as any,
-              `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`, `Message: ${message.content.slice(0, 100)}`], 'ALERT', mod);
-          }
-        }
-      }
 
-      trackMessage(message, GIF_SOURCE_DOMAINS);
-
-      const userHasRoles = (message.member?.roles.cache.size ?? 1) > 1;
-      const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));
-      const hasImages = imageAttachments.size > 0;
-      const isMedia = isMediaMessage(message, GIF_SOURCE_DOMAINS);
-
-      // ── Magic bytes — attachments ──────────────────────────────────────────
-      if (hasImages) {
-        for (const att of imageAttachments.values()) {
-          try {
-            const res = await fetch(att.url);
-            const buf = Buffer.from(await res.arrayBuffer());
-            // Only ban on a genuinely disguised executable. A failed/expired CDN fetch
-            // returns an HTML or JSON error body (not the user's actual image), so
-            // "unrecognised format" must NOT be a ban trigger — that false-banned a
-            // real (PluralKit-proxied) user on an HTML error page.
-            const exeReason = detectDisguisedExecutable(buf);
-            if (exeReason) {
-              await instantBan(message, exeReason, mod, [], who);
+          // ── Word pattern filter ────────────────────────────────────────────
+          const wordMatch = checkWordPatterns(message.content);
+          if (wordMatch) {
+            if (wordMatch.action === 'ban') {
+              if (canBan) recordBan(who.id, message.guildId!, `Word pattern: ${wordMatch.reason}`);
+              await instantBan(message, `Word pattern match: ${wordMatch.reason}`, mod, [`Pattern: ${wordMatch.pattern}`], who);
               return;
             }
-          } catch { /* skip on network error */ }
+            if (wordMatch.action === 'delete') {
+              await message.delete().catch(() => null);
+              await alertAdmins(message.guild!, target,
+                `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`], 'DELETED', mod);
+              return;
+            }
+            if (wordMatch.action === 'warn') {
+              await alertAdmins(message.guild!, target,
+                `Word pattern match: ${wordMatch.reason}`, [`Pattern: ${wordMatch.pattern}`, `Message: ${message.content.slice(0, 100)}`], 'ALERT', mod);
+            }
+          }
         }
-      }
 
-      // ── Magic bytes — embeds ───────────────────────────────────────────────
-      if (message.embeds.length > 0) {
-        const embedReason = await checkEmbedImages(message);
-        if (embedReason) {
-          await instantBan(message, `Malicious embed: ${embedReason}`, mod, [], who);
-          return;
+        trackMessage(message, GIF_SOURCE_DOMAINS);
+
+        const userHasRoles = (message.member?.roles.cache.size ?? 1) > 1;
+        const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));
+        const hasImages = imageAttachments.size > 0;
+        const isMedia = isMediaMessage(message, GIF_SOURCE_DOMAINS);
+
+        // ── Magic bytes — attachments ────────────────────────────────────────
+        if (hasImages) {
+          for (const att of imageAttachments.values()) {
+            try {
+              const res = await fetch(att.url);
+              const buf = Buffer.from(await res.arrayBuffer());
+              const exeReason = detectDisguisedExecutable(buf);
+              if (exeReason) {
+                await instantBan(message, exeReason, mod, [], who);
+                return;
+              }
+            } catch { /* skip on network error */ }
+          }
         }
-      }
 
-      // ── Algo speak detection ───────────────────────────────────────────────
-      // Only fires when combined with cross-channel posting — not on its own.
-      // Targets illegal content bots that obfuscate text to evade filters.
-      const algoScore = message.content ? algoSpeakScore(message.content) : 0;
-      if (algoScore >= 40) {
-        const crossPosts = checkCrossPosting(message);
-        if (crossPosts >= 2) {
-          const reason = `Algo speak + cross-posting (algo score: ${algoScore}, channels: ${crossPosts})`;
-          recordPattern(message.content, reason);
-          if (canBan) recordBan(who.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, ['Obfuscated text', `${crossPosts} channels`, `Algo score: ${algoScore}`], who);
-          return;
-        }
-        // High score alone (heavy zalgo/ZWC) — delete and alert without banning
-        if (algoScore >= 100) {
-          await message.delete().catch(() => null);
-          await alertAdmins(message.guild, message.member ?? message.author as any,
-            `Heavy text obfuscation (score: ${algoScore})`, ['Possible evasion attempt'], 'ALERT', mod);
-        }
-      }
-
-      // ── Media cross-post velocity ──────────────────────────────────────────
-      // Runs for ANY media (uploads OR GIF links). Two tracks: identical reposts
-      // (low bar) and any-media bursts (catches different GIFs). Honeypot role
-      // escalates per the configured mode.
-      if (isMedia) {
-        const { sameChannels, mediaChannels } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
-
-        // Honeypot escalation
-        if (hasHoneypotRole(message, mod) && mod.honeypotMode !== 'off') {
-          if (mod.honeypotMode === 'strict' || mediaChannels >= 2) {
-            const reason = `Honeypot role + media (${mod.honeypotMode})`;
-            if (canBan) recordBan(who.id, message.guildId!, reason);
-            await instantBan(message, reason, mod, ['Honeypot/catcher role', `mode: ${mod.honeypotMode}`], who);
+        // ── Magic bytes — embeds ─────────────────────────────────────────────
+        if (message.embeds.length > 0) {
+          const embedReason = await checkEmbedImages(message);
+          if (embedReason) {
+            await instantBan(message, `Malicious embed: ${embedReason}`, mod, [], who);
             return;
           }
         }
 
-        // Identity track — same file reposted across channels (low bar)
-        if (sameChannels >= mod.mediaSpamSameChannels) {
-          const reason = `Repost spam (same media in ${sameChannels} channels / ${mod.mediaSpamWindowSec}s)`;
-          if (message.content) recordPattern(message.content, reason);
-          if (canBan) recordBan(who.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, [`${sameChannels} channels`, 'Identical media'], who);
-          return;
+        // ── Algo speak detection ─────────────────────────────────────────────
+        const algoScore = message.content ? algoSpeakScore(message.content) : 0;
+        if (algoScore >= 40) {
+          const crossPosts = checkCrossPosting(message);
+          if (crossPosts >= 2) {
+            const reason = `Algo speak + cross-posting (algo score: ${algoScore}, channels: ${crossPosts})`;
+            recordPattern(message.content, reason);
+            if (canBan) recordBan(who.id, message.guildId!, reason);
+            await instantBan(message, reason, mod, ['Obfuscated text', `${crossPosts} channels`, `Algo score: ${algoScore}`], who);
+            return;
+          }
+          if (algoScore >= 100) {
+            await message.delete().catch(() => null);
+            await alertAdmins(message.guild, target,
+              `Heavy text obfuscation (score: ${algoScore})`, ['Possible evasion attempt'], 'ALERT', mod);
+          }
         }
 
-        // Raid fast path — a direct-uploaded flagged type (default image/gif) from a
-        // recently-joined member lowers the cross-channel bar. Legit GIFs arrive as
-        // Tenor/Giphy/Klipy LINKS, not uploads, and established members keep the normal
-        // threshold. Size is NOT used: abuse GIFs match normal art (PNG) sizes, so a
-        // size bar punished safe art posters instead of the raider. Checks ALL
-        // attachments so configured types like video/mp4 are honoured.
-        const hasRiskyUpload = [...message.attachments.values()].some(
-          a => a.contentType != null && mod.largeMediaTypes.has(a.contentType.toLowerCase()),
-        );
-        const recentJoin = isRecentJoin(message.member?.joinedTimestamp);
-        const mediaThreshold = mediaRaidThreshold(mod.mediaSpamChannels, hasRiskyUpload, recentJoin);
+        // ── Media cross-post velocity ────────────────────────────────────────
+        if (isMedia) {
+          const { sameChannels, mediaChannels } = checkMediaVelocity(message, mod.mediaSpamWindowSec);
 
-        // Media-type track — any media across channels (catches different GIFs)
-        if (mediaChannels >= mediaThreshold) {
-          const raid = hasRiskyUpload && recentJoin;
-          const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${raid ? ', new-member GIF upload' : ''})`;
-          if (canBan) recordBan(who.id, message.guildId!, reason);
-          await instantBan(message, reason, mod, [
-            `${mediaChannels} channels`,
-            hasRiskyUpload ? 'Direct-uploaded flagged type' : 'Mixed media',
-            recentJoin ? 'Recently joined' : 'Established member',
-          ], who);
-          return;
+          if (hasHoneypotRole(message, mod) && mod.honeypotMode !== 'off') {
+            if (mod.honeypotMode === 'strict' || mediaChannels >= 2) {
+              const reason = `Honeypot role + media (${mod.honeypotMode})`;
+              if (canBan) recordBan(who.id, message.guildId!, reason);
+              await instantBan(message, reason, mod, ['Honeypot/catcher role', `mode: ${mod.honeypotMode}`], who);
+              return;
+            }
+          }
+
+          if (sameChannels >= mod.mediaSpamSameChannels) {
+            const reason = `Repost spam (same media in ${sameChannels} channels / ${mod.mediaSpamWindowSec}s)`;
+            if (message.content) recordPattern(message.content, reason);
+            if (canBan) recordBan(who.id, message.guildId!, reason);
+            await instantBan(message, reason, mod, [`${sameChannels} channels`, 'Identical media'], who);
+            return;
+          }
+
+          const hasRiskyUpload = [...message.attachments.values()].some(
+            a => a.contentType != null && mod.largeMediaTypes.has(a.contentType.toLowerCase()),
+          );
+          const recentJoin = isRecentJoin(message.member?.joinedTimestamp);
+          const mediaThreshold = mediaRaidThreshold(mod.mediaSpamChannels, hasRiskyUpload, recentJoin);
+
+          if (mediaChannels >= mediaThreshold) {
+            const raid = hasRiskyUpload && recentJoin;
+            const reason = `Media spam (${mediaChannels} channels / ${mod.mediaSpamWindowSec}s${raid ? ', new-member GIF upload' : ''})`;
+            if (canBan) recordBan(who.id, message.guildId!, reason);
+            await instantBan(message, reason, mod, [
+              `${mediaChannels} channels`,
+              hasRiskyUpload ? 'Direct-uploaded flagged type' : 'Mixed media',
+              recentJoin ? 'Recently joined' : 'Established member',
+            ], who);
+            return;
+          }
+
+          if (imageAttachments.size >= 4 && !userHasRoles && isGibberish(message.content, false, hasImages)) {
+            await instantBan(message, 'Screenshot spam + gibberish', mod,
+              [`${imageAttachments.size} images`, 'No roles', 'Gibberish text'], who);
+            return;
+          }
         }
 
-        // Standalone single-message case: 4+ images + no roles + gibberish. Lower-
-        // confidence heuristic, so intentionally NOT written to the cross-server ban
-        // registry (no recordBan) — unlike the velocity tracks above.
-        if (imageAttachments.size >= 4 && !userHasRoles && isGibberish(message.content, false, hasImages)) {
-          await instantBan(message, 'Screenshot spam + gibberish', mod,
-            [`${imageAttachments.size} images`, 'No roles', 'Gibberish text'], who);
+        // ── Wallet scam scoring ──────────────────────────────────────────────
+        const [score, reasons] = calculateScamScore(message, mod);
+        if (score >= 100) {
+          recordPattern(message.content, `Wallet scam score ${score}`);
+          if (canBan) recordBan(who.id, message.guildId!, `Wallet scam score ${score}`);
+          await instantBan(message, `Wallet scam (score: ${score})`, mod, reasons, who);
           return;
         }
-      }
-
-      // ── Wallet scam scoring ────────────────────────────────────────────────
-      const [score, reasons] = calculateScamScore(message, mod);
-      if (score >= 100) {
-        recordPattern(message.content, `Wallet scam score ${score}`);
-        if (canBan) recordBan(who.id, message.guildId!, `Wallet scam score ${score}`);
-        await instantBan(message, `Wallet scam (score: ${score})`, mod, reasons, who);
-        return;
-      }
-      if (score >= 75) {
-        await message.delete().catch(() => null);
-        await alertAdmins(message.guild, message.member ?? message.author as any,
-          `Suspicious message (score: ${score})`, reasons, 'DELETED', mod);
-        return;
-      }
-
-      // ── Mention spam detection ─────────────────────────────────────────────
-      if (message.mentions) {
-        const [mentionScore, mentionReasons] = checkMentionSpam(message);
-        if (mentionScore >= 100) {
-          const r = `Mention spam (score: ${mentionScore})`;
-          recordPattern(message.content, r);
-          if (canBan) recordBan(who.id, message.guildId!, r);
-          await instantBan(message, r, mod, mentionReasons, who);
-          return;
-        }
-        if (mentionScore >= 50) {
+        if (score >= 75) {
           await message.delete().catch(() => null);
-          await alertAdmins(message.guild, message.member ?? message.author as any,
-            `Mention spam (score: ${mentionScore})`, mentionReasons, 'DELETED', mod);
+          await alertAdmins(message.guild, target,
+            `Suspicious message (score: ${score})`, reasons, 'DELETED', mod);
           return;
+        }
+
+        // ── Mention spam detection ───────────────────────────────────────────
+        if (message.mentions) {
+          const [mentionScore, mentionReasons] = checkMentionSpam(message);
+          if (mentionScore >= 100) {
+            const r = `Mention spam (score: ${mentionScore})`;
+            recordPattern(message.content, r);
+            if (canBan) recordBan(who.id, message.guildId!, r);
+            await instantBan(message, r, mod, mentionReasons, who);
+            return;
+          }
+          if (mentionScore >= 50) {
+            await message.delete().catch(() => null);
+            await alertAdmins(message.guild, target,
+              `Mention spam (score: ${mentionScore})`, mentionReasons, 'DELETED', mod);
+            return;
+          }
         }
       }
     }
@@ -242,7 +227,6 @@ export function registerMessageEvents(client: Client): void {
 
     const first = pngAttachments.first()!;
 
-    // PluralKit: wait briefly then confirm message still exists
     if (!message.webhookId) {
       await new Promise(r => setTimeout(r, 500));
       const stillThere = await message.channel.messages.fetch(message.id).catch(() => null);

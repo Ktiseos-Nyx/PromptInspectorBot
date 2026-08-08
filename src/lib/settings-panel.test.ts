@@ -179,5 +179,7 @@ describe('buildSettingsPanel', () => {
     const p = buildSettingsPanel(state as any, 'nonexistent' as Page);
     expect(p.embeds.length).toBe(1);
     expect(p.components.length).toBeGreaterThanOrEqual(1);
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:catcherRole');
   });
 });
