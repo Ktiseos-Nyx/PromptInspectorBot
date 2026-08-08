@@ -138,6 +138,8 @@ export function resolveModeration(
     )),
     largeMediaTypes: m.largeMediaTypes != null ? new Set(m.largeMediaTypes) : new Set(env.largeMediaTypes),
     honeypotMode: m.honeypotMode != null ? m.honeypotMode : env.honeypotMode,
+    gifSourceDomains: m.gifSourceDomains != null ? m.gifSourceDomains : env.gifSourceDomains,
+    blockedImageDomains: m.blockedImageDomains != null ? m.blockedImageDomains : env.blockedImageDomains,
   };
 }
 

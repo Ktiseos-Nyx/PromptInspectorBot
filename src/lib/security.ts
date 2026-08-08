@@ -3,7 +3,6 @@ import dns from 'dns';
 import net from 'net';
 import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors, PermissionFlagsBits, type Client } from 'discord.js';
 import type { ResolvedModConfig } from './settings-types';
-import { BLOCKED_IMAGE_DOMAINS } from './config';
 
 // ── Webhook author resolution (PluralKit / Tupperbox) ─────────────────────
 let bottieClient: Client | null = null;
@@ -461,7 +460,7 @@ function isPrivateIP(ip: string): boolean {
   return false;
 }
 
-async function resolveAndCheckURL(rawUrl: string): Promise<string | null> {
+async function resolveAndCheckURL(rawUrl: string, blockedDomains: string[]): Promise<string | null> {
   let host: string;
   try {
     host = new URL(rawUrl).hostname;
@@ -472,7 +471,7 @@ async function resolveAndCheckURL(rawUrl: string): Promise<string | null> {
   const lowerHost = host.toLowerCase();
 
   // Blocked domain check
-  for (const blocked of BLOCKED_IMAGE_DOMAINS) {
+  for (const blocked of blockedDomains) {
     if (lowerHost === blocked || lowerHost.endsWith(`.${blocked}`)) {
       return `Blocked domain: ${host}`;
     }
@@ -495,12 +494,12 @@ async function resolveAndCheckURL(rawUrl: string): Promise<string | null> {
 
 // ── Embed URL magic bytes check ───────────────────────────────────────────────
 
-export async function checkEmbedImages(message: Message): Promise<string | null> {
+export async function checkEmbedImages(message: Message, blockedDomains: string[]): Promise<string | null> {
   for (const embed of message.embeds) {
     const url = embed.image?.url ?? embed.thumbnail?.url;
     if (!url) continue;
 
-    const ssrfReason = await resolveAndCheckURL(url);
+    const ssrfReason = await resolveAndCheckURL(url, blockedDomains);
     if (ssrfReason) return ssrfReason;
 
     try {

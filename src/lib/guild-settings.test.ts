@@ -60,6 +60,8 @@ const ENV: EnvModDefaults = {
   mediaSpamWindowSec: 120,
   largeMediaTypes: new Set(['image/gif']),
   honeypotMode: 'crosspost',
+  gifSourceDomains: [],
+  blockedImageDomains: [],
 };
 
 describe('resolveModeration', () => {
@@ -150,6 +152,8 @@ describe('getModeration', () => {
       mediaSpamWindowSec: 120,
       largeMediaTypes: new Set(['image/gif']),
       honeypotMode: 'crosspost',
+      gifSourceDomains: [],
+      blockedImageDomains: [],
     };
     setModerationField('g1', 'alertChannelId', 'guild-alert');
     const r = getModeration('g1', env);
@@ -170,6 +174,8 @@ describe('resolveModeration — media-spam fields', () => {
     mediaSpamWindowSec: 120,
     largeMediaTypes: new Set(['image/gif']),
     honeypotMode: 'crosspost',
+    gifSourceDomains: [],
+    blockedImageDomains: [],
   };
 
   it('falls back to env defaults when unset', () => {

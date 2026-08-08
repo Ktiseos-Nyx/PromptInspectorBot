@@ -81,7 +81,7 @@ export const BLOCKED_IMAGE_DOMAINS = new Set(
 
 export const ENV_MOD_DEFAULTS: EnvModDefaults = {
   alertChannelIds: ADMIN_CHANNEL_IDS,
-  trustedRoleIds: new Set<string>(), // no env var for trusted roles — per-guild only
+  trustedRoleIds: new Set<string>(),
   trustedUserIds: TRUSTED_USER_IDS,
   monitoredChannelIds: MONITORED_CHANNEL_IDS,
   catcherRoleId: CATCHER_ROLE_ID || null,
@@ -90,6 +90,8 @@ export const ENV_MOD_DEFAULTS: EnvModDefaults = {
   mediaSpamWindowSec: MEDIA_SPAM_WINDOW_SEC,
   largeMediaTypes: LARGE_MEDIA_TYPES,
   honeypotMode: HONEYPOT_MODE,
+  gifSourceDomains: GIF_SOURCE_DOMAINS,
+  blockedImageDomains: [...BLOCKED_IMAGE_DOMAINS],
 };
 
 // ── Gemini ────────────────────────────────────────────────────────────────────

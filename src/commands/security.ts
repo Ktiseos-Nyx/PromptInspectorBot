@@ -30,6 +30,10 @@ export const securityCommand = {
     .addSubcommand(s => s.setName('untrust').setDescription('Remove a user/bot or role from the trusted list')
       .addUserOption(o => o.setName('user').setDescription('User or bot to untrust'))
       .addRoleOption(o => o.setName('role').setDescription('Role to untrust')))
+    .addSubcommand(s => s.setName('gifsource').setDescription('Domains treated as GIF sources for media velocity (CSV, default tenor.com,giphy.com,imgur.com,etc.)')
+      .addStringOption(o => o.setName('domains').setDescription('CSV of domain names (lowercase). Use "reset" to clear.')))
+    .addSubcommand(s => s.setName('blockedimages').setDescription('Domains blocked in embed image URLs (CSV, attack surfaces to block)')
+      .addStringOption(o => o.setName('domains').setDescription('CSV of domain names (lowercase). Use "reset" to clear.')))
     .addSubcommand(s => s.setName('show').setDescription('Show the current resolved config')),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -88,6 +92,20 @@ export const securityCommand = {
         if (sub === 'trust') set.add(role.id); else set.delete(role.id);
         setModerationField(guildId, 'trustedRoleIds', [...set]);
       }
+    } else if (sub === 'gifsource') {
+      const domains = interaction.options.getString('domains');
+      if (domains === 'reset') {
+        setModerationField(guildId, 'gifSourceDomains', null);
+      } else if (domains != null) {
+        setModerationField(guildId, 'gifSourceDomains', domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean));
+      }
+    } else if (sub === 'blockedimages') {
+      const domains = interaction.options.getString('domains');
+      if (domains === 'reset') {
+        setModerationField(guildId, 'blockedImageDomains', null);
+      } else if (domains != null) {
+        setModerationField(guildId, 'blockedImageDomains', domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean));
+      }
     }
 
     const r = getModeration(guildId, ENV_MOD_DEFAULTS);
@@ -105,6 +123,8 @@ export const securityCommand = {
         `• honeypot mode: **${r.honeypotMode}**`,
         `• trusted users/bots: ${trustedUsers}`,
         `• trusted roles: ${trustedRoles}`,
+        `• GIF source domains: [${r.gifSourceDomains.join(', ') || 'none'}]`,
+        `• blocked image domains: [${r.blockedImageDomains.join(', ') || 'none'}]`,
       ].join('\n'),
     });
   },

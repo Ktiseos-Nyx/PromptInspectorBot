@@ -1,7 +1,7 @@
 import { Events, Message, DMChannel, type Client } from 'discord.js';
 import { extractMetadataFromBuffer } from '../lib/metadata';
 import { addToCache } from '../lib/cache';
-import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS, GIF_SOURCE_DOMAINS } from '../lib/config';
+import { SCAN_LIMIT_BYTES, DM_ALLOWED_USER_IDS, DM_RESPONSE_MESSAGE, ENV_MOD_DEFAULTS } from '../lib/config';
 import { getGuildSetting, getModeration } from '../lib/guild-settings';
 import { trackMessage, checkCrossPosting, isGibberish, calculateScamScore, detectDisguisedExecutable, checkEmbedImages, algoSpeakScore, instantBan, alertAdmins, isTrustedResolved, isMediaMessage, hasHoneypotRole, checkMediaVelocity, checkMentionSpam, isRecentJoin, mediaRaidThreshold, effectiveAuthor, type AuthorResolution } from '../lib/security';
 import { isUserBanned, isPatternBanned, recordBan, recordPattern, checkWordPatterns } from '../lib/ban-registry';
@@ -88,12 +88,12 @@ export function registerMessageEvents(client: Client): void {
           }
         }
 
-        trackMessage(message, GIF_SOURCE_DOMAINS);
+        trackMessage(message, mod.gifSourceDomains);
 
         const userHasRoles = (message.member?.roles.cache.size ?? 1) > 1;
         const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));
         const hasImages = imageAttachments.size > 0;
-        const isMedia = isMediaMessage(message, GIF_SOURCE_DOMAINS);
+        const isMedia = isMediaMessage(message, mod.gifSourceDomains);
 
         // ── Magic bytes — attachments ────────────────────────────────────────
         if (hasImages) {
@@ -112,7 +112,7 @@ export function registerMessageEvents(client: Client): void {
 
         // ── Magic bytes — embeds ─────────────────────────────────────────────
         if (message.embeds.length > 0) {
-          const embedReason = await checkEmbedImages(message);
+          const embedReason = await checkEmbedImages(message, mod.blockedImageDomains);
           if (embedReason) {
             await instantBan(message, `Malicious embed: ${embedReason}`, mod, [], who);
             return;

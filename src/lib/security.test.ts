@@ -21,6 +21,8 @@ function cfg(over: Partial<ResolvedModConfig> = {}): ResolvedModConfig {
     mediaSpamWindowSec: 120,
     largeMediaTypes: new Set(['image/gif']),
     honeypotMode: 'crosspost',
+    gifSourceDomains: [],
+    blockedImageDomains: [],
     ...over,
   };
 }

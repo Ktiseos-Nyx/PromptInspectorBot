@@ -11,6 +11,8 @@ export interface GuildModeration {
   mediaSpamWindowSec: number | null;
   largeMediaTypes: string[] | null;
   honeypotMode: 'off' | 'crosspost' | 'strict' | null;
+  gifSourceDomains: string[] | null;
+  blockedImageDomains: string[] | null;
 }
 
 // One guild's full entry.
@@ -31,6 +33,8 @@ export interface ResolvedModConfig {
   mediaSpamWindowSec: number;
   largeMediaTypes: Set<string>;
   honeypotMode: 'off' | 'crosspost' | 'strict';
+  gifSourceDomains: string[];
+  blockedImageDomains: string[];
 }
 
 // Global env baseline used when a guild has not overridden a field.
