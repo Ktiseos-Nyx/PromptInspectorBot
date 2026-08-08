@@ -9,8 +9,9 @@ import { BLOCKED_IMAGE_DOMAINS } from './config';
 let bottieClient: Client | null = null;
 export function setClient(client: Client): void { bottieClient = client; }
 
-const KNOWN_PROXY_BOT_IDS = new Set(['466378653216014359', '431544605209788416']);
-// PluralKit                                ^^^^^^^^^^^^^^^^^^  Tupperbox ^^^^^^^^^^^^^^^^^^
+export const PLURALKIT_APP_ID = '466378653216014359';
+const TUPPERBOX_APP_ID = '431544605209788416';
+const KNOWN_PROXY_BOT_IDS = new Set([PLURALKIT_APP_ID, TUPPERBOX_APP_ID]);
 
 export type AuthorResolution =
   | { kind: 'user'; id: string; member: GuildMember | null }
@@ -51,10 +52,38 @@ async function verifyWebhookApp(webhookId: string): Promise<string | null> {
   return appId;
 }
 
+// PluralKit message lookup — authoritative Discord user ID from PK's public
+// API. Cached per messageId (10 min TTL) since PK messages are immutable.
+const pkMessageCache = new Map<string, { discordId: string | null; at: number }>();
+const PK_CACHE_TTL_MS = 10 * 60 * 1000;
+const PK_CACHE_MAX = 2000;
+
+async function lookupPluralKitAuthor(messageId: string): Promise<string | null> {
+  const hit = pkMessageCache.get(messageId);
+  if (hit && Date.now() - hit.at < PK_CACHE_TTL_MS) return hit.discordId;
+  let discordId: string | null = null;
+  try {
+    const res = await fetch(`https://api.pluralkit.me/v2/messages/${messageId}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { sender?: string };
+      discordId = data.sender ?? null;
+    }
+  } catch { /* PK API unreachable or timeout */ }
+  pkMessageCache.set(messageId, { discordId, at: Date.now() });
+  if (pkMessageCache.size > PK_CACHE_MAX) {
+    const oldest = pkMessageCache.keys().next().value;
+    if (oldest) pkMessageCache.delete(oldest);
+  }
+  return discordId;
+}
+
 // NOTE: resolveWebhookAuthor verifies the webhook *application* (PluralKit /
-// Tupperbox), then resolves to a GuildMember via display-name/username
-// matching from the member cache. This is NOT an authenticated mapping — a
-// user can set their proxy display-name to match any server member. The
+// Tupperbox), then resolves to a GuildMember. For PluralKit the resolution is
+// authoritative (PK's public API provides the original sender's Discord user
+// ID). For Tupperbox the resolution is name-based (display-name/username
+// matching from the member cache) and is NOT an authenticated mapping — the
 // resolved identity MUST NOT be used for permission-based trust or ban
 // targeting. Use `isTrustedResolved` and `effectiveAuthor` which enforce
 // this constraint.
@@ -66,6 +95,21 @@ export async function resolveWebhookAuthor(
 
   const appId = await verifyWebhookApp(message.webhookId);
   if (!appId || !KNOWN_PROXY_BOT_IDS.has(appId)) return null;
+
+  // PluralKit — authoritative lookup via PK's public API
+  if (appId === PLURALKIT_APP_ID) {
+    const discordId = await lookupPluralKitAuthor(message.id);
+    if (discordId) {
+      let member = message.guild.members.cache.get(discordId);
+      if (!member) {
+        try { member = await message.guild.members.fetch(discordId); } catch { /* not in server */ }
+      }
+      if (member) return { id: discordId, member };
+    }
+    // PK API failed — fall through to name-matching below
+  }
+
+  // Tupperbox (or PK fallback): name-based matching
 
   const name = message.author.username;
   const baseName = name

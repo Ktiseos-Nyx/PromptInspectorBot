@@ -3,7 +3,7 @@ import {
   isTrusted, isTrustedResolved, calculateScamScore, algoSpeakScore,
   detectDisguisedExecutable, isGifLink, isMediaMessage, hasHoneypotRole,
   trackMessage, checkMediaVelocity, isRecentJoin, mediaRaidThreshold,
-  effectiveAuthor, setClient,
+  effectiveAuthor, setClient, PLURALKIT_APP_ID,
   type AuthorResolution,
 } from './security';
 import { PermissionFlagsBits, Collection } from 'discord.js';
@@ -229,8 +229,12 @@ describe('effectiveAuthor', () => {
     expect(who.member).toBeNull();
   });
 
-  it('returns proxy_webhook for verified PluralKit/Tupperbox webhook', async () => {
-    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: '466378653216014359' });
+  it('returns proxy_webhook via PK API for verified PluralKit webhook', async () => {
+    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: PLURALKIT_APP_ID });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sender: 'aliceId' }),
+    }));
     setClient({ fetchWebhook } as any);
     try {
       const m = whMsg();
@@ -241,11 +245,46 @@ describe('effectiveAuthor', () => {
       expect(fetchWebhook).toHaveBeenCalledTimes(1);
     } finally {
       setClient(null as any);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('falls back to name-matching when PK API is unreachable', async () => {
+    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: PLURALKIT_APP_ID });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
+    setClient({ fetchWebhook } as any);
+    try {
+      const m = whMsg();
+      const who = await effectiveAuthor(m);
+      expect(who.kind).toBe('proxy_webhook');
+      if (who.kind !== 'proxy_webhook') throw new Error('expected proxy_webhook kind');
+      expect(who.id).toBe('aliceId');
+    } finally {
+      setClient(null as any);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('returns unknown_webhook when PK API fails and name-matching has no match', async () => {
+    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: PLURALKIT_APP_ID });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
+    setClient({ fetchWebhook } as any);
+    try {
+      const m = whMsg({ author: { id: 'wh', username: 'NoMatch' }, guild: { ownerId: 'owner', members: { cache: new Collection() } } });
+      const who = await effectiveAuthor(m);
+      expect(who.kind).toBe('unknown_webhook');
+    } finally {
+      setClient(null as any);
+      vi.unstubAllGlobals();
     }
   });
 
   it('caches webhook verification so second call reuses fetchWebhook result', async () => {
-    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: '466378653216014359' });
+    const fetchWebhook = vi.fn().mockResolvedValue({ applicationId: PLURALKIT_APP_ID });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sender: 'aliceId' }),
+    }));
     setClient({ fetchWebhook } as any);
     try {
       const m = whMsg({ webhookId: 'whCacheTest' });
@@ -254,6 +293,7 @@ describe('effectiveAuthor', () => {
       expect(fetchWebhook).toHaveBeenCalledTimes(1);
     } finally {
       setClient(null as any);
+      vi.unstubAllGlobals();
     }
   });
 });
