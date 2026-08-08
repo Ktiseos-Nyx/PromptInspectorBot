@@ -1,11 +1,134 @@
 import crypto from 'crypto';
 import dns from 'dns';
 import net from 'net';
-import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors, PermissionFlagsBits } from 'discord.js';
+import { Message, GuildMember, Guild, TextChannel, EmbedBuilder, Colors, PermissionFlagsBits, type Client } from 'discord.js';
 import type { ResolvedModConfig } from './settings-types';
 import { BLOCKED_IMAGE_DOMAINS } from './config';
 
-// ── Cross-post tracking ───────────────────────────────────────────────────────
+// ── Webhook author resolution (PluralKit / Tupperbox) ─────────────────────
+let bottieClient: Client | null = null;
+export function setClient(client: Client): void { bottieClient = client; }
+
+export const PLURALKIT_APP_ID = '466378653216014359';
+const TUPPERBOX_APP_ID = '431544605209788416';
+const KNOWN_PROXY_BOT_IDS = new Set([PLURALKIT_APP_ID, TUPPERBOX_APP_ID]);
+
+export type AuthorResolution =
+  | { kind: 'user'; id: string; member: GuildMember | null }
+  | { kind: 'proxy_webhook'; id: string; member: GuildMember }
+  | { kind: 'unknown_webhook' };
+
+// Cache webhookId→appId verification so both isTrusted and effectiveAuthor
+// reuse one fetchWebhook call per webhook (avoiding two REST calls per
+// proxied message). Bounded to WEBHOOK_CACHE_MAX entries, TTL of 1 hour.
+const webhookVerifyCache = new Map<string, { appId: string | null; at: number }>();
+const WEBHOOK_CACHE_TTL_MS = 60 * 60 * 1000;
+const WEBHOOK_CACHE_MAX = 500;
+
+async function verifyWebhookApp(webhookId: string): Promise<string | null> {
+  const hit = webhookVerifyCache.get(webhookId);
+  if (hit && Date.now() - hit.at < WEBHOOK_CACHE_TTL_MS) return hit.appId;
+  if (!bottieClient) return null;
+  let appId: string | null = null;
+  let cacheable = true;
+  try {
+    const webhook = await bottieClient.fetchWebhook(webhookId);
+    appId = webhook.applicationId ?? null;
+  } catch (e: any) {
+    // Cache definitive API responses (unknown webhook 10015, missing
+    // permissions 50013). Skip transient errors (network failure, 5xx,
+    // rate-limit) so the next message retries fresh.
+    if (typeof e?.code !== 'number' || e?.status >= 500) {
+      cacheable = false;
+    }
+  }
+  if (cacheable) {
+    webhookVerifyCache.set(webhookId, { appId, at: Date.now() });
+    if (webhookVerifyCache.size > WEBHOOK_CACHE_MAX) {
+      const oldest = webhookVerifyCache.keys().next().value;
+      if (oldest) webhookVerifyCache.delete(oldest);
+    }
+  }
+  return appId;
+}
+
+// PluralKit message lookup — authoritative Discord user ID from PK's public
+// API. Cached per messageId (10 min TTL) since PK messages are immutable.
+const pkMessageCache = new Map<string, { discordId: string | null; at: number }>();
+const PK_CACHE_TTL_MS = 10 * 60 * 1000;
+const PK_CACHE_MAX = 2000;
+
+async function lookupPluralKitAuthor(messageId: string): Promise<string | null> {
+  const hit = pkMessageCache.get(messageId);
+  if (hit && Date.now() - hit.at < PK_CACHE_TTL_MS) return hit.discordId;
+  let discordId: string | null = null;
+  try {
+    const res = await fetch(`https://api.pluralkit.me/v2/messages/${messageId}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { sender?: string };
+      discordId = data.sender ?? null;
+    }
+  } catch { /* PK API unreachable or timeout */ }
+  pkMessageCache.set(messageId, { discordId, at: Date.now() });
+  if (pkMessageCache.size > PK_CACHE_MAX) {
+    const oldest = pkMessageCache.keys().next().value;
+    if (oldest) pkMessageCache.delete(oldest);
+  }
+  return discordId;
+}
+
+// NOTE: resolveWebhookAuthor verifies the webhook *application* (PluralKit /
+// Tupperbox), then resolves to a GuildMember. For PluralKit the resolution is
+// authoritative (PK's public API provides the original sender's Discord user
+// ID). For Tupperbox the resolution is name-based (display-name/username
+// matching from the member cache) and is NOT an authenticated mapping — the
+// resolved identity MUST NOT be used for permission-based trust or ban
+// targeting. Use `isTrustedResolved` and `effectiveAuthor` which enforce
+// this constraint.
+export async function resolveWebhookAuthor(
+  message: Message,
+): Promise<{ id: string; member: GuildMember } | null> {
+  if (!message.webhookId || !message.guild) return null;
+  if (!message.author.username) return null;
+
+  const appId = await verifyWebhookApp(message.webhookId);
+  if (!appId || !KNOWN_PROXY_BOT_IDS.has(appId)) return null;
+
+  // PluralKit — authoritative lookup via PK's public API
+  if (appId === PLURALKIT_APP_ID) {
+    const discordId = await lookupPluralKitAuthor(message.id);
+    if (discordId) {
+      let member = message.guild.members.cache.get(discordId);
+      if (!member) {
+        try { member = await message.guild.members.fetch(discordId); } catch { /* not in server */ }
+      }
+      if (member) return { id: discordId, member };
+    }
+    // PK API failed — fall through to name-matching below
+  }
+
+  // Tupperbox (or PK fallback): name-based matching
+
+  const name = message.author.username;
+  const baseName = name
+    .replace(/\s*\([a-z0-9]{5}\)$/, '')
+    .replace(/\s*\[.+?\]$/, '')
+    .trim();
+
+  if (!baseName) return null;
+
+  const matches = message.guild.members.cache.filter(
+    m => m.displayName === name || m.displayName === baseName
+      || m.user.username === name || m.user.username === baseName,
+  );
+
+  if (matches.size !== 1) return null;
+
+  const member = matches.first()!;
+  return { id: member.id, member };
+}
 
 interface TrackedMessage { fingerprint: string; channelId: string; timestamp: number; isMedia: boolean; }
 const userMessages = new Map<string, TrackedMessage[]>();
@@ -243,27 +366,43 @@ export async function alertAdmins(
 
 // ── Instant ban ───────────────────────────────────────────────────────────────
 
-export async function instantBan(message: Message, reason: string, cfg: ResolvedModConfig, details: string[] = []): Promise<void> {
-  console.error(`🚨 BAN: ${message.author.tag} (${message.author.id}) — ${reason}`);
+export async function instantBan(
+  message: Message, reason: string, cfg: ResolvedModConfig,
+  details: string[] = [],
+  who?: AuthorResolution,
+): Promise<void> {
   if (!message.guild) return;
+
+  if (who?.kind === 'unknown_webhook' || who?.kind === 'proxy_webhook') {
+    await message.delete().catch(() => null);
+    const label = who?.kind === 'proxy_webhook' ? 'Name-resolved proxy webhook' : 'Unresolvable webhook';
+    await alertAdmins(message.guild, message.author,
+      reason, [...details, `${label} — not banning`], 'DELETED', cfg);
+    return;
+  }
+
+  const targetId = who?.id ?? message.author.id;
+  const targetMember = (who?.member ?? message.member ?? message.author) as GuildMember | typeof message.author;
+
+  console.error(`🚨 BAN: ${targetMember instanceof GuildMember ? targetMember.user.tag : (targetMember as any).tag} (${targetId}) — ${reason}`);
 
   const me = message.guild.members.me;
   if (!me || !me.permissions.has(PermissionFlagsBits.BanMembers)) {
-    await alertAdmins(message.guild, message.member ?? message.author as any,
+    await alertAdmins(message.guild, targetMember as any,
       reason, [...details, 'Bot missing BAN_MEMBERS permission'], 'FAILED', cfg);
     return;
   }
 
   try {
     await message.delete().catch(() => null);
-    await message.guild.members.ban(message.author.id, {
+    await message.guild.members.ban(targetId, {
       reason: `Auto-ban: ${reason} | ${details.slice(0, 3).join(', ')}`,
       deleteMessageSeconds: 300,
     });
-    await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'BANNED', cfg);
+    await alertAdmins(message.guild, targetMember as any, reason, details, 'BANNED', cfg);
   } catch (e) {
     console.error('Ban failed:', e);
-    if (message.guild) await alertAdmins(message.guild, message.member ?? message.author as any, reason, details, 'FAILED', cfg);
+    if (message.guild) await alertAdmins(message.guild, targetMember as any, reason, details, 'FAILED', cfg);
   }
 }
 
@@ -411,20 +550,54 @@ export function hasHoneypotRole(message: Message, cfg: ResolvedModConfig): boole
   return message.member?.roles?.cache?.has(cfg.catcherRoleId) ?? false;
 }
 
-export function isTrusted(message: Message, cfg: ResolvedModConfig): boolean {
-  if (cfg.trustedUserIds.has(message.author.id)) return true;
-  if (message.guild && message.author.id === message.guild.ownerId) return true;
+// isTrustedResolved — caller already resolved effectiveAuthor, so no duplicate
+// fetchWebhook. Permission bypass only applies to Discord-authenticated
+// members (kind === 'user'), not to name-resolved proxy webhooks.
+export function isTrustedResolved(
+  who: AuthorResolution, message: Message, cfg: ResolvedModConfig,
+): boolean {
+  const userId = who.kind === 'unknown_webhook' ? message.author.id : who.id;
+
+  if (cfg.trustedUserIds.has(userId)) return true;
+  if (message.guild && userId === message.guild.ownerId) return true;
+
+  // Staff-permission bypass — only for Discord-authenticated messages,
+  // NEVER for name-resolved proxy webhooks (see resolveWebhookAuthor note).
+  if (who.kind === 'user' && who.member) {
+    const perms = who.member.permissions;
+    if (perms?.has(PermissionFlagsBits.Administrator)) return true;
+    if (perms?.has(PermissionFlagsBits.ManageMessages)) return true;
+    if (perms?.has(PermissionFlagsBits.ManageGuild)) return true;
+  }
+
   if (cfg.trustedRoleIds.size) {
-    // message.member is null for webhook/interaction bot messages (e.g. Carlbot),
-    // so a trusted role would never match. Fall back to the guild's member cache
-    // (cache-only — no fetch, keeps this synchronous) so a trusted role can still
-    // exempt a bot that is already a known guild member.
-    const roles =
-      message.member?.roles?.cache ??
-      message.guild?.members?.cache?.get(message.author.id)?.roles?.cache;
+    const member = who.kind === 'user'
+      ? (who.member ?? message.guild?.members?.cache?.get(userId))
+      : message.guild?.members?.cache?.get(userId);
+    const roles = member?.roles?.cache;
     if (roles) {
       for (const roleId of cfg.trustedRoleIds) if (roles.has(roleId)) return true;
     }
   }
+
   return false;
+}
+
+// Backward-compatible async wrapper — resolves the author internally and then
+// delegates to isTrustedResolved. Prefer isTrustedResolved when the caller
+// already has an AuthorResolution (e.g. after effectiveAuthor) to avoid
+// double fetchWebhook.
+export async function isTrusted(message: Message, cfg: ResolvedModConfig): Promise<boolean> {
+  const who = await effectiveAuthor(message);
+  return isTrustedResolved(who, message, cfg);
+}
+
+// effectiveAuthor never returns null — every branch produces a resolution.
+export async function effectiveAuthor(message: Message): Promise<AuthorResolution> {
+  if (message.webhookId) {
+    const resolved = await resolveWebhookAuthor(message);
+    if (resolved) return { kind: 'proxy_webhook', id: resolved.id, member: resolved.member };
+    return { kind: 'unknown_webhook' };
+  }
+  return { kind: 'user', id: message.author.id, member: message.member ?? null };
 }

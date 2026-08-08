@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import {
-  AI_FEATURES, FUN_FEATURES, applyToggleSelection, buildSettingsPanel,
-  TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX,
-} from './settings-panel';
+import { buildSettingsPanel, type Page } from '../panels/index';
+import { applyToggleSelection, TRUSTED_USERS_MAX, TRUSTED_ROLES_MAX, navRow, fmtChannel, fmtRoles, fmtChannels, fmtUsers } from '../panels/shared';
+import { AI_FEATURES } from '../panels/ai';
+import { FUN_FEATURES } from '../panels/fun';
 
 describe('feature tiers', () => {
   it('keeps metadata in the AI tier and not in Fun', () => {
@@ -26,7 +26,73 @@ describe('applyToggleSelection', () => {
   it('does not touch features outside the tier', () => {
     const current = { fun_commands: true, ask: true };
     const next = applyToggleSelection(current, AI_FEATURES, []);
-    expect(next.fun_commands).toBe(true); // fun tier untouched
+    expect(next.fun_commands).toBe(true);
+  });
+});
+
+describe('formatting helpers', () => {
+  it('fmtChannel returns mention with set id', () => {
+    expect(fmtChannel('c123')).toBe('<#c123>');
+  });
+  it('fmtChannel returns placeholder for undefined/null', () => {
+    expect(fmtChannel(undefined)).toBe('*(not set)*');
+    expect(fmtChannel(null)).toBe('*(not set)*');
+  });
+  it('fmtRoles returns mentions for IDs', () => {
+    expect(fmtRoles(['r1', 'r2'])).toBe('<@&r1> <@&r2>');
+  });
+  it('fmtRoles returns placeholder for empty/undefined/null', () => {
+    expect(fmtRoles([])).toBe('*(none)*');
+    expect(fmtRoles(undefined)).toBe('*(none)*');
+    expect(fmtRoles(null)).toBe('*(none)*');
+  });
+  it('fmtChannels returns mentions for IDs', () => {
+    expect(fmtChannels(['c1', 'c2'])).toBe('<#c1> <#c2>');
+  });
+  it('fmtChannels returns placeholder for empty/undefined/null', () => {
+    expect(fmtChannels([])).toBe('*(all)*');
+    expect(fmtChannels(undefined)).toBe('*(all)*');
+    expect(fmtChannels(null)).toBe('*(all)*');
+  });
+  it('fmtUsers returns mentions for IDs', () => {
+    expect(fmtUsers(['u1', 'u2'])).toBe('<@u1> <@u2>');
+  });
+  it('fmtUsers returns placeholder for empty/undefined/null', () => {
+    expect(fmtUsers([])).toBe('*(none)*');
+    expect(fmtUsers(undefined)).toBe('*(none)*');
+    expect(fmtUsers(null)).toBe('*(none)*');
+  });
+});
+
+describe('navRow', () => {
+  it('exposes four pages plus the anti-scam toggle', () => {
+    const nav = navRow('moderation', true).toJSON() as any;
+    const ids = nav.components.map((c: any) => c.custom_id);
+    expect(ids).toEqual([
+      'settings:nav:moderation', 'settings:nav:ai', 'settings:nav:fun', 'settings:nav:trust', 'settings:toggle:security',
+    ]);
+  });
+  it('sets active page button to primary style', () => {
+    const nav = navRow('ai', true).toJSON() as any;
+    const aiBtn = nav.components.find((c: any) => c.custom_id === 'settings:nav:ai');
+    expect(aiBtn.style).toBe(1); // ButtonStyle.Primary
+  });
+  it('sets inactive page button to secondary style', () => {
+    const nav = navRow('ai', true).toJSON() as any;
+    const modBtn = nav.components.find((c: any) => c.custom_id === 'settings:nav:moderation');
+    expect(modBtn.style).toBe(2); // ButtonStyle.Secondary
+  });
+  it('shows anti-scam ON with success style when enabled', () => {
+    const nav = navRow('moderation', true).toJSON() as any;
+    const secBtn = nav.components.find((c: any) => c.custom_id === 'settings:toggle:security');
+    expect(secBtn.label).toBe('Anti-scam: ON');
+    expect(secBtn.style).toBe(3); // ButtonStyle.Success
+  });
+  it('shows anti-scam OFF with danger style when disabled', () => {
+    const nav = navRow('moderation', false).toJSON() as any;
+    const secBtn = nav.components.find((c: any) => c.custom_id === 'settings:toggle:security');
+    expect(secBtn.label).toBe('Anti-scam: OFF');
+    expect(secBtn.style).toBe(4); // ButtonStyle.Danger
   });
 });
 
@@ -46,6 +112,10 @@ describe('buildSettingsPanel', () => {
   });
   it('ai page stays within the 5-row limit', () => {
     const p = buildSettingsPanel(state as any, 'ai');
+    expect(p.components.length).toBeLessThanOrEqual(5);
+  });
+  it('fun page stays within the 5-row limit', () => {
+    const p = buildSettingsPanel(state as any, 'fun');
     expect(p.components.length).toBeLessThanOrEqual(5);
   });
   it('nav row exposes four pages plus the anti-scam toggle', () => {
@@ -90,5 +160,92 @@ describe('buildSettingsPanel', () => {
     expect(p.components.length).toBeLessThanOrEqual(5);
     const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
     expect(ids).toContain('settings:catcherRole');
+  });
+  it('ai page includes AI_FEATURES as select menu options', () => {
+    const p = buildSettingsPanel(state as any, 'ai');
+    const comps = p.components.flatMap(r => (r as any).toJSON().components);
+    const sel = comps.find((c: any) => c.custom_id === 'settings:tier:ai');
+    expect(sel.options.map((o: any) => o.value)).toEqual(AI_FEATURES.map(f => f.value));
+    expect(sel.max_values).toBe(AI_FEATURES.length);
+  });
+  it('fun page includes FUN_FEATURES as select menu options', () => {
+    const p = buildSettingsPanel(state as any, 'fun');
+    const comps = p.components.flatMap(r => (r as any).toJSON().components);
+    const sel = comps.find((c: any) => c.custom_id === 'settings:tier:fun');
+    expect(sel.options.map((o: any) => o.value)).toEqual(FUN_FEATURES.map(f => f.value));
+    expect(sel.max_values).toBe(FUN_FEATURES.length);
+  });
+  it('defaults to moderation panel for unknown page type (safety net)', () => {
+    const p = buildSettingsPanel(state as any, 'nonexistent' as Page);
+    expect(p.embeds.length).toBe(1);
+    expect(p.components.length).toBeGreaterThanOrEqual(1);
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:catcherRole');
+  });
+
+  it('routes moderation page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'moderation');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:alertChannel');
+    expect(ids).toContain('settings:monitoredChannels');
+  });
+
+  it('routes ai page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'ai');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:tier:ai');
+  });
+
+  it('routes fun page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'fun');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:tier:fun');
+  });
+
+  it('routes trust page to its panel builder', () => {
+    const p = buildSettingsPanel({ toggles: {}, moderation: {} } as any, 'trust');
+    const ids = p.components.flatMap(r => (r as any).toJSON().components.map((c: any) => c.custom_id));
+    expect(ids).toContain('settings:trustedRoles');
+    expect(ids).toContain('settings:trustedUsers');
+  });
+
+  it('moderation page shows anti-scam status text', () => {
+    const p = buildSettingsPanel({ toggles: { security: true }, moderation: {} } as any, 'moderation');
+    expect((p.embeds[0] as any).data.description).toContain('✅ **Anti-scam protection**');
+  });
+
+  it('moderation page shows disabled anti-scam text when security is off', () => {
+    const p = buildSettingsPanel({ toggles: { security: false }, moderation: {} } as any, 'moderation');
+    expect((p.embeds[0] as any).data.description).toContain('❌ **Anti-scam protection**');
+  });
+
+  it('trust page shows trusted-entity rendering', () => {
+    const s = { toggles: { security: true }, moderation: { trustedRoleIds: ['r1'], trustedUserIds: ['u1'] } };
+    const p = buildSettingsPanel(s as any, 'trust');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('<@&r1>');
+    expect(desc).toContain('<@u1>');
+  });
+
+  it('trust page shows placeholder when no trusted entities configured', () => {
+    const p = buildSettingsPanel({ toggles: { security: true }, moderation: {} } as any, 'trust');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('*(none)*');
+  });
+
+  it('ai page shows feature status text with emoji indicators', () => {
+    const s = { toggles: { metadata: true, ask: false }, moderation: {} };
+    const p = buildSettingsPanel(s as any, 'ai');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('✅ Metadata extraction');
+    expect(desc).toContain('❌ AI chat');
+  });
+
+  it('fun page shows feature status text with emoji indicators', () => {
+    const s = { toggles: { fun_commands: true, qotd: false }, moderation: {} };
+    const p = buildSettingsPanel(s as any, 'fun');
+    const desc = (p.embeds[0] as any).data.description;
+    expect(desc).toContain('✅ Fun commands');
+    expect(desc).toContain('❌ Question of the day');
   });
 });

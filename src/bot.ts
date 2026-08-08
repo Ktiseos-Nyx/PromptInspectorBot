@@ -1,8 +1,9 @@
 import 'dotenv/config';
-import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, Events } from 'discord.js';
 import { registerEvents } from './events';
 import { registerCommands } from './commands';
 import { startScheduler, stopScheduler } from './lib/scheduler';
+import { setClient } from './lib/security';
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -19,8 +20,10 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages,
   ],
+  partials: [Partials.Channel],
 });
 
+setClient(client);
 registerEvents(client);
 registerCommands(client);
 
