@@ -31,9 +31,9 @@ export const securityCommand = {
       .addUserOption(o => o.setName('user').setDescription('User or bot to untrust'))
       .addRoleOption(o => o.setName('role').setDescription('Role to untrust')))
     .addSubcommand(s => s.setName('gifsource').setDescription('Domains treated as GIF sources for media velocity (CSV, default tenor.com,giphy.com,imgur.com,etc.)')
-      .addStringOption(o => o.setName('domains').setDescription('CSV of domain names (lowercase). Use "reset" to clear.')))
+      .addStringOption(o => o.setName('domains').setDescription('CSV of domain names (lowercase). Use "clear" to disable, "default" to inherit env.')))
     .addSubcommand(s => s.setName('blockedimages').setDescription('Domains blocked in embed image URLs (CSV, attack surfaces to block)')
-      .addStringOption(o => o.setName('domains').setDescription('CSV of domain names (lowercase). Use "reset" to clear.')))
+      .addStringOption(o => o.setName('domains').setDescription('CSV of domain names (lowercase). Use "clear" to disable, "default" to inherit env.')))
     .addSubcommand(s => s.setName('show').setDescription('Show the current resolved config')),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -94,15 +94,19 @@ export const securityCommand = {
       }
     } else if (sub === 'gifsource') {
       const domains = interaction.options.getString('domains');
-      if (domains === 'reset') {
+      if (domains === 'default') {
         setModerationField(guildId, 'gifSourceDomains', null);
+      } else if (domains === 'clear') {
+        setModerationField(guildId, 'gifSourceDomains', []);
       } else if (domains != null) {
         setModerationField(guildId, 'gifSourceDomains', domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean));
       }
     } else if (sub === 'blockedimages') {
       const domains = interaction.options.getString('domains');
-      if (domains === 'reset') {
+      if (domains === 'default') {
         setModerationField(guildId, 'blockedImageDomains', null);
+      } else if (domains === 'clear') {
+        setModerationField(guildId, 'blockedImageDomains', []);
       } else if (domains != null) {
         setModerationField(guildId, 'blockedImageDomains', domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean));
       }
